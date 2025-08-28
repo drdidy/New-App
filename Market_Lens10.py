@@ -1,4 +1,6 @@
+# app.py
 # MarketLens Pro v5 by Max Pointe Consulting — Streamlit-only (no Plotly)
+# All timestamps are displayed in Central Time (CT).
 # Run:
 #   pip install -r requirements.txt
 #   streamlit run app.py
@@ -101,7 +103,7 @@ def inject_theme(mode: str):
     st.markdown(theme_css(mode), unsafe_allow_html=True)
 
 # ===============================
-# TIMEZONES / HELPERS
+# TIMEZONES / HELPERS (CT-centric)
 # ===============================
 
 CT = pytz.timezone("America/Chicago")
@@ -109,7 +111,6 @@ ET = pytz.timezone("America/New_York")
 UTC = pytz.UTC
 
 def as_ct(ts: datetime) -> datetime:
-    """Return a timezone-aware timestamp in CT."""
     if ts.tzinfo is None:
         ts = UTC.localize(ts)
     return ts.astimezone(CT)
@@ -119,7 +120,6 @@ def format_ct(ts: datetime, with_date=True) -> str:
     return ts_ct.strftime("%Y-%m-%d %H:%M CT" if with_date else "%H:%M")
 
 def rth_slots_ct_dt(proj_date: date, start="08:30", end="14:30"):
-    """List of CT-aware datetimes for the projection day, every 30 minutes."""
     h1, m1 = map(int, start.split(":"))
     h2, m2 = map(int, end.split(":"))
     start_dt = CT.localize(datetime.combine(proj_date, dtime(h1, m1)))
@@ -142,56 +142,70 @@ SLOPES = {
 @st.cache_data(ttl=60)
 def fetch_live(symbol: str, start_utc: datetime, end_utc: datetime, interval="30m"):
     df = yf.download(symbol, start=start_utc, end=end_utc, interval=interval, auto_adjust=False, progress=False)
-    if not df.empty and df.index.tz is None:
+    if not df.empty and getattr(df.index, "tz", None) is None:
         df.index = df.index.tz_localize(UTC)
     return df
 
 @st.cache_data(ttl=300)
 def fetch_hist(symbol: str, period="5d", interval="30m"):
     df = yf.download(symbol, period=period, interval=interval, auto_adjust=False, progress=False)
-    if not df.empty and df.index.tz is None:
+    if not df.empty and getattr(df.index, "tz", None) is None:
         df.index = df.index.tz_localize(UTC)
     return df
 
 def price_range_ok(df: pd.DataFrame) -> bool:
     if df.empty: return False
     lo, hi = float(df["Close"].min()), float(df["Close"].max())
-    return (lo > 0) and (hi/lo < 5.0)  # crude sanity
+    return (lo > 0) and (hi/lo < 5.0)
 
 # ===============================
-# SWING DETECTION (CLOSE-only)
+# SWING DETECTION (CLOSE-only, NumPy-safe)
 # ===============================
 
 def mark_swings(df: pd.DataFrame, col: str = "Close", k: int = 1) -> pd.DataFrame:
     """
-    A row is a swing high if its CLOSE > CLOSE of previous k bars AND next k bars.
-    A row is a swing low  if its CLOSE < CLOSE of previous k bars AND next k bars.
+    Local swings using CLOSE-only.
+    swing_high: CLOSE > CLOSE of previous k bars AND next k bars.
+    swing_low : CLOSE < CLOSE of previous k bars AND next k bars.
+    Uses NumPy masks to avoid index-alignment issues.
     """
-    s = df[col]
-    swing_high = pd.Series(True, index=df.index)
-    swing_low  = pd.Series(True, index=df.index)
-    for j in range(1, k + 1):
-        swing_high &= (s > s.shift(j)) & (s > s.shift(-j))
-        swing_low  &= (s < s.shift(j)) & (s < s.shift(-j))
     out = df.copy()
-    out["swing_high"] = swing_high.fillna(False)
-    out["swing_low"]  = swing_low.fillna(False)
+    s = pd.to_numeric(df[col], errors="coerce")
+    n = len(s)
+    if n == 0:
+        out["swing_high"] = False
+        out["swing_low"] = False
+        return out
+
+    cond_high = np.ones(n, dtype=bool)
+    cond_low  = np.ones(n, dtype=bool)
+
+    for j in range(1, k + 1):
+        prev = s.shift(j)
+        nxt  = s.shift(-j)
+        # For swing highs, missing neighbors should make the condition False → fill with -inf
+        cond_high &= (s > prev.fillna(-np.inf)) & (s > nxt.fillna(-np.inf)).to_numpy()
+        # For swing lows, missing neighbors should make the condition False → fill with +inf
+        cond_low  &= (s < prev.fillna(np.inf))  & (s < nxt.fillna(np.inf)).to_numpy()
+
+    out["swing_high"] = cond_high
+    out["swing_low"]  = cond_low
     return out
 
-def pick_anchor_from_swings(df_sw: pd.DataFrame, kind: str) -> tuple | None:
+def pick_anchor_from_swings(df_sw: pd.DataFrame, kind: str):
     """
-    kind == "skyline" -> among swing_high rows, pick highest CLOSE (tie: highest Volume)
-    kind == "baseline" -> among swing_low rows, pick lowest CLOSE (tie: highest Volume)
-    Returns (close_price: float, timestamp: pd.Timestamp)
+    kind == "skyline": among swing_high rows → highest CLOSE (tie: highest VOLUME)
+    kind == "baseline": among swing_low rows → lowest CLOSE (tie: highest VOLUME)
+    Returns (close_price: float, timestamp: pd.Timestamp) or None.
     """
     if kind == "skyline":
-        subset = df_sw[df_sw["swing_high"]]
-        if subset.empty: return None
-        row = subset.sort_values(["Close", "Volume"], ascending=[False, False]).iloc[0]
+        sub = df_sw[df_sw["swing_high"]]
+        if sub.empty: return None
+        row = sub.sort_values(["Close", "Volume"], ascending=[False, False]).iloc[0]
     else:
-        subset = df_sw[df_sw["swing_low"]]
-        if subset.empty: return None
-        row = subset.sort_values(["Close", "Volume"], ascending=[True, False]).iloc[0]
+        sub = df_sw[df_sw["swing_low"]]
+        if sub.empty: return None
+        row = sub.sort_values(["Close", "Volume"], ascending=[True, False]).iloc[0]
     return float(row["Close"]), row.name
 
 # ===============================
@@ -200,32 +214,28 @@ def pick_anchor_from_swings(df_sw: pd.DataFrame, kind: str) -> tuple | None:
 
 def detect_spx_anchors_from_es(previous_day: date, k: int = 1):
     """
-    ES=F window (CT): 17:00–19:30 on previous day for swings (CLOSE-only).
-    We fetch 16:59–20:01 to avoid boundary loss, then filter.
+    ES=F window (CT): 17:00–19:30 on previous day for CLOSE-only swings.
+    Fetch 16:59–20:01 CT to avoid boundary loss, then filter.
     Returns: (sky_tuple, base_tuple, suggested_offset, raw_ct_df, swings_ct_df)
     """
     start_ct = CT.localize(datetime.combine(previous_day, dtime(16,59)))
     end_ct   = CT.localize(datetime.combine(previous_day, dtime(20,1)))
     es = fetch_live("ES=F", start_ct.astimezone(UTC), end_ct.astimezone(UTC))
     if es.empty or not price_range_ok(es):
-        return None, None, None, es, es
+        return None, None, None, pd.DataFrame(), pd.DataFrame()
 
     es_ct = es.copy()
     es_ct.index = es_ct.index.tz_convert(CT)
 
-    # Audit table (17:00–20:00 CT)
     raw_ct = es_ct.between_time("17:00", "20:00")[["Open","High","Low","Close","Volume"]].copy()
-
-    # Swing window (17:00–19:30 CT)
     win = es_ct.between_time("17:00", "19:30")[["Open","High","Low","Close","Volume"]].copy()
     if win.empty:
-        return None, None, None, raw_ct, win
+        return None, None, None, raw_ct, pd.DataFrame()
 
     sw = mark_swings(win, col="Close", k=k)
     sky = pick_anchor_from_swings(sw, "skyline")
     base = pick_anchor_from_swings(sw, "baseline")
 
-    # Suggest ES→SPX offset from previous RTH (14:30–15:30 CT)
     rth_prev_start = CT.localize(datetime.combine(previous_day, dtime(14,30)))
     rth_prev_end   = CT.localize(datetime.combine(previous_day, dtime(15,30)))
     spx_prev = fetch_live("^GSPC", rth_prev_start.astimezone(UTC), rth_prev_end.astimezone(UTC))
@@ -240,8 +250,8 @@ def detect_spx_anchors_from_es(previous_day: date, k: int = 1):
 
 def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date, k: int = 1):
     """
-    Stocks Mon/Tue (ET): 09:30–16:00 sessions combined. CLOSE-only swings.
-    We detect swings in ET, but **all output times are returned in CT**.
+    Stocks Mon/Tue (ET): 09:30–16:00 combined, CLOSE-only swings.
+    Output audit tables and anchor timestamps converted to CT.
     Returns: (sky_tuple_ct, base_tuple_ct, raw_ct_df, swings_ct_df)
     """
     start_et = ET.localize(datetime.combine(mon_date, dtime(9,30)))
@@ -250,7 +260,6 @@ def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date, k:
     if df.empty or not price_range_ok(df):
         return None, None, pd.DataFrame(), pd.DataFrame()
 
-    # Work in ET for the session window, then convert to CT for display
     df_et = df.copy()
     df_et.index = df_et.index.tz_convert(ET)
     df_et = df_et.between_time("09:30","16:00")[["Open","High","Low","Close","Volume"]].copy()
@@ -266,13 +275,11 @@ def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date, k:
     sky_p, sky_t_et = sky_et
     base_p, base_t_et = base_et
 
-    # Convert raw and swings to CT for display/audit
     raw_ct = df_et.copy()
     raw_ct.index = raw_ct.index.tz_convert(CT)
     sw_ct = sw_et.copy()
     sw_ct.index = sw_ct.index.tz_convert(CT)
 
-    # Return anchors with CT timestamps
     sky_ct = (sky_p, sky_t_et.astimezone(CT))
     base_ct = (base_p, base_t_et.astimezone(CT))
     return sky_ct, base_ct, raw_ct, sw_ct
@@ -281,20 +288,18 @@ def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date, k:
 # PROJECTIONS & SIGNALS
 # ===============================
 
-def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, rth_slots_ct: list[datetime]):
+def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, rth_slots_ct):
     """
     Project a line from an anchor (CT datetime) using slope per 30-min block.
-    Uses signed block deltas across days.
+    Uses signed block deltas across days, aligning anchor down to nearest 30m.
     """
-    # Align anchor down to previous 30-min boundary
     minute = 0 if anchor_time_ct.minute < 30 else 30
     anchor_aligned = anchor_time_ct.replace(minute=minute, second=0, microsecond=0)
 
     def blocks_to(slot_dt: datetime) -> int:
         return int(round((slot_dt - anchor_aligned).total_seconds() / 1800.0))
 
-    prices = []
-    times = []
+    prices, times = [], []
     for dt in rth_slots_ct:
         b = blocks_to(dt)
         prices.append(round(anchor_price + slope_per_block * b, 4))
@@ -305,23 +310,21 @@ def detect_signals(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, mode="BUY")
     """
     BUY: bearish candle touches line from above & closes ABOVE.
     SELL: bullish candle touches line from below & closes BELOW.
-    rth_ohlc_ct index must be CT tz-aware 30m bars.
-    line_df has "Time (CT)" strings and "Price".
     """
-    if rth_ohlc_ct.empty: 
+    if rth_ohlc_ct.empty:
         return pd.DataFrame([])
     line_map = dict(zip(line_df["Time (CT)"], line_df["Price"]))
     rows = []
     for i, ts in enumerate(rth_ohlc_ct.index):
         tstr = ts.astimezone(CT).strftime("%H:%M")
-        if tstr not in line_map: 
+        if tstr not in line_map:
             continue
         line = float(line_map[tstr])
         o,h,l,c = (float(rth_ohlc_ct.iloc[i][k]) for k in ["Open","High","Low","Close"])
         is_bull, is_bear = (c > o), (c < o)
         touched = (l <= line <= h)
-        if mode=="BUY" and touched and is_bear and (c > line) and (o > line):
-            rows.append({"Time (CT)": tstr, "Line": round(line,4), "Close": round(c,4), "Type": "BUY", "Note": "Bearish; touched from above; closed above"})
+        if mode=="BUY"  and touched and is_bear and (c > line) and (o > line):
+            rows.append({"Time (CT)": tstr, "Line": round(line,4), "Close": round(c,4), "Type": "BUY",  "Note": "Bearish; touched from above; closed above"})
         if mode=="SELL" and touched and is_bull and (c < line) and (o < line):
             rows.append({"Time (CT)": tstr, "Line": round(line,4), "Close": round(c,4), "Type": "SELL", "Note": "Bullish; touched from below; closed below"})
     return pd.DataFrame(rows)
@@ -361,20 +364,19 @@ def contract_projection_tool():
 
     proj_day = st.date_input("Projection day (CT)", value=datetime.now(CT).date())
 
-    # Build CT datetimes for the two points (prev day if hour >= 20)
     prev_day = proj_day - timedelta(days=1)
     dt1 = CT.localize(datetime.combine(prev_day if t1.hour >= 20 else proj_day, t1))
     dt2 = CT.localize(datetime.combine(prev_day if t2.hour >= 20 else proj_day, t2))
 
-    # Signed blocks between points
     blocks_signed = int(round((dt2 - dt1).total_seconds() / 1800.0))
     slope = 0.0 if blocks_signed == 0 else (p2 - p1) / blocks_signed
     st.info(f"Slope per 30-min block: **{slope:.4f}**  |  Blocks between points: {blocks_signed}")
 
-    # Project across RTH on chosen day
     slots_dt = rth_slots_ct_dt(proj_day, "08:30", "14:30")
+
     def blocks_from_dt1(slot_dt):
         return int(round((slot_dt - dt1).total_seconds() / 1800.0))
+
     rows = []
     for slot in slots_dt:
         b = blocks_from_dt1(slot)
@@ -399,12 +401,6 @@ def card(title, sub=None, body_fn=None, badge=None):
         body_fn()
     st.markdown("</div>", unsafe_allow_html=True)
 
-def metric_grid(pairs):
-    st.markdown("<div class='ml-metrics'>", unsafe_allow_html=True)
-    for k,v in pairs:
-        st.markdown(f"<div class='ml-metric'><div class='k'>{k}</div><div class='v'>{v}</div></div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
 # ===============================
 # MAIN APP
 # ===============================
@@ -422,7 +418,7 @@ def main():
         spx_base = st.number_input("SPX Baseline (−)", value=SLOPES["SPX"]["Baseline"], step=0.001, format="%.3f")
 
     st.markdown(f"## {APP_NAME}")
-    st.caption("All timestamps shown in **Central Time (CT)**.")
+    st.caption("All timestamps are shown in **Central Time (CT)**.")
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "SPX (Asian Session Anchors)",
@@ -433,16 +429,18 @@ def main():
 
     # ======== TAB 1: SPX (ES=F) ========
     with tab1:
-        st.markdown("### SPX via ES=F (Asian Session CLOSE-only swings)")
+        st.markdown("### SPX via ES=F (Asian Session, CLOSE-only swings)")
         yesterday_ct = (datetime.now(CT) - timedelta(days=1)).date()
         prev_day = st.date_input("Previous trading day (CT)", value=yesterday_ct)
         k_spx = st.slider("Swing width (bars each side)", 1, 3, 1, help="k=1 = 3-bar swing; higher k requires a more pronounced swing.")
+
         sky, base, offset, es_raw_ct, es_sw = detect_spx_anchors_from_es(prev_day, k=k_spx)
 
         def body_spx():
             if (sky is None) or (base is None):
                 st.error("No swing highs/lows found in 17:00–19:30 CT window. Try a different date or reduce k.")
                 return
+
             sky_price_es, sky_time_ct = sky
             base_price_es, base_time_ct = base
 
@@ -450,22 +448,20 @@ def main():
             st.write(f"**ES Baseline (swing-low close)**: {base_price_es} @ {format_ct(base_time_ct)}")
 
             with st.expander("Audit: ES=F raw 30-min bars (17:00–20:00 CT)"):
-                st.dataframe(
-                    es_raw_ct.reset_index().rename(columns={"index": "Time (CT)"}).assign(**{"Time (CT)": es_raw_ct.index.map(lambda x: format_ct(x))}),
-                    use_container_width=True, hide_index=True
-                )
-            with st.expander("Audit: Swing-marked window (17:00–19:30 CT)"):
-                show = es_sw.copy()
-                show["Time (CT)"] = es_sw.index.map(lambda x: format_ct(x))
-                st.dataframe(show.reset_index(drop=True), use_container_width=True, hide_index=True)
+                raw_show = es_raw_ct.copy()
+                raw_show["Time (CT)"] = raw_show.index.map(lambda x: format_ct(x))
+                st.dataframe(raw_show.reset_index(drop=True), use_container_width=True, hide_index=True)
 
-            # ES→SPX offset suggestion (override allowed)
+            with st.expander("Audit: Swing-marked window (17:00–19:30 CT)"):
+                sw_show = es_sw.copy()
+                sw_show["Time (CT)"] = sw_show.index.map(lambda x: format_ct(x))
+                st.dataframe(sw_show.reset_index(drop=True), use_container_width=True, hide_index=True)
+
             suggested_offset = float(offset) if isinstance(offset, (int, float)) else 0.0
             es_spx_offset = st.number_input("ES → SPX offset (add to ES close to estimate SPX)", value=suggested_offset, step=0.5)
             sky_spx  = sky_price_es  + es_spx_offset
             base_spx = base_price_es + es_spx_offset
 
-            # Default projection day is next calendar day
             proj_day = st.date_input("Projection day (CT)", value=prev_day + timedelta(days=1), key="spx_proj_day")
             slots_dt = rth_slots_ct_dt(proj_day, "08:30", "14:30")
             df_sky = project_line(sky_spx, sky_time_ct, spx_sky, slots_dt)
@@ -485,17 +481,20 @@ def main():
 
     # ======== TAB 2: STOCKS (Mon/Tue) ========
     with tab2:
-        st.markdown("### Individual Stocks (Mon/Tue CLOSE-only swings)")
+        st.markdown("### Individual Stocks (Mon/Tue, CLOSE-only swings)")
         sym = st.text_input("Stock symbol", value="AAPL").upper()
+
         today_et = datetime.now(ET).date()
         weekday = today_et.weekday()  # Mon=0
         last_mon = today_et - timedelta(days=(weekday - 0) % 7 or 7)
         last_tue = last_mon + timedelta(days=1)
+
         c1, c2 = st.columns(2)
         with c1:
-            mon_date = st.date_input("Monday (ET)", value=last_mon, key="mon_et")
+            mon_date = st.date_input("Monday (ET session date)", value=last_mon, key="mon_et")
         with c2:
-            tue_date = st.date_input("Tuesday (ET)", value=last_tue, key="tue_et")
+            tue_date = st.date_input("Tuesday (ET session date)", value=last_tue, key="tue_et")
+
         k_stk = st.slider("Swing width (bars each side)", 1, 3, 1, key="k_stock", help="k=1 = 3-bar swing; higher k = stricter swings.")
 
         sky_ct, base_ct, raw_ct, sw_ct = detect_stock_anchors_two_day(sym, mon_date, tue_date, k=k_stk)
@@ -504,23 +503,29 @@ def main():
             if (sky_ct is None) or (base_ct is None):
                 st.error("No swing highs/lows found across Mon/Tue. Try other dates, symbol, or reduce k.")
                 return
+
             sky_p, sky_t = sky_ct
             base_p, base_t = base_ct
             st.write(f"**{sym} Skyline (swing-high close)**: {sky_p} @ {format_ct(sky_t)}")
             st.write(f"**{sym} Baseline (swing-low close)**: {base_p} @ {format_ct(base_t)}")
 
-            with st.expander("Audit: Mon/Tue 30-min bars (shown in CT)"):
+            with st.expander("Audit: Mon/Tue 30-min bars (displayed in CT)"):
                 df_show = raw_ct.copy()
-                df_show["Time (CT)"] = raw_ct.index.map(lambda x: format_ct(x))
+                df_show["Time (CT)"] = df_show.index.map(lambda x: format_ct(x))
                 st.dataframe(df_show.reset_index(drop=True), use_container_width=True, hide_index=True)
+
             with st.expander("Audit: Swing-marked bars (CT)"):
                 df_sw = sw_ct.copy()
                 df_sw["Time (CT)"] = df_sw.index.map(lambda x: format_ct(x))
                 st.dataframe(df_sw.reset_index(drop=True), use_container_width=True, hide_index=True)
 
             slope_mag = SLOPES.get(sym, SLOPES.get(sym.capitalize(), 0.015))
-            # Default projection day = the first Wednesday after Tue
-            first_wed = tue_date + timedelta(days=(2 if tue_date.weekday() <= 2 else (9 - tue_date.weekday())))
+            # Next Wednesday after Tuesday
+            days_ahead = (2 - tue_date.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7
+            first_wed = tue_date + timedelta(days=days_ahead)
+
             proj_day = st.date_input("Projection day (CT)", value=first_wed, key=f"{sym}_proj_day")
             slots_dt = rth_slots_ct_dt(proj_day, "08:30", "14:30")
             df_sky = project_line(sky_p, sky_t, +slope_mag, slots_dt)
@@ -536,7 +541,7 @@ def main():
                 st.dataframe(df_base, use_container_width=True, hide_index=True)
                 st.download_button(f"Download {sym} Baseline CSV", df_base.to_csv(index=False).encode(), f"{sym}_baseline.csv", "text/csv")
 
-        card("Anchors → Projection", sub="Mon/Tue CLOSE-only swings across both days (ET sessions) • All outputs displayed in CT.", body_fn=body_stk, badge=sym)
+        card("Anchors → Projection", sub="Mon/Tue ET sessions, CLOSE-only swings (displayed in CT) → project through chosen RTH day.", body_fn=body_stk, badge=sym)
 
     # ======== TAB 3: SIGNALS & EMA (CT) ========
     with tab3:
@@ -557,6 +562,7 @@ def main():
         ref_slope = st.number_input("Slope per 30m (+ or −)", value=0.268, step=0.001, format="%.3f")
         slots_dt = rth_slots_ct_dt(proj_day, "08:30", "14:30")
         ref_df = project_line(ref_price, CT.localize(datetime.combine(proj_day, ref_time)), ref_slope, slots_dt)
+
         c1, c2 = st.columns(2)
         with c1:
             st.write("Reference Line Table")
