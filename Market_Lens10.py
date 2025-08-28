@@ -11,13 +11,6 @@ import yfinance as yf
 from datetime import datetime, timedelta, time as dtime, date
 import pytz
 
-# --- optional safe import for yfinance ---
-try:
-    import yfinance as yf
-    YF_AVAILABLE = True
-except Exception as e:
-    YF_AVAILABLE = False
-    yf = None
 
 APP_NAME = "MarketLens Pro v5 by Max Pointe Consulting"
 
