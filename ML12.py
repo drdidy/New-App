@@ -1884,3 +1884,578 @@ def render_anchor_analysis_panel(anchors: Tuple[Optional[SwingPoint], Optional[S
 
 # This completes Part 2B: Advanced Swing Detection & Anchor System
 
+# MarketLens Pro v6 - Part 2C: Technical Indicators & Market Analysis Engine
+# Advanced technical analysis with regime detection and confluence scoring
+
+# ===============================
+# TECHNICAL INDICATORS ENGINE
+# ===============================
+
+class AdvancedTechnicalIndicators:
+    """Professional technical analysis toolkit with adaptive algorithms"""
+    
+    @staticmethod
+    def intraday_vwap_with_bands(df: pd.DataFrame, std_dev: float = 1.0) -> Dict[str, pd.Series]:
+        """Calculate intraday VWAP with standard deviation bands"""
+        if df.empty or not all(col in df.columns for col in ['High', 'Low', 'Close', 'Volume']):
+            empty_series = pd.Series(dtype=float, index=df.index if not df.empty else [])
+            return {'vwap': empty_series, 'vwap_upper': empty_series, 'vwap_lower': empty_series}
+        
+        # Ensure CT timezone
+        data = df.copy()
+        if data.index.tz is None:
+            data.index = data.index.tz_localize(UTC)
+        data.index = data.index.tz_convert(CT)
+        
+        # Calculate typical price and price-volume
+        data['typical_price'] = (data['High'] + data['Low'] + data['Close']) / 3.0
+        data['pv'] = data['typical_price'] * data['Volume']
+        data['v2p'] = data['Volume'] * (data['typical_price'] ** 2)
+        
+        # Group by trading day for daily resets
+        trading_dates = data.index.date
+        
+        # Calculate cumulative values
+        cumulative_pv = data['pv'].groupby(trading_dates).cumsum()
+        cumulative_volume = data['Volume'].groupby(trading_dates).cumsum()
+        cumulative_v2p = data['v2p'].groupby(trading_dates).cumsum()
+        
+        # VWAP calculation
+        vwap = cumulative_pv / cumulative_volume.replace(0, np.nan)
+        
+        # VWAP standard deviation calculation
+        vwap_variance = (cumulative_v2p / cumulative_volume.replace(0, np.nan)) - (vwap ** 2)
+        vwap_std = np.sqrt(vwap_variance.clip(lower=0))  # Ensure non-negative variance
+        
+        # VWAP bands
+        vwap_upper = vwap + (vwap_std * std_dev)
+        vwap_lower = vwap - (vwap_std * std_dev)
+        
+        return {
+            'vwap': vwap,
+            'vwap_upper': vwap_upper,
+            'vwap_lower': vwap_lower,
+            'vwap_std': vwap_std
+        }
+    
+    @staticmethod
+    def adaptive_atr(df: pd.DataFrame, period: int = 14, volatility_factor: float = 2.0) -> pd.Series:
+        """Adaptive Average True Range with volatility-based smoothing"""
+        if df.empty or not all(col in df.columns for col in ['High', 'Low', 'Close']):
+            return pd.Series(dtype=float, index=df.index if not df.empty else [])
+        
+        data = df.copy()
+        prev_close = data['Close'].shift(1)
+        
+        # True Range components
+        tr_components = pd.DataFrame({
+            'hl': data['High'] - data['Low'],
+            'hc': (data['High'] - prev_close).abs(),
+            'lc': (data['Low'] - prev_close).abs()
+        })
+        
+        true_range = tr_components.max(axis=1)
+        
+        # Adaptive smoothing based on recent volatility
+        volatility_window = min(period, 10)
+        recent_volatility = true_range.rolling(window=volatility_window).std()
+        
+        # Calculate adaptive alpha (smoothing factor)
+        base_alpha = 2.0 / (period + 1)
+        volatility_adjustment = (recent_volatility / recent_volatility.rolling(window=period).mean()).fillna(1.0)
+        adaptive_alpha = base_alpha * (1 + (volatility_adjustment - 1) * volatility_factor)
+        adaptive_alpha = adaptive_alpha.clip(upper=0.5)  # Prevent over-smoothing
+        
+        # Calculate adaptive ATR
+        atr = pd.Series(index=data.index, dtype=float)
+        atr.iloc[0] = true_range.iloc[0] if len(true_range) > 0 else 0
+        
+        for i in range(1, len(true_range)):
+            if pd.notna(adaptive_alpha.iloc[i]) and pd.notna(true_range.iloc[i]):
+                atr.iloc[i] = (adaptive_alpha.iloc[i] * true_range.iloc[i] + 
+                              (1 - adaptive_alpha.iloc[i]) * atr.iloc[i-1])
+            else:
+                atr.iloc[i] = atr.iloc[i-1]
+        
+        return atr
+    
+    @staticmethod
+    def multi_ema_system(df: pd.DataFrame, periods: List[int] = None) -> Dict[str, pd.Series]:
+        """Multi-timeframe EMA system with trend strength"""
+        if df.empty or 'Close' not in df.columns:
+            return {}
+        
+        if periods is None:
+            periods = [8, 21, 50, 100, 200]
+        
+        close_prices = pd.to_numeric(df['Close'], errors='coerce')
+        emas = {}
+        
+        for period in periods:
+            ema_key = f'ema_{period}'
+            emas[ema_key] = close_prices.ewm(span=period, adjust=False).mean()
+        
+        return emas
+    
+    @staticmethod
+    def regime_detection_advanced(emas: Dict[str, pd.Series], 
+                                price_series: pd.Series) -> Dict[str, pd.Series]:
+        """Advanced market regime detection with strength metrics"""
+        
+        if not emas or len(emas) < 2:
+            empty_result = {
+                'regime': pd.Series(dtype=str),
+                'trend_strength': pd.Series(dtype=float),
+                'regime_consistency': pd.Series(dtype=float)
+            }
+            return empty_result
+        
+        # Get EMAs sorted by period
+        ema_items = [(int(k.split('_')[1]), v) for k, v in emas.items()]
+        ema_items.sort()
+        periods, ema_series = zip(*ema_items)
+        
+        # Primary regime: fastest vs slowest EMA
+        fast_ema = ema_series[0]  # Shortest period
+        slow_ema = ema_series[-1]  # Longest period
+        
+        # Calculate regime
+        regime_numeric = np.where(fast_ema > slow_ema, 1, -1)
+        regime_labels = np.where(regime_numeric == 1, 'Bullish', 'Bearish')
+        regime = pd.Series(regime_labels, index=fast_ema.index)
+        
+        # Trend strength based on EMA separation
+        ema_separation = (fast_ema - slow_ema) / slow_ema
+        trend_strength = ema_separation.abs().rolling(window=20).mean()
+        
+        # Regime consistency (how long has regime been the same)
+        regime_changes = regime != regime.shift(1)
+        regime_groups = regime_changes.cumsum()
+        regime_consistency = regime.groupby(regime_groups).cumcount() + 1
+        regime_consistency = regime_consistency / regime_consistency.rolling(window=50).max()
+        
+        # EMA alignment score (how well all EMAs align with trend)
+        if len(ema_series) >= 3:
+            alignment_scores = []
+            for i in range(len(price_series)):
+                if pd.isna(regime_numeric[i]):
+                    alignment_scores.append(0.0)
+                    continue
+                
+                current_emas = [ema.iloc[i] for ema in ema_series if not pd.isna(ema.iloc[i])]
+                if len(current_emas) < 2:
+                    alignment_scores.append(0.0)
+                    continue
+                
+                # Check if EMAs are properly ordered
+                if regime_numeric[i] == 1:  # Bullish
+                    properly_ordered = all(current_emas[i] >= current_emas[i+1] 
+                                         for i in range(len(current_emas)-1))
+                else:  # Bearish
+                    properly_ordered = all(current_emas[i] <= current_emas[i+1] 
+                                         for i in range(len(current_emas)-1))
+                
+                alignment_scores.append(1.0 if properly_ordered else 0.5)
+            
+            ema_alignment = pd.Series(alignment_scores, index=regime.index)
+        else:
+            ema_alignment = pd.Series(1.0, index=regime.index)
+        
+        return {
+            'regime': regime,
+            'trend_strength': trend_strength,
+            'regime_consistency': regime_consistency,
+            'ema_alignment': ema_alignment,
+            'ema_separation': ema_separation
+        }
+    
+    @staticmethod
+    def volume_profile_intraday(df: pd.DataFrame, bins: int = 20) -> Dict[str, Any]:
+        """Intraday volume profile analysis"""
+        if df.empty or not all(col in df.columns for col in ['High', 'Low', 'Close', 'Volume']):
+            return {'poc': np.nan, 'vah': np.nan, 'val': np.nan, 'profile': pd.DataFrame()}
+        
+        data = df.copy()
+        
+        # Ensure we have valid price and volume data
+        valid_data = data.dropna(subset=['High', 'Low', 'Close', 'Volume'])
+        if valid_data.empty:
+            return {'poc': np.nan, 'vah': np.nan, 'val': np.nan, 'profile': pd.DataFrame()}
+        
+        # Price range for the session
+        session_high = valid_data['High'].max()
+        session_low = valid_data['Low'].min()
+        
+        if session_high == session_low:
+            return {'poc': session_high, 'vah': session_high, 'val': session_low, 'profile': pd.DataFrame()}
+        
+        # Create price bins
+        price_levels = np.linspace(session_low, session_high, bins + 1)
+        volume_at_price = np.zeros(bins)
+        
+        # Distribute volume across price levels for each bar
+        for _, row in valid_data.iterrows():
+            high, low, volume = row['High'], row['Low'], row['Volume']
+            
+            # Find bins that intersect with this bar's price range
+            overlapping_bins = []
+            for i in range(bins):
+                bin_low = price_levels[i]
+                bin_high = price_levels[i + 1]
+                
+                # Check if price range overlaps with bin
+                if not (high < bin_low or low > bin_high):
+                    overlap_low = max(low, bin_low)
+                    overlap_high = min(high, bin_high)
+                    overlap_ratio = (overlap_high - overlap_low) / (high - low) if high != low else 1.0
+                    overlapping_bins.append((i, overlap_ratio))
+            
+            # Distribute volume proportionally
+            if overlapping_bins:
+                total_ratio = sum(ratio for _, ratio in overlapping_bins)
+                for bin_idx, ratio in overlapping_bins:
+                    volume_at_price[bin_idx] += volume * (ratio / total_ratio)
+        
+        # Calculate key levels
+        total_volume = volume_at_price.sum()
+        
+        if total_volume == 0:
+            return {'poc': (session_high + session_low) / 2, 'vah': session_high, 'val': session_low, 'profile': pd.DataFrame()}
+        
+        # Point of Control (highest volume price level)
+        poc_idx = np.argmax(volume_at_price)
+        poc_price = (price_levels[poc_idx] + price_levels[poc_idx + 1]) / 2
+        
+        # Value Area High and Low (70% of volume)
+        target_volume = total_volume * 0.7
+        
+        # Start from POC and expand until we capture 70% of volume
+        included_bins = {poc_idx}
+        captured_volume = volume_at_price[poc_idx]
+        
+        while captured_volume < target_volume and len(included_bins) < bins:
+            # Find adjacent bins with highest volume
+            candidates = []
+            for bin_idx in list(included_bins):
+                if bin_idx > 0 and (bin_idx - 1) not in included_bins:
+                    candidates.append((bin_idx - 1, volume_at_price[bin_idx - 1]))
+                if bin_idx < bins - 1 and (bin_idx + 1) not in included_bins:
+                    candidates.append((bin_idx + 1, volume_at_price[bin_idx + 1]))
+            
+            if not candidates:
+                break
+            
+            # Add the bin with highest volume
+            best_bin_idx, best_volume = max(candidates, key=lambda x: x[1])
+            included_bins.add(best_bin_idx)
+            captured_volume += best_volume
+        
+        # Calculate VAH and VAL
+        if included_bins:
+            vah_idx = max(included_bins)
+            val_idx = min(included_bins)
+            vah_price = price_levels[vah_idx + 1]  # Top of the bin
+            val_price = price_levels[val_idx]      # Bottom of the bin
+        else:
+            vah_price = session_high
+            val_price = session_low
+        
+        # Create profile DataFrame
+        bin_centers = [(price_levels[i] + price_levels[i + 1]) / 2 for i in range(bins)]
+        profile_df = pd.DataFrame({
+            'price_level': bin_centers,
+            'volume': volume_at_price,
+            'volume_pct': volume_at_price / total_volume * 100
+        })
+        
+        return {
+            'poc': poc_price,
+            'vah': vah_price,
+            'val': val_price,
+            'profile': profile_df,
+            'total_volume': total_volume
+        }
+    
+    @staticmethod
+    def momentum_oscillator_suite(df: pd.DataFrame) -> Dict[str, pd.Series]:
+        """Comprehensive momentum analysis suite"""
+        if df.empty or 'Close' not in df.columns:
+            return {}
+        
+        close = pd.to_numeric(df['Close'], errors='coerce')
+        results = {}
+        
+        # RSI (14-period)
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        avg_gain = gain.ewm(span=14, adjust=False).mean()
+        avg_loss = loss.ewm(span=14, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, np.inf)
+        results['rsi'] = 100 - (100 / (1 + rs))
+        
+        # Rate of Change (10-period)
+        results['roc'] = (close / close.shift(10) - 1) * 100
+        
+        # Williams %R (14-period)
+        if all(col in df.columns for col in ['High', 'Low']):
+            high = pd.to_numeric(df['High'], errors='coerce')
+            low = pd.to_numeric(df['Low'], errors='coerce')
+            
+            highest_high = high.rolling(window=14).max()
+            lowest_low = low.rolling(window=14).min()
+            results['williams_r'] = ((highest_high - close) / (highest_high - lowest_low)) * -100
+        
+        # Stochastic Oscillator (14, 3, 3)
+        if all(col in df.columns for col in ['High', 'Low']):
+            high = pd.to_numeric(df['High'], errors='coerce')
+            low = pd.to_numeric(df['Low'], errors='coerce')
+            
+            lowest_low = low.rolling(window=14).min()
+            highest_high = high.rolling(window=14).max()
+            k_percent = ((close - lowest_low) / (highest_high - lowest_low)) * 100
+            results['stoch_k'] = k_percent.rolling(window=3).mean()
+            results['stoch_d'] = results['stoch_k'].rolling(window=3).mean()
+        
+        return results
+
+# ===============================
+# CONFLUENCE ANALYSIS ENGINE
+# ===============================
+
+class ConfluenceAnalysisEngine:
+    """Advanced confluence analysis for trade setup evaluation"""
+    
+    def __init__(self, weights: Dict[str, float] = None):
+        self.weights = weights or {
+            'line_proximity': 0.25,
+            'vwap_alignment': 0.20,
+            'ema_regime': 0.20,
+            'volume_confirmation': 0.15,
+            'momentum_alignment': 0.10,
+            'session_timing': 0.10
+        }
+    
+    def calculate_confluence_scores(self, df: pd.DataFrame, line_prices: pd.Series,
+                                  technical_data: Dict[str, Any]) -> pd.DataFrame:
+        """Calculate comprehensive confluence scores for each time period"""
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        confluence_df = df.copy()
+        confluence_df['time_ct'] = confluence_df.index.strftime('%H:%M')
+        
+        # Initialize scoring components
+        scores = {component: np.zeros(len(df)) for component in self.weights.keys()}
+        
+        # 1. Line Proximity Score
+        if not line_prices.empty:
+            line_map = line_prices.to_dict()
+            confluence_df['line_price'] = confluence_df['time_ct'].map(line_map)
+            
+            # Calculate proximity using ATR context
+            atr = technical_data.get('atr', pd.Series(1.0, index=df.index))
+            price_diff = (confluence_df['Close'] - confluence_df['line_price']).abs()
+            proximity_ratio = price_diff / atr.reindex(df.index).fillna(atr.mean())
+            
+            # Score: closer to line = higher score (max 1.0 when at line)
+            scores['line_proximity'] = np.exp(-proximity_ratio * 2).fillna(0)
+        
+        # 2. VWAP Alignment Score
+        vwap_data = technical_data.get('vwap', {})
+        if 'vwap' in vwap_data:
+            vwap = vwap_data['vwap'].reindex(df.index)
+            vwap_upper = vwap_data.get('vwap_upper', vwap).reindex(df.index)
+            vwap_lower = vwap_data.get('vwap_lower', vwap).reindex(df.index)
+            
+            close_prices = confluence_df['Close']
+            
+            # Score based on position relative to VWAP bands
+            vwap_scores = np.zeros(len(df))
+            
+            for i in range(len(df)):
+                if pd.isna(vwap.iloc[i]):
+                    vwap_scores[i] = 0.5
+                    continue
+                
+                close_price = close_prices.iloc[i]
+                vwap_price = vwap.iloc[i]
+                upper_band = vwap_upper.iloc[i]
+                lower_band = vwap_lower.iloc[i]
+                
+                if close_price > upper_band:
+                    vwap_scores[i] = 1.0  # Strong bullish
+                elif close_price > vwap_price:
+                    vwap_scores[i] = 0.75  # Moderate bullish
+                elif close_price > lower_band:
+                    vwap_scores[i] = 0.25  # Weak bearish
+                else:
+                    vwap_scores[i] = 0.0  # Strong bearish
+            
+            scores['vwap_alignment'] = vwap_scores
+        
+        # 3. EMA Regime Score
+        regime_data = technical_data.get('regime', {})
+        if 'regime' in regime_data:
+            regime = regime_data['regime'].reindex(df.index)
+            trend_strength = regime_data.get('trend_strength', pd.Series(0.5, index=df.index)).reindex(df.index)
+            ema_alignment = regime_data.get('ema_alignment', pd.Series(0.5, index=df.index)).reindex(df.index)
+            
+            # Combine regime direction with strength and alignment
+            regime_numeric = np.where(regime == 'Bullish', 1.0, 0.0)
+            regime_scores = (regime_numeric * 0.5 + 
+                           trend_strength.fillna(0.5) * 0.3 + 
+                           ema_alignment.fillna(0.5) * 0.2)
+            
+            scores['ema_regime'] = regime_scores.values
+        
+        # 4. Volume Confirmation Score
+        if 'Volume' in df.columns:
+            volume = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
+            avg_volume = volume.rolling(window=20).mean().fillna(volume.mean())
+            
+            # Relative volume score (higher = better confirmation)
+            volume_ratio = volume / avg_volume.replace(0, 1)
+            volume_scores = np.minimum(volume_ratio / 2.0, 1.0)  # Cap at 1.0, normalize around 2x avg
+            
+            scores['volume_confirmation'] = volume_scores.values
+        
+        # 5. Momentum Alignment Score
+        momentum_data = technical_data.get('momentum', {})
+        if momentum_data:
+            momentum_scores = np.zeros(len(df))
+            
+            # RSI component
+            if 'rsi' in momentum_data:
+                rsi = momentum_data['rsi'].reindex(df.index).fillna(50)
+                # Score based on RSI extremes (30-70 range gets lower scores)
+                rsi_scores = np.where(rsi < 30, 0.9,  # Oversold
+                                    np.where(rsi > 70, 0.9,  # Overbought
+                                           1.0 - np.abs(rsi - 50) / 50 * 0.5))  # Neutral zone
+                momentum_scores += rsi_scores * 0.4
+            
+            # Williams %R component
+            if 'williams_r' in momentum_data:
+                williams = momentum_data['williams_r'].reindex(df.index).fillna(-50)
+                williams_scores = np.where(williams < -80, 0.9,  # Oversold
+                                         np.where(williams > -20, 0.9,  # Overbought
+                                                1.0 - np.abs(williams + 50) / 50 * 0.5))
+                momentum_scores += williams_scores * 0.3
+            
+            # Stochastic component
+            if 'stoch_k' in momentum_data:
+                stoch = momentum_data['stoch_k'].reindex(df.index).fillna(50)
+                stoch_scores = np.where(stoch < 20, 0.9,
+                                      np.where(stoch > 80, 0.9,
+                                             1.0 - np.abs(stoch - 50) / 50 * 0.5))
+                momentum_scores += stoch_scores * 0.3
+            
+            # Normalize if we have any momentum indicators
+            if any(indicator in momentum_data for indicator in ['rsi', 'williams_r', 'stoch_k']):
+                scores['momentum_alignment'] = momentum_scores
+        
+        # 6. Session Timing Score
+        session_scores = np.zeros(len(df))
+        for i, timestamp in enumerate(df.index):
+            ct_time = timestamp.astimezone(CT) if timestamp.tz else CT.localize(timestamp)
+            hour = ct_time.hour
+            
+            # Score based on market session importance
+            if 8 <= hour <= 10:  # Market open
+                session_scores[i] = 1.0
+            elif 14 <= hour <= 15:  # Market close  
+                session_scores[i] = 0.9
+            elif 10 <= hour <= 14:  # Mid-day
+                session_scores[i] = 0.7
+            elif 17 <= hour <= 19:  # Asian session
+                session_scores[i] = 0.8
+            else:  # Off-hours
+                session_scores[i] = 0.3
+        
+        scores['session_timing'] = session_scores
+        
+        # Calculate weighted confluence score
+        total_score = np.zeros(len(df))
+        for component, score_array in scores.items():
+            weight = self.weights.get(component, 0)
+            total_score += np.array(score_array) * weight
+        
+        # Add all scores to DataFrame
+        for component, score_array in scores.items():
+            confluence_df[f'{component}_score'] = score_array
+        
+        confluence_df['confluence_score'] = total_score
+        confluence_df['confluence_grade'] = pd.cut(
+            total_score, 
+            bins=[0, 0.4, 0.6, 0.8, 1.0], 
+            labels=['Poor', 'Fair', 'Good', 'Excellent'],
+            include_lowest=True
+        )
+        
+        return confluence_df
+
+def render_confluence_analysis_panel(confluence_df: pd.DataFrame, 
+                                   top_n: int = 5) -> None:
+    """Render confluence analysis results panel"""
+    
+    if confluence_df.empty:
+        st.warning("No confluence data available")
+        return
+    
+    st.markdown('''
+    <div class="analytics-card">
+        <div class="card-header">
+            <div>
+                <h4 class="card-title">Confluence Analysis</h4>
+                <p class="card-subtitle">Multi-factor trade setup evaluation with weighted scoring</p>
+            </div>
+            <div class="card-badge">Advanced</div>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+    
+    # Top confluence opportunities
+    if 'confluence_score' in confluence_df.columns:
+        top_setups = confluence_df.nlargest(top_n, 'confluence_score')
+        
+        st.subheader(f"Top {top_n} Confluence Setups")
+        
+        display_cols = ['time_ct', 'Close', 'confluence_score', 'confluence_grade']
+        score_cols = [col for col in confluence_df.columns if col.endswith('_score') and col != 'confluence_score']
+        
+        # Add individual component scores
+        for col in score_cols[:3]:  # Show top 3 components
+            if col in top_setups.columns:
+                display_cols.append(col)
+        
+        # Format display data
+        display_data = top_setups[display_cols].copy()
+        if 'Close' in display_data.columns:
+            display_data['Close'] = display_data['Close'].round(2)
+        if 'confluence_score' in display_data.columns:
+            display_data['confluence_score'] = display_data['confluence_score'].round(3)
+        
+        # Format score columns
+        for col in score_cols:
+            if col in display_data.columns:
+                display_data[col] = display_data[col].round(3)
+        
+        st.dataframe(display_data, use_container_width=True)
+        
+        # Confluence distribution
+        if len(confluence_df) > 0:
+            grade_counts = confluence_df['confluence_grade'].value_counts()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                render_metric_card("Excellent", grade_counts.get('Excellent', 0), "setups", trend="positive")
+            with col2:
+                render_metric_card("Good", grade_counts.get('Good', 0), "setups", trend="positive")
+            with col3:
+                render_metric_card("Fair", grade_counts.get('Fair', 0), "setups", trend="neutral")
+            with col4:
+                render_metric_card("Poor", grade_counts.get('Poor', 0), "setups", trend="negative")
+
+# This completes Part 2C: Technical Indicators & Market Analysis Engine
+
