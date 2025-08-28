@@ -3074,3 +3074,694 @@ def render_signals_analysis_panel(signals: List[TradingSignal],
 
 # This completes Part 3A: Enhanced UI Components & Signal Detection System
 
+
+
+
+# MarketLens Pro v6 - Part 3B: Projection Engine & Analytics Dashboard
+# Line projection system, backtesting engine, and comprehensive analytics
+
+# ===============================
+# LINE PROJECTION ENGINE
+# ===============================
+
+class ProfessionalProjectionEngine:
+    """Advanced line projection system with precision timing"""
+    
+    def __init__(self):
+        self.ct_tz = CT
+        
+    def generate_projection_line(self, anchor_price: float, anchor_timestamp: datetime,
+                                slope_per_block: float, target_date: date,
+                                session_start: str = "08:30", session_end: str = "14:30") -> pd.DataFrame:
+        """Generate precise projection line for trading day"""
+        
+        # Align anchor to 30-minute boundary
+        anchor_ct = anchor_timestamp.astimezone(self.ct_tz)
+        anchor_aligned = anchor_ct.replace(
+            minute=0 if anchor_ct.minute < 30 else 30,
+            second=0,
+            microsecond=0
+        )
+        
+        # Generate trading session slots
+        trading_slots = get_trading_sessions_ct(target_date, session_start, session_end)
+        
+        projection_data = []
+        for slot_time in trading_slots:
+            # Calculate blocks from anchor
+            time_delta = slot_time - anchor_aligned
+            blocks = int(round(time_delta.total_seconds() / 1800.0))  # 1800 seconds = 30 minutes
+            
+            # Calculate projected price
+            projected_price = anchor_price + (slope_per_block * blocks)
+            
+            projection_data.append({
+                'Time (CT)': slot_time.strftime('%H:%M'),
+                'Timestamp': slot_time,
+                'Price': round(projected_price, 4),
+                'Blocks': blocks,
+                'Time_Decimal': slot_time.hour + (slot_time.minute / 60.0)
+            })
+        
+        return pd.DataFrame(projection_data)
+    
+    def calculate_projection_quality(self, projection_df: pd.DataFrame, 
+                                   actual_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate projection accuracy metrics"""
+        
+        if projection_df.empty or actual_data.empty:
+            return {
+                'accuracy_score': 0.0,
+                'avg_deviation': float('inf'),
+                'max_deviation': float('inf'),
+                'correlation': 0.0,
+                'coverage': 0.0
+            }
+        
+        # Align timestamps
+        merged = pd.merge(
+            projection_df.set_index('Time (CT)'),
+            actual_data.reset_index(),
+            left_index=True,
+            right_on=actual_data.index.strftime('%H:%M'),
+            how='inner'
+        )
+        
+        if merged.empty:
+            return {
+                'accuracy_score': 0.0,
+                'avg_deviation': float('inf'),
+                'max_deviation': float('inf'),
+                'correlation': 0.0,
+                'coverage': 0.0
+            }
+        
+        # Calculate deviations
+        projected_prices = merged['Price']
+        actual_prices = merged['Close']
+        
+        deviations = (projected_prices - actual_prices).abs()
+        relative_deviations = deviations / actual_prices
+        
+        # Quality metrics
+        avg_deviation = float(deviations.mean())
+        max_deviation = float(deviations.max())
+        avg_relative_dev = float(relative_deviations.mean())
+        
+        # Correlation
+        correlation = float(projected_prices.corr(actual_prices)) if len(projected_prices) > 1 else 0.0
+        
+        # Coverage (percentage of projections with actual data)
+        coverage = len(merged) / len(projection_df)
+        
+        # Overall accuracy score (0-1, higher is better)
+        accuracy_score = max(0.0, 1.0 - min(1.0, avg_relative_dev * 5))  # Scale relative deviation
+        
+        return {
+            'accuracy_score': accuracy_score,
+            'avg_deviation': avg_deviation,
+            'max_deviation': max_deviation,
+            'correlation': correlation,
+            'coverage': coverage,
+            'relative_deviation': avg_relative_dev
+        }
+
+# ===============================
+# BACKTESTING ENGINE
+# ===============================
+
+@dataclass
+class BacktestResult:
+    """Comprehensive backtesting results"""
+    total_trades: int
+    winning_trades: int
+    losing_trades: int
+    win_rate: float
+    avg_winner: float
+    avg_loser: float
+    profit_factor: float
+    expectancy: float
+    max_drawdown: float
+    sharpe_ratio: float
+    total_return: float
+    best_trade: float
+    worst_trade: float
+    avg_trade_duration: float
+    trades_per_day: float
+    
+    def to_display_dict(self) -> Dict[str, str]:
+        """Convert to formatted display dictionary"""
+        return {
+            'Total Trades': str(self.total_trades),
+            'Win Rate': f"{self.win_rate:.1%}",
+            'Profit Factor': f"{self.profit_factor:.2f}",
+            'Expectancy': f"{self.expectancy:.2f}R",
+            'Avg Winner': f"{self.avg_winner:.2f}R",
+            'Avg Loser': f"{self.avg_loser:.2f}R",
+            'Max Drawdown': f"{self.max_drawdown:.1%}",
+            'Sharpe Ratio': f"{self.sharpe_ratio:.2f}",
+            'Best Trade': f"{self.best_trade:.2f}R",
+            'Worst Trade': f"{self.worst_trade:.2f}R"
+        }
+
+class ProfessionalBacktester:
+    """Advanced backtesting engine with realistic execution modeling"""
+    
+    def __init__(self, trading_params: Dict[str, Any]):
+        self.params = trading_params
+        self.signal_detector = AdvancedSignalDetector(trading_params)
+    
+    def backtest_strategy(self, historical_data: Dict[date, pd.DataFrame],
+                         anchor_price: float, anchor_timestamp: datetime,
+                         slope_magnitude: float, signal_mode: str = "BUY") -> BacktestResult:
+        """Comprehensive strategy backtesting"""
+        
+        all_trades = []
+        daily_returns = []
+        projection_engine = ProfessionalProjectionEngine()
+        
+        for trade_date, day_data in historical_data.items():
+            if day_data.empty:
+                continue
+            
+            # Generate projection for this day
+            projection_df = projection_engine.generate_projection_line(
+                anchor_price, anchor_timestamp, slope_magnitude, trade_date
+            )
+            
+            if projection_df.empty:
+                continue
+            
+            # Create line prices series for signal detection
+            line_prices = pd.Series(
+                projection_df['Price'].values,
+                index=projection_df['Time (CT)'].values
+            )
+            
+            # Detect signals
+            signals = self.signal_detector.detect_line_touch_signals(
+                day_data, line_prices, signal_mode
+            )
+            
+            # Execute trades
+            for signal in signals:
+                trade_result = self._execute_trade(signal, day_data)
+                if trade_result:
+                    all_trades.append(trade_result)
+                    daily_returns.append(trade_result['pnl_r'])
+        
+        return self._calculate_backtest_metrics(all_trades, daily_returns)
+    
+    def _execute_trade(self, signal: TradingSignal, day_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Execute single trade with realistic modeling"""
+        
+        # Find data after signal time for execution modeling
+        signal_time = signal.timestamp
+        future_data = day_data[day_data.index > signal_time].copy()
+        
+        if future_data.empty:
+            return None  # No data to execute trade
+        
+        entry_price = signal.entry_price
+        stop_price = signal.stop_loss
+        target_price = signal.target_price
+        
+        # Track trade progression
+        trade_result = {
+            'entry_time': signal_time,
+            'entry_price': entry_price,
+            'stop_price': stop_price,
+            'target_price': target_price,
+            'signal_type': signal.signal_type,
+            'confluence_score': signal.confluence_score
+        }
+        
+        # Check each subsequent bar for stop or target hit
+        for timestamp, bar in future_data.iterrows():
+            high = float(bar['High'])
+            low = float(bar['Low'])
+            
+            if signal.signal_type == "BUY":
+                # Check stop first (conservative approach)
+                if low <= stop_price:
+                    trade_result.update({
+                        'exit_time': timestamp,
+                        'exit_price': stop_price,
+                        'outcome': 'STOP',
+                        'pnl_r': -1.0,  # -1R loss
+                        'pnl_points': stop_price - entry_price,
+                        'duration_bars': len(future_data.loc[:timestamp])
+                    })
+                    return trade_result
+                
+                # Check target
+                elif high >= target_price:
+                    risk_amount = abs(entry_price - stop_price)
+                    reward_amount = abs(target_price - entry_price)
+                    actual_rr = reward_amount / risk_amount if risk_amount > 0 else 0
+                    
+                    trade_result.update({
+                        'exit_time': timestamp,
+                        'exit_price': target_price,
+                        'outcome': 'TARGET',
+                        'pnl_r': actual_rr,
+                        'pnl_points': target_price - entry_price,
+                        'duration_bars': len(future_data.loc[:timestamp])
+                    })
+                    return trade_result
+            
+            else:  # SELL signal
+                # Check stop first
+                if high >= stop_price:
+                    trade_result.update({
+                        'exit_time': timestamp,
+                        'exit_price': stop_price,
+                        'outcome': 'STOP',
+                        'pnl_r': -1.0,
+                        'pnl_points': entry_price - stop_price,
+                        'duration_bars': len(future_data.loc[:timestamp])
+                    })
+                    return trade_result
+                
+                # Check target
+                elif low <= target_price:
+                    risk_amount = abs(stop_price - entry_price)
+                    reward_amount = abs(entry_price - target_price)
+                    actual_rr = reward_amount / risk_amount if risk_amount > 0 else 0
+                    
+                    trade_result.update({
+                        'exit_time': timestamp,
+                        'exit_price': target_price,
+                        'outcome': 'TARGET',
+                        'pnl_r': actual_rr,
+                        'pnl_points': entry_price - target_price,
+                        'duration_bars': len(future_data.loc[:timestamp])
+                    })
+                    return trade_result
+        
+        # Trade didn't hit stop or target (end of day)
+        final_bar = future_data.iloc[-1]
+        final_price = float(final_bar['Close'])
+        
+        if signal.signal_type == "BUY":
+            pnl_points = final_price - entry_price
+        else:
+            pnl_points = entry_price - final_price
+        
+        risk_amount = abs(entry_price - stop_price)
+        pnl_r = pnl_points / risk_amount if risk_amount > 0 else 0
+        
+        trade_result.update({
+            'exit_time': future_data.index[-1],
+            'exit_price': final_price,
+            'outcome': 'EOD',
+            'pnl_r': pnl_r,
+            'pnl_points': pnl_points,
+            'duration_bars': len(future_data)
+        })
+        
+        return trade_result
+    
+    def _calculate_backtest_metrics(self, trades: List[Dict], daily_returns: List[float]) -> BacktestResult:
+        """Calculate comprehensive backtest statistics"""
+        
+        if not trades:
+            return BacktestResult(
+                total_trades=0, winning_trades=0, losing_trades=0, win_rate=0.0,
+                avg_winner=0.0, avg_loser=0.0, profit_factor=0.0, expectancy=0.0,
+                max_drawdown=0.0, sharpe_ratio=0.0, total_return=0.0,
+                best_trade=0.0, worst_trade=0.0, avg_trade_duration=0.0, trades_per_day=0.0
+            )
+        
+        # Basic statistics
+        total_trades = len(trades)
+        pnl_r_values = [t['pnl_r'] for t in trades]
+        
+        winning_trades = sum(1 for pnl in pnl_r_values if pnl > 0)
+        losing_trades = sum(1 for pnl in pnl_r_values if pnl < 0)
+        win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+        
+        # Winner/Loser analysis
+        winners = [pnl for pnl in pnl_r_values if pnl > 0]
+        losers = [pnl for pnl in pnl_r_values if pnl < 0]
+        
+        avg_winner = np.mean(winners) if winners else 0.0
+        avg_loser = np.mean(losers) if losers else 0.0
+        
+        # Profit factor
+        total_winners = sum(winners) if winners else 0.0
+        total_losers = abs(sum(losers)) if losers else 0.0
+        profit_factor = total_winners / total_losers if total_losers > 0 else float('inf') if total_winners > 0 else 0.0
+        
+        # Expectancy
+        expectancy = np.mean(pnl_r_values) if pnl_r_values else 0.0
+        
+        # Drawdown calculation
+        cumulative_returns = np.cumsum(pnl_r_values)
+        running_max = np.maximum.accumulate(cumulative_returns)
+        drawdown = (cumulative_returns - running_max)
+        max_drawdown = abs(min(drawdown)) if len(drawdown) > 0 else 0.0
+        
+        # Sharpe ratio (assuming risk-free rate of 0)
+        sharpe_ratio = expectancy / np.std(pnl_r_values) if np.std(pnl_r_values) > 0 else 0.0
+        
+        # Additional metrics
+        total_return = sum(pnl_r_values)
+        best_trade = max(pnl_r_values) if pnl_r_values else 0.0
+        worst_trade = min(pnl_r_values) if pnl_r_values else 0.0
+        
+        # Duration analysis
+        durations = [t.get('duration_bars', 1) for t in trades]
+        avg_trade_duration = np.mean(durations) if durations else 0.0
+        
+        # Estimate trades per day (rough calculation)
+        trading_days = len(set(t['entry_time'].date() for t in trades))
+        trades_per_day = total_trades / trading_days if trading_days > 0 else 0.0
+        
+        return BacktestResult(
+            total_trades=total_trades,
+            winning_trades=winning_trades,
+            losing_trades=losing_trades,
+            win_rate=win_rate,
+            avg_winner=avg_winner,
+            avg_loser=avg_loser,
+            profit_factor=profit_factor,
+            expectancy=expectancy,
+            max_drawdown=max_drawdown,
+            sharpe_ratio=sharpe_ratio,
+            total_return=total_return,
+            best_trade=best_trade,
+            worst_trade=worst_trade,
+            avg_trade_duration=avg_trade_duration,
+            trades_per_day=trades_per_day
+        )
+
+# ===============================
+# COMPREHENSIVE ANALYTICS DASHBOARD
+# ===============================
+
+def render_projection_analysis_panel(projection_df: pd.DataFrame, actual_data: pd.DataFrame = None,
+                                    anchor_info: Dict[str, Any] = None) -> None:
+    """Render projection analysis with quality metrics"""
+    
+    render_analytics_card(
+        "Line Projection Analysis",
+        "Precision-timed projections for intraday trading",
+        "Projection"
+    )
+    
+    if projection_df.empty:
+        st.warning("No projection data available")
+        return
+    
+    # Basic projection info
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        render_metric_card(
+            "Projection Points",
+            len(projection_df),
+            "30-min intervals"
+        )
+    
+    with col2:
+        price_range = projection_df['Price'].max() - projection_df['Price'].min()
+        render_metric_card(
+            "Price Range",
+            price_range,
+            "projected movement",
+            metric_type="currency"
+        )
+    
+    with col3:
+        if anchor_info:
+            anchor_time = anchor_info.get('timestamp', 'Unknown')
+            render_metric_card(
+                "Anchor Time",
+                format_ct_time(anchor_time, False) if isinstance(anchor_time, datetime) else str(anchor_time),
+                "reference point"
+            )
+    
+    # Projection table
+    st.subheader("Projection Schedule")
+    display_df = projection_df[['Time (CT)', 'Price', 'Blocks']].copy()
+    display_df['Price'] = display_df['Price'].round(2)
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    
+    # Quality analysis if actual data available
+    if actual_data is not None and not actual_data.empty:
+        st.subheader("Projection Quality Analysis")
+        
+        projection_engine = ProfessionalProjectionEngine()
+        quality_metrics = projection_engine.calculate_projection_quality(projection_df, actual_data)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            render_metric_card(
+                "Accuracy Score",
+                quality_metrics['accuracy_score'],
+                "0-1 scale",
+                confidence=quality_metrics['accuracy_score']
+            )
+        
+        with col2:
+            render_metric_card(
+                "Avg Deviation",
+                quality_metrics['avg_deviation'],
+                "price points",
+                metric_type="currency"
+            )
+        
+        with col3:
+            render_metric_card(
+                "Correlation",
+                quality_metrics['correlation'],
+                "vs actual",
+                confidence=abs(quality_metrics['correlation'])
+            )
+        
+        with col4:
+            render_metric_card(
+                "Coverage",
+                quality_metrics['coverage'],
+                "data matched",
+                metric_type="percentage"
+            )
+    
+    # Download option
+    csv_data = projection_df.to_csv(index=False).encode()
+    st.download_button(
+        "Download Projection CSV",
+        csv_data,
+        "line_projection.csv",
+        "text/csv",
+        use_container_width=True
+    )
+
+def render_backtest_results_panel(backtest_result: BacktestResult) -> None:
+    """Render comprehensive backtesting results"""
+    
+    render_analytics_card(
+        "Backtesting Results",
+        "Historical strategy performance analysis",
+        "Backtest"
+    )
+    
+    # Performance overview
+    st.subheader("Performance Overview")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        render_metric_card(
+            "Total Trades",
+            backtest_result.total_trades,
+            "executed"
+        )
+    
+    with col2:
+        trend = "positive" if backtest_result.win_rate > 0.5 else "negative"
+        render_metric_card(
+            "Win Rate",
+            backtest_result.win_rate,
+            "success rate",
+            metric_type="percentage",
+            trend=trend
+        )
+    
+    with col3:
+        trend = "positive" if backtest_result.expectancy > 0 else "negative"
+        render_metric_card(
+            "Expectancy",
+            backtest_result.expectancy,
+            "per trade",
+            metric_type="ratio",
+            trend=trend
+        )
+    
+    with col4:
+        trend = "positive" if backtest_result.profit_factor > 1 else "negative"
+        render_metric_card(
+            "Profit Factor",
+            backtest_result.profit_factor,
+            "risk-reward",
+            metric_type="ratio",
+            trend=trend
+        )
+    
+    # Detailed metrics
+    st.subheader("Detailed Statistics")
+    
+    metrics_data = backtest_result.to_display_dict()
+    metrics_df = pd.DataFrame([
+        {"Metric": k, "Value": v} for k, v in metrics_data.items()
+    ])
+    
+    st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+    
+    # Risk analysis
+    st.subheader("Risk Analysis")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        trend = "negative" if backtest_result.max_drawdown > 0.2 else "neutral"
+        render_metric_card(
+            "Max Drawdown",
+            backtest_result.max_drawdown,
+            "peak decline",
+            metric_type="percentage",
+            trend=trend
+        )
+    
+    with col2:
+        trend = "positive" if backtest_result.sharpe_ratio > 1 else "neutral"
+        render_metric_card(
+            "Sharpe Ratio",
+            backtest_result.sharpe_ratio,
+            "risk-adj return",
+            metric_type="ratio",
+            trend=trend
+        )
+    
+    with col3:
+        render_metric_card(
+            "Trades/Day",
+            backtest_result.trades_per_day,
+            "frequency",
+            metric_type="ratio"
+        )
+
+def render_market_overview_panel() -> None:
+    """Render current market state and timing information"""
+    
+    market_state = get_market_state()
+    current_time = datetime.now(CT)
+    
+    render_analytics_card(
+        "Market Overview",
+        f"Current status as of {current_time.strftime('%Y-%m-%d %H:%M CT')}",
+        "Live"
+    )
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        status = "Open" if market_state['is_market_open'] else "Closed"
+        trend = "positive" if market_state['is_market_open'] else "neutral"
+        render_metric_card(
+            "Market Status",
+            status,
+            market_state['current_session'],
+            trend=trend
+        )
+    
+    with col2:
+        if market_state['is_market_open']:
+            time_metric = market_state['time_to_close']
+            label = "Hours to Close"
+        else:
+            time_metric = market_state['time_to_open']
+            label = "Hours to Open"
+        
+        render_metric_card(
+            label,
+            f"{time_metric:.1f}",
+            "CT timezone"
+        )
+    
+    with col3:
+        weekend_status = "Yes" if market_state['is_weekend'] else "No"
+        trend = "neutral" if market_state['is_weekend'] else "positive"
+        render_metric_card(
+            "Weekend",
+            weekend_status,
+            "trading day",
+            trend=trend
+        )
+
+def render_system_performance_panel() -> None:
+    """Render system performance and cache statistics"""
+    
+    cache_stats = cache_manager.get_cache_stats()
+    
+    render_analytics_card(
+        "System Performance",
+        "Data management and caching statistics",
+        "System"
+    )
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        render_metric_card(
+            "Cache Entries",
+            cache_stats['total_entries'],
+            "stored datasets"
+        )
+    
+    with col2:
+        render_metric_card(
+            "Data Points",
+            cache_stats['total_data_points'],
+            "cached bars"
+        )
+    
+    with col3:
+        render_metric_card(
+            "Avg Quality",
+            cache_stats['average_quality'],
+            "data reliability",
+            metric_type="percentage",
+            confidence=cache_stats['average_quality']
+        )
+    
+    with col4:
+        render_metric_card(
+            "Cache Usage",
+            cache_stats['cache_utilization'],
+            "capacity used",
+            metric_type="percentage"
+        )
+    
+    # Cache management controls
+    st.subheader("Cache Management")
+    
+    col_clear1, col_clear2 = st.columns(2)
+    
+    with col_clear1:
+        if st.button("Clear All Cache", type="secondary", use_container_width=True):
+            cache_manager.clear_cache()
+            st.success("Cache cleared successfully")
+            st.rerun()
+    
+    with col_clear2:
+        if st.button("Refresh Data", type="primary", use_container_width=True):
+            # Clear cache and trigger data refresh
+            cache_manager.clear_cache()
+            st.success("Data refresh initiated")
+            st.rerun()
+
+# This completes Part 3B: Projection Engine & Analytics Dashboard
+
