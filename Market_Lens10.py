@@ -1,23 +1,28 @@
 # app.py
-# MarketLens Pro v5 by Max Pointe Consulting
-# Streamlit single-file app (no Plotly). Run:
+# MarketLens Pro v5 — SPX (tables only, no charts)
+# Run:
 #   pip install -r requirements.txt
 #   streamlit run app.py
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
 from datetime import datetime, timedelta, time as dtime, date
 import pytz
 
+# --- optional safe import for yfinance ---
+try:
+    import yfinance as yf
+    YF_AVAILABLE = True
+except Exception:
+    YF_AVAILABLE = False
+    yf = None
 
-APP_NAME = "MarketLens Pro v5 by Max Pointe Consulting"
+APP_NAME = "MarketLens Pro v5 — SPX by Max Pointe Consulting"
 
 # ===============================
 # THEME / COSMIC BACKGROUND (Dark + Light)
 # ===============================
-
 def theme_css(mode: str):
     dark = {
         "bg": "#0a0f1c",
@@ -36,7 +41,7 @@ def theme_css(mode: str):
     }
     light = {
         "bg": "#f6f9ff",
-        "panel": "rgba(255,255,255,0.8)",
+        "panel": "rgba(255,255,255,0.86)",
         "panelSolid": "#ffffff",
         "text": "#0b1020",
         "muted": "#5d6474",
@@ -109,7 +114,6 @@ def inject_theme(mode: str):
 # ===============================
 # TIMEZONES / HELPERS
 # ===============================
-
 CT = pytz.timezone("America/Chicago")
 ET = pytz.timezone("America/New_York")
 UTC = pytz.UTC
@@ -120,227 +124,318 @@ def to_ct(ts):
     return ts.astimezone(CT)
 
 def dt_range_ct(start_ct, end_ct, freq="30min"):
-    idx = pd.date_range(start=start_ct, end=end_ct, freq=freq, tz=CT)
-    return idx
+    return pd.date_range(start=start_ct, end=end_ct, freq=freq, tz=CT)
 
-def rth_slots_ct(start="08:30", end="14:30"):
-    start_dt = datetime.combine(datetime.now(CT).date(), datetime.strptime(start, "%H:%M").time()).replace(tzinfo=CT)
-    end_dt   = datetime.combine(datetime.now(CT).date(), datetime.strptime(end, "%H:%M").time()).replace(tzinfo=CT)
+def rth_times_list():
+    # fixed RTH times for table alignment (HH:MM strings)
+    start_dt = CT.localize(datetime.combine(datetime.now(CT).date(), dtime(8,30)))
+    end_dt   = CT.localize(datetime.combine(datetime.now(CT).date(), dtime(14,30)))
     rng = dt_range_ct(start_dt, end_dt, "30min")
-    return [t.astimezone(CT).strftime("%H:%M") for t in rng]
+    return [t.strftime("%H:%M") for t in rng]
 
 # ===============================
 # SLOPES (per 30-min block)
 # ===============================
-SLOPES = {
-    "SPX": {"Skyline": +0.268, "Baseline": -0.235},
-    "AAPL": 0.0155, "MSFT": 0.0541, "NVDA": 0.0086, "AMZN": 0.0139, "GOOGL": 0.0122, "TSLA": 0.0285, "META": 0.0674
-}
+SPX_SLOPE_SKY = +0.268   # Skyline
+SPX_SLOPE_BASE = -0.235  # Baseline
+
+# ===============================
+# Robust yfinance normalizer
+# ===============================
+def normalize_ohlcv(df: pd.DataFrame, symbol: str | None = None) -> pd.DataFrame:
+    """
+    Make a yfinance DataFrame predictable:
+    - If MultiIndex columns, slice by symbol when possible or flatten.
+    - Drop duplicate columns.
+    - Ensure standard title-cased column names.
+    """
+    if df is None or df.empty:
+        return df
+
+    if isinstance(df.columns, pd.MultiIndex):
+        if symbol is not None:
+            try:
+                df = df.xs(symbol, axis=1, level=-1)
+            except Exception:
+                df.columns = df.columns.get_level_values(0)
+        else:
+            df.columns = df.columns.get_level_values(0)
+
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
+
+    # Standardize title-case names
+    rename_map = {c: str(c).strip().title() for c in df.columns}
+    df = df.rename(columns=rename_map)
+    return df
 
 # ===============================
 # DATA FETCHING (yfinance) + CACHING
 # ===============================
-
 @st.cache_data(ttl=60)
 def fetch_live(symbol: str, start_utc: datetime, end_utc: datetime, interval="30m"):
+    if not YF_AVAILABLE:
+        return pd.DataFrame()
     df = yf.download(symbol, start=start_utc, end=end_utc, interval=interval, auto_adjust=False, progress=False)
     if not df.empty:
         if df.index.tz is None:
             df.index = df.index.tz_localize(UTC)
+        df = normalize_ohlcv(df, symbol)
     return df
 
 @st.cache_data(ttl=300)
 def fetch_hist(symbol: str, period="5d", interval="30m"):
+    if not YF_AVAILABLE:
+        return pd.DataFrame()
     df = yf.download(symbol, period=period, interval=interval, auto_adjust=False, progress=False)
     if not df.empty:
         if df.index.tz is None:
             df.index = df.index.tz_localize(UTC)
+        df = normalize_ohlcv(df, symbol)
     return df
 
 def price_range_ok(df: pd.DataFrame) -> bool:
     if df.empty: return False
+    if "Close" not in df.columns: return False
     lo, hi = float(df["Close"].min()), float(df["Close"].max())
-    return (lo > 0) and (hi/lo < 5.0)  # crude sanity
+    return (lo > 0) and (hi/lo < 10.0)
 
 # ===============================
-# ANCHOR DETECTION
+# ANCHOR DETECTION (ES → SPX)
 # ===============================
-
-def detect_spx_anchors_from_es(previous_day: date):
-    # Window: 5:00 PM - 7:30 PM CT on previous trading day
-    start_ct = CT.localize(datetime.combine(previous_day, dtime(17,0)))
-    end_ct   = CT.localize(datetime.combine(previous_day, dtime(19,30)))
+def detect_spx_anchors_from_es(prev_day_ct: date):
+    """
+    ES Asian session window: 17:00–19:30 CT (previous day)
+    Skyline: highest CLOSE (tie-break by highest VOLUME)
+    Baseline: lowest CLOSE (tie-break by highest VOLUME)
+    Dynamic ES→SPX offset suggestion: (prev RTH close SPX - prev RTH close ES)
+    """
+    start_ct = CT.localize(datetime.combine(prev_day_ct, dtime(17,0)))
+    end_ct   = CT.localize(datetime.combine(prev_day_ct, dtime(19,30)))
     start_utc, end_utc = start_ct.astimezone(UTC), end_ct.astimezone(UTC)
 
     es = fetch_live("ES=F", start_utc, end_utc)  # 30m bars
     if es.empty or not price_range_ok(es):
-        return None, None, None
+        return None, None, None, es
 
     es_ct = es.copy()
     es_ct.index = es_ct.index.tz_convert(CT)
     es_ct = es_ct.between_time("17:00","20:00")
-    if es_ct.empty:
-        return None, None, None
 
-    # Skyline: highest CLOSE, tie-breaker highest VOLUME
-    skyline_idx = es_ct.sort_values(["Close","Volume"], ascending=[False, False]).index[0]
-    skyline_price_es = float(es_ct.loc[skyline_idx, "Close"])
-    skyline_time_ct = skyline_idx
+    required = {"Close"}
+    if not required.issubset(set(es_ct.columns)) or es_ct.empty:
+        return None, None, None, es_ct
 
-    # Baseline: lowest CLOSE, tie-breaker highest VOLUME
-    baseline_idx = es_ct.sort_values(["Close","Volume"], ascending=[True, False]).index[0]
-    baseline_price_es = float(es_ct.loc[baseline_idx, "Close"])
-    baseline_time_ct = baseline_idx
+    have_volume = "Volume" in es_ct.columns
+    if have_volume:
+        skyline_idx = es_ct.sort_values(by=["Close","Volume"], ascending=[False, False]).index[0]
+        baseline_idx = es_ct.sort_values(by=["Close","Volume"], ascending=[True,  False]).index[0]
+    else:
+        skyline_idx = es_ct["Close"].idxmax()
+        baseline_idx = es_ct["Close"].idxmin()
 
-    # Dynamic ES→SPX offset suggestion: (prev RTH close SPX - prev RTH close ES)
-    rth_prev_start = CT.localize(datetime.combine(previous_day, dtime(14,30)))
-    rth_prev_end   = CT.localize(datetime.combine(previous_day, dtime(15,30)))
+    sky_es_price = float(es_ct.loc[skyline_idx, "Close"])
+    base_es_price = float(es_ct.loc[baseline_idx, "Close"])
+    sky_time_ct = skyline_idx
+    base_time_ct = baseline_idx
+
+    # ES→SPX offset suggestion using previous RTH (14:30–15:30 CT) closes
+    rth_prev_start = CT.localize(datetime.combine(prev_day_ct, dtime(14,30)))
+    rth_prev_end   = CT.localize(datetime.combine(prev_day_ct, dtime(15,30)))
     spx_prev = fetch_live("^GSPC", rth_prev_start.astimezone(UTC), rth_prev_end.astimezone(UTC))
     es_prev  = fetch_live("ES=F",  rth_prev_start.astimezone(UTC), rth_prev_end.astimezone(UTC))
     offset = None
-    if not spx_prev.empty and not es_prev.empty:
+    if not spx_prev.empty and not es_prev.empty and "Close" in spx_prev.columns and "Close" in es_prev.columns:
         spx_last = float(spx_prev["Close"].iloc[-1])
         es_last  = float(es_prev["Close"].iloc[-1])
         offset = spx_last - es_last
 
-    return (skyline_price_es, skyline_time_ct), (baseline_price_es, baseline_time_ct), offset
-
-def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date):
-    # Fetch two full sessions in ET: 09:30-16:00
-    start_et = ET.localize(datetime.combine(mon_date, dtime(9,30)))
-    end_et   = ET.localize(datetime.combine(tue_date, dtime(16,0)))
-    df = fetch_live(symbol, start_et.astimezone(UTC), end_et.astimezone(UTC))
-    if df.empty or not price_range_ok(df):
-        return None, None, df
-    df_et = df.copy()
-    df_et.index = df_et.index.tz_convert(ET)
-    df_et = df_et.between_time("09:30","16:00")
-    if df_et.empty:
-        return None, None, df_et
-    # CLOSE-only anchors, volume tie-breakers
-    skyline_idx = df_et.sort_values(["Close","Volume"], ascending=[False, False]).index[0]
-    baseline_idx = df_et.sort_values(["Close","Volume"], ascending=[True, False]).index[0]
-    skyline = (float(df_et.loc[skyline_idx, "Close"]), skyline_idx)
-    baseline = (float(df_et.loc[baseline_idx, "Close"]), baseline_idx)
-    return skyline, baseline, df_et
+    return (sky_es_price, sky_time_ct), (base_es_price, base_time_ct), offset, es_ct
 
 # ===============================
 # PROJECTION + SIGNALS
 # ===============================
-
-def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, rth_times_ct):
-    # Align anchor time to nearest 30m grid (down)
+def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, rth_times: list[str], proj_day_ct: date):
+    """
+    anchor_time_ct: timezone-aware CT datetime (can be previous day 17:00–19:30)
+    rth_times: list of 'HH:MM' strings for RTH (08:30..14:30)
+    proj_day_ct: date of the RTH session we’re projecting into (usually next day)
+    """
     anchor_time_ct = anchor_time_ct.astimezone(CT)
     minute = 0 if anchor_time_ct.minute < 30 else 30
     anchor_aligned = anchor_time_ct.replace(minute=minute, second=0, microsecond=0)
 
     def blocks_to(tstr):
         hh, mm = map(int, tstr.split(":"))
-        # Use the anchor's date to create a comparable slot timestamp
-        t_ct = anchor_aligned.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        delta = int(round(((t_ct - anchor_aligned).total_seconds()) / 1800.0))
+        slot_dt = CT.localize(datetime.combine(proj_day_ct, dtime(hh, mm)))
+        delta = int(round(((slot_dt - anchor_aligned).total_seconds()) / 1800.0))
         return delta
 
     prices = []
-    for t in rth_times_ct:
+    for t in rth_times:
         b = blocks_to(t)
         prices.append(round(anchor_price + slope_per_block * b, 4))
-    return pd.DataFrame({"Time": rth_times_ct, "Price": prices})
+    return pd.DataFrame({"Time": rth_times, "Price": prices})
 
-def detect_signals(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, mode="BUY"):
-    if rth_ohlc_ct.empty: 
+def detect_signals_from_rules(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, mode: str, tol: float = 0.0):
+    """
+    Rules (30-min candles):
+    BUY: bearish candle touches line from above & closes ABOVE the line (entry on close)
+         (o > c, low - tol <= line <= high + tol, o > line, c > line)
+    SELL: bullish candle touches line from below & closes BELOW the line (entry on close)
+         (c > o, low - tol <= line <= high + tol, o < line, c < line)
+    """
+    if rth_ohlc_ct.empty or "Close" not in rth_ohlc_ct.columns:
         return pd.DataFrame([])
-    idx_times = [ts.astimezone(CT).strftime("%H:%M") for ts in rth_ohlc_ct.index]
+    idx_times = [ts.tz_convert(CT).strftime("%H:%M") for ts in rth_ohlc_ct.index]
     line_map = dict(zip(line_df["Time"], line_df["Price"]))
     rows = []
     for i, ts in enumerate(rth_ohlc_ct.index):
         tstr = idx_times[i]
-        if tstr not in line_map: 
+        if tstr not in line_map:
             continue
-        line = line_map[tstr]
-        o,h,l,c = (float(rth_ohlc_ct.iloc[i][k]) for k in ["Open","High","Low","Close"])
+        line = float(line_map[tstr])
+        row = rth_ohlc_ct.iloc[i]
+        o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
+        touched = (l - tol <= line <= h + tol)
         is_bull = c > o
         is_bear = c < o
-        touched = (l <= line <= h)
-        # BUY: bearish candle touching from above + close ABOVE line (entry on close)
-        if mode=="BUY" and touched and is_bear and (c > line) and (o > line):
-            rows.append({"Time": tstr, "Line": round(line,4), "Close": round(c,4), "Type": "BUY", "Note": "Bearish, touched from above, closed above"})
-        # SELL: bullish candle touching from below + close BELOW line (entry on close)
-        if mode=="SELL" and touched and is_bull and (c < line) and (o < line):
-            rows.append({"Time": tstr, "Line": round(line,4), "Close": round(c,4), "Type": "SELL", "Note": "Bullish, touched from below, closed below"})
+        if mode == "BUY" and touched and is_bear and (o > line) and (c > line):
+            rows.append({"Time": tstr, "Line": round(line, 4), "Entry": round(c, 4), "Type": "BUY"})
+        if mode == "SELL" and touched and is_bull and (o < line) and (c < line):
+            rows.append({"Time": tstr, "Line": round(line, 4), "Entry": round(c, 4), "Type": "SELL"})
     return pd.DataFrame(rows)
 
-def ema(series: pd.Series, span: int):
-    return series.ewm(span=span, adjust=False).mean()
+def compute_exits(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, signals_df: pd.DataFrame):
+    """
+    Exit heuristic aligned with anchor-bounce concept:
+    - For BUY: exit at the first future candle that CLOSES back BELOW the line.
+    - For SELL: exit at the first future candle that CLOSES back ABOVE the line.
+    - If no exit found, exit at 14:30 close.
+    Returns signals with ExitTime, Exit, PnL (points).
+    """
+    if signals_df.empty:
+        return signals_df
 
-def ema_crossovers(rth_close_ct: pd.Series):
-    e8 = ema(rth_close_ct, 8)
-    e21 = ema(rth_close_ct, 21)
-    diff = e8 - e21
-    sign = np.sign(diff)
-    cross_idx = np.where(np.diff(sign) != 0)[0] + 1
-    rows = []
-    for i in cross_idx:
-        rows.append({
-            "Time": rth_close_ct.index[i].astimezone(CT).strftime("%Y-%m-%d %H:%M"),
-            "EMA8": round(float(e8.iloc[i]),4),
-            "EMA21": round(float(e21.iloc[i]),4),
-            "Direction": "Bullish ↑" if diff.iloc[i] > 0 else "Bearish ↓"
-        })
-    df = pd.DataFrame(rows)
-    return df, e8, e21
+    idx_times = [ts.tz_convert(CT).strftime("%H:%M") for ts in rth_ohlc_ct.index]
+    time_to_idx = {t: i for i, t in enumerate(idx_times)}
+    line_map = dict(zip(line_df["Time"], line_df["Price"]))
+
+    out_rows = []
+    for _, sig in signals_df.iterrows():
+        tstr = sig["Time"]; entry = float(sig["Entry"]); typ = sig["Type"]
+        start_i = time_to_idx.get(tstr, None)
+        if start_i is None:
+            continue
+        exit_price = None
+        exit_time = idx_times[-1]
+        # iterate forward
+        for j in range(start_i + 1, len(idx_times)):
+            tj = idx_times[j]
+            if tj not in line_map:
+                continue
+            line = float(line_map[tj])
+            close = float(rth_ohlc_ct.iloc[j]["Close"])
+            if typ == "BUY" and close < line:
+                exit_price = close; exit_time = tj; break
+            if typ == "SELL" and close > line:
+                exit_price = close; exit_time = tj; break
+        if exit_price is None:
+            # use final close
+            exit_price = float(rth_ohlc_ct.iloc[-1]["Close"])
+        pnl = round(exit_price - entry, 4) if typ == "BUY" else round(entry - exit_price, 4)
+        out = dict(sig)
+        out.update({"ExitTime": exit_time, "Exit": round(exit_price, 4), "PnL": pnl})
+        out_rows.append(out)
+    return pd.DataFrame(out_rows)
 
 # ===============================
-# CONTRACT PROJECTION TOOL
+# CONTRACT PROJECTION (under SPX)
 # ===============================
-def contract_projection_tool():
-    st.markdown("### Contract Projection Tool")
-    st.caption("Enter two contract points (time + price). Times can range from **8:00 PM (prev day)** to **10:00 AM (current day)**. Forecasts output for **08:30–14:30 CT**.")
+def contract_projection_under_spx(proj_day_ct: date):
+    st.markdown("#### Contract Projection (SPX) — two-point slope")
+    st.caption("Times allowed: **8:00 PM (previous day)** → **10:00 AM (current day)**. Output window: **08:30–14:30 CT**.")
+
     col1, col2 = st.columns(2)
     with col1:
-        t1 = st.time_input("Point 1 Time (CT)", value=dtime(20,0), step=1800)
-        p1 = st.number_input("Point 1 Price", value=10.0, step=0.1)
+        t1 = st.time_input("Point 1 Time (CT)", value=dtime(20,0), step=1800, key="cp_t1")
+        p1 = st.number_input("Point 1 Price", value=10.0, step=0.1, key="cp_p1")
     with col2:
-        t2 = st.time_input("Point 2 Time (CT)", value=dtime(3,30), step=1800)
-        p2 = st.number_input("Point 2 Price", value=12.0, step=0.1)
+        t2 = st.time_input("Point 2 Time (CT)", value=dtime(3,30), step=1800, key="cp_t2")
+        p2 = st.number_input("Point 2 Price", value=12.0, step=0.1, key="cp_p2")
 
-    rth_times = rth_slots_ct("08:30","14:30")
-    today_ct = datetime.now(CT).date()
+    today_ct = proj_day_ct
     prev_ct = today_ct - timedelta(days=1)
 
     def to_dt(t):
-        return CT.localize(datetime.combine(prev_ct if t.hour>=20 else today_ct, t))
-
-    dt1 = to_dt(t1)
-    dt2 = to_dt(t2)
+        return CT.localize(datetime.combine(prev_ct if t.hour >= 20 else today_ct, t))
+    dt1 = to_dt(t1); dt2 = to_dt(t2)
 
     def blocks_between_dt(a, b):
         return int(round(((b - a).total_seconds())/1800.0))
 
     blocks = abs(blocks_between_dt(dt1, dt2))
-    slope = 0.0 if blocks==0 else (p2 - p1)/blocks
+    slope = 0.0 if blocks == 0 else (p2 - p1) / blocks
+    st.info(f"Slope per 30-min block: **{slope:.4f}**  •  Blocks between points: **{blocks}**")
 
-    st.info(f"Slope per 30-min block: **{slope:.4f}** (blocks between points: {blocks})")
-
-    proj_rows = []
-    for t in rth_times:
-        h,m = map(int, t.split(":"))
-        slot_dt = CT.localize(datetime.combine(today_ct, dtime(h,m)))
+    rth = [t.strftime("%H:%M") for t in dt_range_ct(CT.localize(datetime.combine(today_ct, dtime(8,30))),
+                                                    CT.localize(datetime.combine(today_ct, dtime(14,30))),
+                                                    "30min")]
+    rows = []
+    for t in rth:
+        hh, mm = map(int, t.split(":"))
+        slot_dt = CT.localize(datetime.combine(today_ct, dtime(hh, mm)))
         db = abs(blocks_between_dt(dt1, slot_dt))
         price = round(p1 + slope * db, 4)
-        proj_rows.append({"Time": t, "Price": price})
-    df = pd.DataFrame(proj_rows)
+        rows.append({"Time": t, "Price": price})
+    df = pd.DataFrame(rows)
     st.dataframe(df, use_container_width=True, hide_index=True)
-    st.download_button("Download Contract Projection CSV", df.to_csv(index=False).encode(), "contract_projection.csv", "text/csv", use_container_width=True)
+    st.download_button("Download Contract Projection CSV", df.to_csv(index=False).encode(),
+                       "spx_contract_projection.csv", "text/csv", use_container_width=True)
     return df
+
+# ===============================
+# QUALITY & FALLBACKS
+# ===============================
+def data_quality_summary(df: pd.DataFrame, window_label: str) -> str:
+    if df.empty:
+        return f"{window_label}: no data"
+    cols = [c for c in ["Open","High","Low","Close","Volume"] if c in df.columns]
+    n = len(df)
+    zvol = int((df["Volume"] == 0).sum()) if "Volume" in df.columns else 0
+    return f"{window_label}: {n} bars • columns={','.join(cols)} • zero-vol bars={zvol}"
+
+def upload_csv_ui(help_text: str) -> pd.DataFrame:
+    f = st.file_uploader(help_text, type=["csv"])
+    if not f:
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(f)
+        # try to parse a datetime index if present
+        for col in ["Datetime","Date","Time","Timestamp","datetime","date"]:
+            if col in df.columns:
+                try:
+                    df.index = pd.to_datetime(df[col])
+                    df.drop(columns=[col], inplace=True)
+                    break
+                except Exception:
+                    pass
+        # standardize columns
+        rename = {c: c.strip().title() for c in df.columns}
+        df.rename(columns=rename, inplace=True)
+        return df
+    except Exception as e:
+        st.error(f"Failed to parse CSV: {e}")
+        return pd.DataFrame()
 
 # ===============================
 # UI HELPERS
 # ===============================
 def card(title, sub=None, body_fn=None, badge=None):
     st.markdown('<div class="ml-card">', unsafe_allow_html=True)
-    head = f"<div class='ml-pill'>{badge}</div>" if badge else ""
-    st.markdown(f"{head}<h4 style='margin:6px 0 2px 0'>{title}</h4>", unsafe_allow_html=True)
+    if badge:
+        st.markdown(f"<div class='ml-pill'>{badge}</div>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='margin:6px 0 2px 0'>{title}</h4>", unsafe_allow_html=True)
     if sub: st.markdown(f"<div class='ml-sub'>{sub}</div>", unsafe_allow_html=True)
     if body_fn:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -354,161 +449,185 @@ def metric_grid(pairs):
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================
-# MAIN APP
+# MAIN (SPX ONLY)
 # ===============================
 def main():
     st.set_page_config(page_title=APP_NAME, page_icon="🛰️", layout="wide", initial_sidebar_state="expanded")
 
-    # Sidebar
     with st.sidebar:
         st.markdown("## ⚙️ Settings")
         mode = st.radio("Theme", ["Dark", "Light"], index=0)
         inject_theme(mode)
 
-        st.markdown("### 📈 Tickers")
-        st.caption("Use ^GSPC for SPX, ES=F for S&P futures, and standard Yahoo tickers for stocks.")
-        default_ticker = "^GSPC"
-        spx_ticker = st.text_input("SPX Index Symbol", value=default_ticker)
-        st.markdown("---")
-        st.markdown("### 🧮 Slopes (per 30-min block)")
-        spx_sky = st.number_input("SPX Skyline (+)", value=SLOPES["SPX"]["Skyline"], step=0.001, format="%.3f")
-        spx_base = st.number_input("SPX Baseline (−)", value=SLOPES["SPX"]["Baseline"], step=0.001, format="%.3f")
-        st.caption("Stocks use ± of the same magnitude (e.g., AAPL 0.0155 → Skyline +0.0155 / Baseline −0.0155).")
+        st.markdown("### 🧮 SPX Slopes (per 30m)")
+        spx_sky = st.number_input("Skyline (+)", value=SPX_SLOPE_SKY, step=0.001, format="%.3f")
+        spx_base = st.number_input("Baseline (−)", value=SPX_SLOPE_BASE, step=0.001, format="%.3f")
 
-        st.markdown("### ⏱️ RTH Window")
-        st.caption("Projection window is fixed at 8:30 AM – 2:30 PM CT (30-min blocks).")
+        st.markdown("### 🎯 Signal Sensitivity")
+        tol = st.number_input("Touch tolerance (points)", value=0.0, step=0.25,
+                              help="Allows a small wiggle room for 'touch'. 0 = strict line touch.")
 
-    st.markdown(f"## {APP_NAME}")
-    st.caption("Dark glassmorphism • Cosmic gradient • Professional, verifiable math-first pipeline")
+        st.markdown("### ⏱️ Windows")
+        st.caption("Anchors: previous day 17:00–19:30 CT (from ES). Projections & signals: chosen RTH day 08:30–14:30 CT.")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["SPX (Asian Session Anchors)", "Stocks (Mon/Tue Anchors)", "Signals & EMA", "Contract Tool"])
+    st.markdown(f"## SPX — Asian Session Anchors → RTH Projections (Tables Only)")
 
-    # ======== TAB 1: SPX ========
-    with tab1:
-        st.markdown("### SPX Asian Session Analysis (via ES=F)")
+    # Controls
+    c1, c2 = st.columns(2)
+    with c1:
         yesterday_ct = (datetime.now(CT) - timedelta(days=1)).date()
-        prev_day = st.date_input("Previous trading day (CT)", value=yesterday_ct)
-        sky, base, offset = detect_spx_anchors_from_es(prev_day)
+        prev_day = st.date_input("Previous trading day (CT) for Asian session", value=yesterday_ct)
+    with c2:
+        proj_day = st.date_input("Projection day (CT) for SPX RTH", value=datetime.now(CT).date())
 
-        def body():
-            if sky is None or base is None:
-                st.error("Could not detect anchors from ES=F in 17:00–19:30 CT window. Try another date.")
-                return
-            sky_price_es, sky_time = sky
-            base_price_es, base_time = base
-            st.write(f"**ES Skyline**: {sky_price_es} @ {sky_time.strftime('%Y-%m-%d %H:%M CT')}")
-            st.write(f"**ES Baseline**: {base_price_es} @ {base_time.strftime('%Y-%m-%d %H:%M CT')}")
-
-            suggested_offset = float(offset) if isinstance(offset,(int,float)) else 0.0
-            es_spx_offset = st.number_input("ES → SPX dynamic offset", value=suggested_offset, step=0.5, help="Suggested: SPX_prev_close - ES_prev_close. You can override.")
-            sky_spx = sky_price_es + es_spx_offset
-            base_spx = base_price_es + es_spx_offset
-
-            st.markdown("---")
-            st.markdown("#### Projected Lines (SPX RTH 08:30–14:30 CT)")
-            rth = rth_slots_ct("08:30","14:30")
-            df_sky = project_line(sky_spx, sky_time, spx_sky, rth)
-            df_base = project_line(base_spx, base_time, spx_base, rth)
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write("Skyline (+ slope)")
-                st.dataframe(df_sky, use_container_width=True, hide_index=True)
-            with c2:
-                st.write("Baseline (− slope)")
-                st.dataframe(df_base, use_container_width=True, hide_index=True)
-            st.download_button("Download SPX Skyline CSV", df_sky.to_csv(index=False).encode(), "spx_skyline.csv", "text/csv")
-            st.download_button("Download SPX Baseline CSV", df_base.to_csv(index=False).encode(), "spx_baseline.csv", "text/csv")
-
-        card("Anchors → Projection", sub="ES Asian session (17:00–19:30 CT) CLOSE-only anchors, converted to SPX, projected through RTH.", body_fn=body, badge="SPX")
-
-    # ======== TAB 2: STOCKS ========
-    with tab2:
-        st.markdown("### Individual Stock Anchor System (Mon/Tue)")
-        sym = st.text_input("Stock symbol", value="AAPL")
-        today = datetime.now(ET).date()
-        weekday = today.weekday()  # Mon=0
-        last_mon = today - timedelta(days=(weekday - 0) % 7 or 7)
-        last_tue = last_mon + timedelta(days=1)
-        c1, c2 = st.columns(2)
-        with c1:
-            mon_date = st.date_input("Monday (ET)", value=last_mon, key="mon")
-        with c2:
-            tue_date = st.date_input("Tuesday (ET)", value=last_tue, key="tue")
-
-        skyline, baseline, df_et = detect_stock_anchors_two_day(sym, mon_date, tue_date)
-
-        def body():
-            if skyline is None or baseline is None:
-                st.error("Could not detect anchors from Mon/Tue 09:30–16:00 ET data. Try different dates or symbol.")
-                return
-            sky_p, sky_t = skyline
-            base_p, base_t = baseline
-            st.write(f"**Skyline (max CLOSE)**: {sky_p} @ {sky_t.strftime('%Y-%m-%d %H:%M ET')}")
-            st.write(f"**Baseline (min CLOSE)**: {base_p} @ {base_t.strftime('%Y-%m-%d %H:%M ET')}")
-
-            slope_mag = SLOPES.get(sym.upper(), SLOPES.get(sym.capitalize(), 0.015))  # fallback
-            rth = rth_slots_ct("08:30","14:30")
-            df_sky = project_line(sky_p, sky_t.astimezone(CT), +slope_mag, rth)
-            df_base = project_line(base_p, base_t.astimezone(CT), -slope_mag, rth)
-
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write("Skyline (+ slope)")
-                st.dataframe(df_sky, use_container_width=True, hide_index=True)
-            with c2:
-                st.write("Baseline (− slope)")
-                st.dataframe(df_base, use_container_width=True, hide_index=True)
-            st.download_button(f"Download {sym} Skyline CSV", df_sky.to_csv(index=False).encode(), f"{sym}_skyline.csv", "text/csv")
-            st.download_button(f"Download {sym} Baseline CSV", df_base.to_csv(index=False).encode(), f"{sym}_baseline.csv", "text/csv")
-
-        card("Anchors → Projection", sub="Mon/Tue CLOSE-only anchors across both days (absolute extremes). Project to Wed/Thu RTH using stock slopes.", body_fn=body, badge=sym.upper())
-
-    # ======== TAB 3: SIGNALS & EMA ========
-    with tab3:
-        st.markdown("### Signal Detection (30m candles) + EMA(8/21)")
-        sym2 = st.text_input("Symbol for signals/EMA", value="^GSPC")
-        proj_day = st.date_input("Projection day (CT)", value=datetime.now(CT).date())
-        rth_start = CT.localize(datetime.combine(proj_day, dtime(8,30)))
-        rth_end   = CT.localize(datetime.combine(proj_day, dtime(14,30)))
-        df_rth = fetch_live(sym2, rth_start.astimezone(UTC), rth_end.astimezone(UTC))
-        df_rth_ct = df_rth.copy()
-        if not df_rth_ct.empty:
-            df_rth_ct.index = df_rth_ct.index.tz_convert(CT)
-            df_rth_ct = df_rth_ct.between_time("08:30","14:30")
-
-        st.markdown("#### Reference Line")
-        ref_price = st.number_input("Anchor price (SPX or stock)", value=5000.0, step=1.0)
-        ref_time = st.time_input("Anchor time (CT)", value=dtime(17,0), step=1800)
-        ref_slope = st.number_input("Slope per 30m (+ or −)", value=0.268, step=0.001, format="%.3f")
-        rth = rth_slots_ct("08:30","14:30")
-        ref_df = project_line(ref_price, CT.localize(datetime.combine(proj_day, ref_time)), ref_slope, rth)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.write("Reference Line Table")
-            st.dataframe(ref_df, use_container_width=True, hide_index=True)
-        with c2:
-            st.download_button("Download Reference Line CSV", ref_df.to_csv(index=False).encode(), "reference_line.csv", "text/csv")
-
-        if not df_rth_ct.empty:
-            st.markdown("#### Signals")
-            buys = detect_signals(df_rth_ct, ref_df, mode="BUY")
-            sells = detect_signals(df_rth_ct, ref_df, mode="SELL")
-            st.write("**Buy Signals**")
-            st.dataframe(buys, use_container_width=True, hide_index=True)
-            st.write("**Sell Signals**")
-            st.dataframe(sells, use_container_width=True, hide_index=True)
-
-            st.markdown("#### EMA(8/21) Crossovers")
-            ema_df, e8, e21 = ema_crossovers(df_rth_ct["Close"])
-            st.dataframe(ema_df, use_container_width=True, hide_index=True)
+    # ---------- Anchors card ----------
+    def anchors_body():
+        if YF_AVAILABLE:
+            sky, base, offset, es_ct = detect_spx_anchors_from_es(prev_day)
         else:
-            st.info("No 30m RTH data available for the selected day/symbol yet.")
+            st.warning("`yfinance` not installed. Upload ES=F 30m CSV for 17:00–19:30 CT window.")
+            es_ct = upload_csv_ui("Upload ES=F 30m CSV for previous day Asian window (17:00–19:30 CT)")
+            if not es_ct.empty:
+                es_ct.index = es_ct.index.tz_localize(UTC) if es_ct.index.tz is None else es_ct.index
+                es_ct.index = es_ct.index.tz_convert(CT)
+                es_ct = es_ct.between_time("17:00","20:00")
+            if es_ct.empty or "Close" not in es_ct.columns:
+                st.stop()
+            have_volume = "Volume" in es_ct.columns
+            if have_volume:
+                skyline_idx = es_ct.sort_values(by=["Close","Volume"], ascending=[False, False]).index[0]
+                baseline_idx = es_ct.sort_values(by=["Close","Volume"], ascending=[True,  False]).index[0]
+            else:
+                skyline_idx = es_ct["Close"].idxmax()
+                baseline_idx = es_ct["Close"].idxmin()
+            sky = (float(es_ct.loc[skyline_idx, "Close"]), skyline_idx)
+            base = (float(es_ct.loc[baseline_idx, "Close"]), baseline_idx)
+            offset = 0.0
 
-    # ======== TAB 4: CONTRACT TOOL ========
-    with tab4:
-        contract_projection_tool()
+        if sky is None or base is None:
+            st.error("Could not detect anchors from ES=F in 17:00–19:30 CT window. Try another date or upload CSV.")
+            st.stop()
 
-    st.markdown("<div style='opacity:.7; font-size:.85rem; margin-top:8px'>© 2025 MarketLens Pro • Built with Streamlit (no external JS/Plotly)</div>", unsafe_allow_html=True)
+        sky_es, sky_time = sky
+        base_es, base_time = base
+
+        st.markdown("**Detected ES Anchors (used to derive SPX):**")
+        metric_grid([
+            ("ES Skyline (Close)", f"{sky_es:.2f} @ {to_ct(sky_time).strftime('%Y-%m-%d %H:%M CT')}"),
+            ("ES Baseline (Close)", f"{base_es:.2f} @ {to_ct(base_time).strftime('%Y-%m-%d %H:%M CT')}"),
+        ])
+
+        suggested_offset = float(offset) if isinstance(offset,(int,float)) else 0.0
+        es_spx_offset = st.number_input("ES → SPX dynamic offset", value=suggested_offset, step=0.5,
+                                        help="Suggested: SPX_prev_close - ES_prev_close. Override as needed.")
+
+        # Convert to SPX anchors (this is what we project from)
+        sky_spx = sky_es + es_spx_offset
+        base_spx = base_es + es_spx_offset
+
+        st.markdown("**SPX Anchors (used for projection):**")
+        metric_grid([
+            ("SPX Skyline", f"{sky_spx:.2f} (from ES Skyline)"),
+            ("SPX Baseline", f"{base_spx:.2f} (from ES Baseline)"),
+        ])
+
+        # Project lines for SPX RTH
+        rth_times = [t.strftime("%H:%M") for t in dt_range_ct(CT.localize(datetime.combine(proj_day, dtime(8,30))),
+                                                             CT.localize(datetime.combine(proj_day, dtime(14,30))),
+                                                             "30min")]
+        df_sky = project_line(sky_spx, to_ct(sky_time), spx_sky, rth_times, proj_day)
+        df_base = project_line(base_spx, to_ct(base_time), spx_base, rth_times, proj_day)
+
+        cta1, cta2 = st.columns(2)
+        with cta1:
+            st.write("**SPX Skyline Projection (08:30–14:30 CT)**")
+            st.dataframe(df_sky, use_container_width=True, hide_index=True)
+            st.download_button("Download Skyline CSV", df_sky.to_csv(index=False).encode(),
+                               "spx_skyline_projection.csv", "text/csv", use_container_width=True)
+        with cta2:
+            st.write("**SPX Baseline Projection (08:30–14:30 CT)**")
+            st.dataframe(df_base, use_container_width=True, hide_index=True)
+            st.download_button("Download Baseline CSV", df_base.to_csv(index=False).encode(),
+                               "spx_baseline_projection.csv", "text/csv", use_container_width=True)
+
+        # ---------- Entries & Exits ----------
+        st.markdown("---")
+        st.markdown("### Entries & Exits (30-min rules) — SPX RTH")
+
+        # Get SPX RTH OHLC for projection day (or upload)
+        if YF_AVAILABLE:
+            rth_start = CT.localize(datetime.combine(proj_day, dtime(8,30)))
+            rth_end   = CT.localize(datetime.combine(proj_day, dtime(14,30)))
+            spx_rth = fetch_live("^GSPC", rth_start.astimezone(UTC), rth_end.astimezone(UTC))
+        else:
+            spx_rth = pd.DataFrame()
+
+        if spx_rth.empty:
+            st.warning("Live SPX data not available. Upload SPX 30m OHLC CSV for the projection day (08:30–14:30 CT).")
+            spx_rth = upload_csv_ui("Upload SPX 30m OHLC CSV (08:30–14:30 CT)")
+            if not spx_rth.empty:
+                # assume the uploaded times are the RTH window
+                spx_rth.index = spx_rth.index.tz_localize(UTC) if spx_rth.index.tz is None else spx_rth.index
+                spx_rth.index = spx_rth.index.tz_convert(CT)
+        else:
+            spx_rth = spx_rth.copy()
+            spx_rth.index = spx_rth.index.tz_convert(CT)
+            spx_rth = spx_rth.between_time("08:30","14:30")
+
+        # quality badge
+        st.caption(data_quality_summary(spx_rth, "SPX RTH"))
+
+        if not spx_rth.empty and "Close" in spx_rth.columns:
+            # Scan Skyline and Baseline separately, then merge
+            buy_sky = detect_signals_from_rules(spx_rth, df_sky, "BUY", tol)
+            sell_sky = detect_signals_from_rules(spx_rth, df_sky, "SELL", tol)
+            buy_sky["LineType"] = "Skyline"
+            sell_sky["LineType"] = "Skyline"
+
+            buy_base = detect_signals_from_rules(spx_rth, df_base, "BUY", tol)
+            sell_base = detect_signals_from_rules(spx_rth, df_base, "SELL", tol)
+            buy_base["LineType"] = "Baseline"
+            sell_base["LineType"] = "Baseline"
+
+            entries = pd.concat([buy_sky, sell_sky, buy_base, sell_base], ignore_index=True)
+            entries = entries.sort_values(by="Time", ascending=True)
+
+            st.write("**Entry Signals**")
+            st.dataframe(entries, use_container_width=True, hide_index=True)
+            st.download_button("Download Entry Signals CSV", entries.to_csv(index=False).encode(),
+                               "spx_entry_signals.csv", "text/csv", use_container_width=True)
+
+            # Compute exits & PnL (based on line cross-backs)
+            # We must compute exits against the same line each signal came from:
+            # split by LineType to apply correct line
+            exit_blocks = []
+            for line_type, group in entries.groupby("LineType"):
+                line_df = df_sky if line_type == "Skyline" else df_base
+                exit_blocks.append(compute_exits(spx_rth, line_df, group))
+            exits = pd.concat(exit_blocks, ignore_index=True) if exit_blocks else pd.DataFrame()
+
+            # Sort by entry time
+            if not exits.empty:
+                exits = exits.sort_values(by="Time", ascending=True)
+                st.write("**Suggested Exits & PnL (points)**")
+                st.dataframe(exits, use_container_width=True, hide_index=True)
+                st.download_button("Download Exits & PnL CSV", exits.to_csv(index=False).encode(),
+                                   "spx_exits_pnl.csv", "text/csv", use_container_width=True)
+        else:
+            st.info("Provide SPX RTH data to scan for entries/exits.")
+
+        st.markdown("---")
+        # ---------- Contract Projection (under SPX) ----------
+        contract_projection_under_spx(proj_day)
+
+    card(
+        "SPX: ES Asian Anchors → Projection → Entries/Exits",
+        sub="All calculations in 30-minute blocks. ES used for anchors; SPX displayed throughout.",
+        body_fn=anchors_body,
+        badge="SPX"
+    )
+
+    st.markdown("<div style='opacity:.7; font-size:.85rem; margin-top:8px'>© 2025 MarketLens Pro • Tables only • Built with Streamlit</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
