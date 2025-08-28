@@ -1,9 +1,6 @@
 # app.py
 # MarketLens Pro v5 — Analytics Edition (Streamlit-only, no Plotly)
 # Focus: actionable analytics for entries/exits on 30m bars (CLOSE-only), all times in CT.
-# Run:
-#   pip install -r requirements.txt
-#   streamlit run app.py
 
 import streamlit as st
 import pandas as pd
@@ -132,8 +129,19 @@ def rth_slots_ct_dt(proj_date: date, start="08:30", end="14:30") -> List[datetim
 # ===============================
 SLOPES = {
     "SPX": {"Skyline": +0.268, "Baseline": -0.235},
-    "AAPL": 0.0155, "MSFT": 0.0541, "NVDA": 0.0086, "AMZN": 0.0139, "GOOGL": 0.0122, "TSLA": 0.0285, "META": 0.0674
+    "AAPL": 0.0155, "MSFT": 0.0541, "NVDA": 0.0086, "AMZN": 0.0139, "GOOGL": 0.0122, "TSLA": 0.0285, "META": 0.0674, "NFLX": 0.0230
 }
+DEFAULT_STOCK_SLOPE = 0.0150  # fallback if unknown
+
+def get_slope_for_symbol(sym: str) -> float:
+    s = sym.upper()
+    if s in SLOPES:
+        return float(SLOPES[s])
+    # accept alternates like GOOG for GOOGL, BRK-B formatting, etc.
+    aliases = {"GOOG":"GOOGL", "BRK.B":"BRK-B", "GOOGL":"GOOGL", "META":"META"}
+    if s in aliases and aliases[s] in SLOPES:
+        return float(SLOPES[aliases[s]])
+    return DEFAULT_STOCK_SLOPE
 
 # ===============================
 # DATA NORMALIZATION / FETCH
@@ -181,7 +189,7 @@ def fetch_hist_period(symbol: str, period="60d", interval="30m") -> pd.DataFrame
     return _coerce_ohlcv(df)
 
 def price_range_ok(df: pd.DataFrame) -> bool:
-    if df.empty or "Close" not in df.columns: 
+    if df.empty or "Close" not in df.columns:
         return False
     lo, hi = float(df["Close"].min(skipna=True)), float(df["Close"].max(skipna=True))
     return (lo > 0) and (hi/lo < 5.0)
@@ -220,7 +228,7 @@ def pick_anchor_from_swings(df_sw: pd.DataFrame, kind: str) -> Optional[Tuple[fl
     return float(row["Close"]), row.name
 
 # ===============================
-# ANCHORS (SPX via ES=F) & (Stocks Mon/Tue)
+# ANCHOR DETECTION
 # ===============================
 
 def detect_spx_anchors_from_es(previous_day: date, k: int = 1):
@@ -319,7 +327,7 @@ def ema_series(series: pd.Series, span: int):
     return series.ewm(span=span, adjust=False).mean()
 
 # ===============================
-# ANALYTICS / BACKTEST
+# ANALYTICS / BACKTEST UTILS
 # ===============================
 
 def generate_line_for_day(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, day_ct: date) -> pd.DataFrame:
@@ -440,7 +448,7 @@ def main():
         st.markdown("## ⚙️ Display")
         mode = st.radio("Theme", ["Dark", "Light"], index=0, key="ui_theme")
         inject_theme(mode)
-        st.markdown("### 🧮 Slopes (per 30-min)")
+        st.markdown("### 🧮 SPX Slopes (per 30-min)")
         spx_sky  = st.number_input("SPX Skyline (+)", value=SLOPES["SPX"]["Skyline"], step=0.001, format="%.3f", key="sb_spx_sky")
         spx_base = st.number_input("SPX Baseline (−)", value=SLOPES["SPX"]["Baseline"], step=0.001, format="%.3f", key="sb_spx_base")
         st.caption("Stocks use ± magnitudes (e.g., AAPL 0.0155 → Skyline +0.0155 / Baseline −0.0155).")
@@ -491,7 +499,46 @@ def main():
     # ======== Stock Anchors (Mon/Tue) ========
     with tab_stk:
         def body():
-            sym = st.text_input("Stock Symbol", value="AAPL", key="stk_sym").upper()
+            # Quick picker + custom, with slope auto-fill and manual override
+            core = ["TSLA","NVDA","AAPL","MSFT","AMZN","GOOGL","META","NFLX"]
+            st.markdown("###### Choose Ticker")
+            c_cols = st.columns(len(core))
+            picked = st.session_state.get("stk_sym", "AAPL")
+            for i, tk in enumerate(core):
+                with c_cols[i]:
+                    if st.button(tk, key=f"stk_btn_{tk}", use_container_width=True):
+                        st.session_state["stk_sym"] = tk
+                        picked = tk
+
+            sym_mode = st.selectbox(
+                "Symbol Selection",
+                options=["Use buttons above","Custom…"],
+                index=0,
+                key="stk_sym_select",
+            )
+            if sym_mode == "Custom…":
+                sym = st.text_input("Enter custom symbol", value="" if picked in core else picked, key="stk_sym_custom").upper().strip()
+                if not sym:
+                    st.info("Enter a symbol (e.g., GOOGL, META, NFLX).")
+                    return
+                st.session_state["stk_sym"] = sym
+            else:
+                sym = picked
+
+            st.caption("Tip: Google = **GOOGL** or **GOOG**; Berkshire B = **BRK-B**; use Yahoo’s exact symbol.")
+
+            # Slope auto-fill + override
+            auto_slope = get_slope_for_symbol(sym)
+            slope_mag = st.number_input(
+                f"{sym} Slope magnitude (per 30m, ±)",
+                value=float(auto_slope),
+                step=0.0001,
+                format="%.4f",
+                key="stk_slope_mag"
+            )
+            st.caption("Used as +slope for Skyline and −slope for Baseline projections. Edit if your custom slope differs.")
+
+            # Dates (Mon/Tue for anchors)
             today_et = datetime.now(ET).date()
             weekday = today_et.weekday()
             last_mon = today_et - timedelta(days=(weekday - 0) % 7 or 7)
@@ -499,17 +546,29 @@ def main():
             c1, c2 = st.columns(2)
             with c1: mon_date = st.date_input("Monday (ET session)", value=last_mon, key="stk_mon")
             with c2: tue_date = st.date_input("Tuesday (ET session)", value=last_tue, key="stk_tue")
+
             k_stk = st.slider("Swing selectivity (bars each side)", 1, 3, 1, key="stk_k")
+
+            # Detect anchors
             sky, base = detect_stock_anchors_two_day(sym, mon_date, tue_date, k=k_stk)
             if (sky is None) or (base is None):
-                st.error("No valid CLOSE-only swings across Mon/Tue. Adjust dates or selectivity.")
+                st.error(f"No valid CLOSE-only swings across Mon/Tue for {sym}. Try different dates or reduce selectivity.")
                 return
-            sky_p, sky_t = sky; base_p, base_t = base
-            slope_mag = SLOPES.get(sym, SLOPES.get(sym.capitalize(), 0.015))
 
+            sky_p, sky_t = sky; base_p, base_t = base
+
+            # Anchor cards
             st.markdown("<div class='ml-row'>", unsafe_allow_html=True)
-            st.markdown(f"<div class='ml-card'><div class='ml-pill'>{sym} Skyline</div><div class='ml-sub'>Swing-high close</div><div style='height:6px'></div><div style='font-weight:800;font-size:1.3rem'>{sky_p:.2f}</div><div class='ml-sub'>@ {format_ct(sky_t)}</div></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='ml-card'><div class='ml-pill'>{sym} Baseline</div><div class='ml-sub'>Swing-low close</div><div style='height:6px'></div><div style='font-weight:800;font-size:1.3rem'>{base_p:.2f}</div><div class='ml-sub'>@ {format_ct(base_t)}</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='ml-card'><div class='ml-pill'>{sym} Skyline</div>"
+                f"<div class='ml-sub'>Swing-high close</div><div style='height:6px'></div>"
+                f"<div style='font-weight:800;font-size:1.3rem'>{sky_p:.2f}</div>"
+                f"<div class='ml-sub'>@ {format_ct(sky_t)}</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='ml-card'><div class='ml-pill'>{sym} Baseline</div>"
+                f"<div class='ml-sub'>Swing-low close</div><div style='height:6px'></div>"
+                f"<div style='font-weight:800;font-size:1.3rem'>{base_p:.2f}</div>"
+                f"<div class='ml-sub'>@ {format_ct(base_t)}</div></div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
             # Default projection day: first Wednesday after Tue
@@ -517,6 +576,7 @@ def main():
             if days_ahead == 0: days_ahead = 7
             first_wed = tue_date + timedelta(days=days_ahead)
             proj_day = st.date_input("Projection Day (CT)", value=first_wed, key=f"{sym}_proj")
+
             slots = rth_slots_ct_dt(proj_day, "08:30","14:30")
             df_sky = project_line(sky_p, sky_t, +slope_mag, slots)
             df_base = project_line(base_p, base_t, -slope_mag, slots)
@@ -530,7 +590,7 @@ def main():
                 st.write(f"{sym} Baseline (−{slope_mag:.4f}/blk)")
                 st.dataframe(df_base, use_container_width=True, hide_index=True)
                 st.download_button(f"Download {sym} Baseline CSV", df_base.to_csv(index=False).encode(), f"{sym}_baseline.csv", "text/csv", key=f"dl_{sym}_base")
-        card("Stock Anchors → Projection", "Mon/Tue CLOSE-only swings → stock-specific slopes → RTH projections.", body_fn=body, badge="Stocks")
+        card("Stock Anchors → Projection", "Mon/Tue CLOSE-only swings → stock-specific (or custom) slopes → RTH projections.", body_fn=body, badge="Stocks")
 
     # ======== Signals & EMA (single-day utility) ========
     with tab_sig:
@@ -622,7 +682,6 @@ def main():
 
             # Simulate per day
             days = sorted(list(set(hist.index.date)))
-            day_stats = []
             all_trades = []
             time_perf: Dict[str, list] = {}
 
@@ -630,15 +689,13 @@ def main():
                 df_day = hist[hist.index.date == d]
                 if df_day.empty: continue
                 line_df = generate_line_for_day(anchor_price, CT.localize(datetime.combine(d, anchor_time)), slope, d)
-                trades, stats = simulate_day(df_day, line_df, mode, atr, rr_target, atr_stop, vwap, use_vwap, e8, e21, use_ema)
+                trades, _stats = simulate_day(df_day, line_df, mode, atr, rr_target, atr_stop, vwap, use_vwap, e8, e21, use_ema)
                 if not trades.empty:
                     trades = trades.copy()
                     trades.insert(0, "Date", d.strftime("%Y-%m-%d"))
                     all_trades.append(trades)
                     for _, r in trades.iterrows():
                         time_perf.setdefault(r["Time (CT)"], []).append(r["Outcome (R)"])
-                stats["date"] = d.strftime("%Y-%m-%d")
-                day_stats.append(stats)
 
             if all_trades:
                 trade_log = pd.concat(all_trades, ignore_index=True)
@@ -665,6 +722,7 @@ def main():
                 st.write("**Time-of-Day Edge (historical)**")
                 st.dataframe(perf_df, use_container_width=True, hide_index=True)
 
+                # Confluence table for the most recent day
                 last_day = days[-1]
                 df_last = hist[hist.index.date == last_day]
                 line_last = generate_line_for_day(anchor_price, CT.localize(datetime.combine(last_day, anchor_time)), slope, last_day)
