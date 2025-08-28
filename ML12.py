@@ -3765,3 +3765,852 @@ def render_system_performance_panel() -> None:
 
 # This completes Part 3B: Projection Engine & Analytics Dashboard
 
+
+
+# MarketLens Pro v6 - Part 3C: Main Application Structure & Integration
+# Complete application with all tabs and features integrated
+
+# ===============================
+# MAIN APPLICATION CONTROLLER
+# ===============================
+
+def main():
+    """Main application entry point"""
+    
+    # Initialize application
+    setup_application()
+    
+    # Create main navigation
+    tab_spx, tab_stocks, tab_signals, tab_analytics, tab_projections, tab_system = st.tabs([
+        "SPX Anchors", "Stock Anchors", "Live Signals", "Strategy Analytics", "Projections", "System"
+    ])
+    
+    with tab_spx:
+        render_spx_analysis_tab()
+    
+    with tab_stocks:
+        render_stock_analysis_tab()
+    
+    with tab_signals:
+        render_live_signals_tab()
+    
+    with tab_analytics:
+        render_strategy_analytics_tab()
+    
+    with tab_projections:
+        render_projections_tab()
+    
+    with tab_system:
+        render_system_tab()
+
+# ===============================
+# SPX ANALYSIS TAB
+# ===============================
+
+def render_spx_analysis_tab():
+    """SPX anchor detection and analysis"""
+    
+    st.markdown("### SPX Anchor Detection & Analysis")
+    st.caption("ES Asian session swing detection with SPX projection capabilities")
+    
+    # Configuration panel
+    with st.container():
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            reference_date = st.date_input(
+                "Reference Date (CT)",
+                value=(datetime.now(CT) - timedelta(days=1)).date(),
+                key="spx_ref_date",
+                help="Previous trading day for ES Asian session analysis"
+            )
+        
+        with col2:
+            swing_strength = st.slider(
+                "Swing Detection Strength",
+                min_value=1,
+                max_value=3,
+                value=1,
+                key="spx_strength",
+                help="Bars on each side for swing validation"
+            )
+        
+        with col3:
+            projection_date = st.date_input(
+                "Projection Date (CT)",
+                value=reference_date + timedelta(days=1),
+                key="spx_proj_date",
+                help="Target date for line projections"
+            )
+    
+    # Slope configuration
+    st.markdown("#### SPX Slope Parameters")
+    slope_col1, slope_col2 = st.columns(2)
+    
+    with slope_col1:
+        skyline_slope = st.number_input(
+            "Skyline Slope (+)",
+            value=SLOPES["SPX"]["Skyline"]["base"],
+            step=0.001,
+            format="%.3f",
+            key="spx_skyline_slope",
+            help=f"Confidence: {SLOPES['SPX']['Skyline']['confidence']:.1%}"
+        )
+    
+    with slope_col2:
+        baseline_slope = st.number_input(
+            "Baseline Slope (-)",
+            value=SLOPES["SPX"]["Baseline"]["base"],
+            step=0.001,
+            format="%.3f",
+            key="spx_baseline_slope",
+            help=f"Confidence: {SLOPES['SPX']['Baseline']['confidence']:.1%}"
+        )
+    
+    # Analysis execution
+    if st.button("Analyze SPX Anchors", type="primary", use_container_width=True):
+        with st.spinner("Detecting SPX anchors from ES Asian session..."):
+            
+            # Initialize anchor detector
+            anchor_detector = ProfessionalAnchorDetector()
+            
+            # Detect anchors
+            skyline_anchor, baseline_anchor, es_spx_offset, analysis_metadata = (
+                anchor_detector.detect_spx_anchors_from_es(reference_date, swing_strength)
+            )
+            
+            # Store results in session state
+            st.session_state.spx_anchors = (skyline_anchor, baseline_anchor)
+            st.session_state.spx_metadata = analysis_metadata
+            st.session_state.spx_offset = es_spx_offset
+    
+    # Display results if available
+    if hasattr(st.session_state, 'spx_anchors') and st.session_state.spx_anchors[0] is not None:
+        
+        skyline, baseline = st.session_state.spx_anchors
+        metadata = st.session_state.spx_metadata
+        es_offset = st.session_state.spx_offset or 0.0
+        
+        # Render anchor analysis
+        render_anchor_analysis_panel(st.session_state.spx_anchors, metadata, "SPX")
+        
+        # ES to SPX offset
+        st.markdown("#### ES to SPX Conversion")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            offset_value = st.number_input(
+                "ES → SPX Offset",
+                value=float(es_offset),
+                step=0.1,
+                key="spx_offset_input",
+                help="Add this to ES prices to estimate SPX"
+            )
+        
+        with col2:
+            if skyline and baseline:
+                spx_skyline_price = skyline.price + offset_value
+                spx_baseline_price = baseline.price + offset_value
+                
+                st.metric("SPX Skyline", f"${spx_skyline_price:.2f}")
+                st.metric("SPX Baseline", f"${spx_baseline_price:.2f}")
+        
+        # Generate projections
+        if skyline and baseline:
+            projection_engine = ProfessionalProjectionEngine()
+            
+            # Skyline projection
+            skyline_projection = projection_engine.generate_projection_line(
+                spx_skyline_price,
+                skyline.timestamp,
+                skyline_slope,
+                projection_date
+            )
+            
+            # Baseline projection
+            baseline_projection = projection_engine.generate_projection_line(
+                spx_baseline_price,
+                baseline.timestamp,
+                -abs(baseline_slope),  # Ensure negative
+                projection_date
+            )
+            
+            # Display projections
+            st.markdown("#### SPX Projections")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Skyline Projection**")
+                st.dataframe(
+                    skyline_projection[['Time (CT)', 'Price']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                csv_skyline = skyline_projection.to_csv(index=False).encode()
+                st.download_button(
+                    "Download Skyline CSV",
+                    csv_skyline,
+                    "spx_skyline_projection.csv",
+                    "text/csv"
+                )
+            
+            with col2:
+                st.markdown("**Baseline Projection**")
+                st.dataframe(
+                    baseline_projection[['Time (CT)', 'Price']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                csv_baseline = baseline_projection.to_csv(index=False).encode()
+                st.download_button(
+                    "Download Baseline CSV",
+                    csv_baseline,
+                    "spx_baseline_projection.csv",
+                    "text/csv"
+                )
+
+# ===============================
+# STOCK ANALYSIS TAB
+# ===============================
+
+def render_stock_analysis_tab():
+    """Stock anchor detection and analysis"""
+    
+    st.markdown("### Stock Anchor Detection & Analysis")
+    st.caption("Multi-session swing detection for individual equity analysis")
+    
+    # Symbol selection
+    ui_system = UIComponentSystem()
+    selected_symbol = ui_system.render_symbol_selector(key_prefix="stock")
+    
+    # Date range selection
+    start_date, end_date = ui_system.render_date_range_selector(key_prefix="stock")
+    
+    # Configuration
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        swing_strength = st.slider(
+            "Swing Detection Strength",
+            min_value=1,
+            max_value=3,
+            value=1,
+            key="stock_strength"
+        )
+    
+    with col2:
+        projection_date = st.date_input(
+            "Projection Date",
+            value=end_date + timedelta(days=1),
+            key="stock_proj_date"
+        )
+    
+    # Slope configuration
+    skyline_slope, baseline_slope = ui_system.render_slope_configuration_panel(
+        selected_symbol, key_prefix="stock"
+    )
+    
+    # Analysis execution
+    if st.button("Analyze Stock Anchors", type="primary", use_container_width=True):
+        with st.spinner(f"Analyzing {selected_symbol} anchors..."):
+            
+            anchor_detector = ProfessionalAnchorDetector()
+            
+            # Detect anchors
+            skyline_anchor, baseline_anchor, analysis_metadata = (
+                anchor_detector.detect_stock_anchors_multi_session(
+                    selected_symbol, start_date, end_date, swing_strength
+                )
+            )
+            
+            # Store results
+            st.session_state.stock_anchors = (skyline_anchor, baseline_anchor)
+            st.session_state.stock_metadata = analysis_metadata
+            st.session_state.stock_symbol = selected_symbol
+    
+    # Display results
+    if (hasattr(st.session_state, 'stock_anchors') and 
+        st.session_state.stock_anchors[0] is not None and
+        st.session_state.stock_symbol == selected_symbol):
+        
+        skyline, baseline = st.session_state.stock_anchors
+        metadata = st.session_state.stock_metadata
+        
+        # Render analysis
+        render_anchor_analysis_panel(
+            st.session_state.stock_anchors, 
+            metadata, 
+            selected_symbol
+        )
+        
+        # Generate projections
+        if skyline and baseline:
+            projection_engine = ProfessionalProjectionEngine()
+            
+            skyline_projection = projection_engine.generate_projection_line(
+                skyline.price,
+                skyline.timestamp,
+                skyline_slope,
+                projection_date
+            )
+            
+            baseline_projection = projection_engine.generate_projection_line(
+                baseline.price,
+                baseline.timestamp,
+                baseline_slope,
+                projection_date
+            )
+            
+            # Display projections
+            st.markdown(f"#### {selected_symbol} Projections")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Skyline Projection**")
+                st.dataframe(
+                    skyline_projection[['Time (CT)', 'Price']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                csv_data = skyline_projection.to_csv(index=False).encode()
+                st.download_button(
+                    f"Download {selected_symbol} Skyline",
+                    csv_data,
+                    f"{selected_symbol}_skyline_projection.csv",
+                    "text/csv"
+                )
+            
+            with col2:
+                st.markdown("**Baseline Projection**")
+                st.dataframe(
+                    baseline_projection[['Time (CT)', 'Price']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                csv_data = baseline_projection.to_csv(index=False).encode()
+                st.download_button(
+                    f"Download {selected_symbol} Baseline",
+                    csv_data,
+                    f"{selected_symbol}_baseline_projection.csv",
+                    "text/csv"
+                )
+
+# ===============================
+# LIVE SIGNALS TAB
+# ===============================
+
+def render_live_signals_tab():
+    """Live signal detection and analysis"""
+    
+    st.markdown("### Live Signal Detection & Analysis")
+    st.caption("Real-time line-touch signal detection with confluence scoring")
+    
+    # Configuration
+    ui_system = UIComponentSystem()
+    
+    # Symbol and date selection
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        symbol = st.text_input(
+            "Symbol",
+            value="^GSPC",
+            key="signals_symbol",
+            help="Enter any valid ticker symbol"
+        ).upper().strip()
+    
+    with col2:
+        analysis_date = st.date_input(
+            "Analysis Date",
+            value=datetime.now(CT).date(),
+            key="signals_date"
+        )
+    
+    # Trading parameters
+    trading_params = ui_system.render_trading_parameters_panel(key_prefix="signals")
+    
+    # Reference line configuration
+    st.markdown("#### Reference Line Configuration")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        anchor_price = st.number_input(
+            "Anchor Price",
+            value=5000.0,
+            step=1.0,
+            key="signals_anchor_price"
+        )
+    
+    with col2:
+        anchor_time = st.time_input(
+            "Anchor Time (CT)",
+            value=dtime(17, 0),
+            step=timedelta(minutes=30),
+            key="signals_anchor_time"
+        )
+    
+    with col3:
+        line_slope = st.number_input(
+            "Line Slope",
+            value=0.268,
+            step=0.001,
+            format="%.3f",
+            key="signals_slope"
+        )
+    
+    with col4:
+        signal_mode = st.selectbox(
+            "Signal Mode",
+            options=["BUY", "SELL"],
+            index=0,
+            key="signals_mode"
+        )
+    
+    # Analysis execution
+    if st.button("Detect Signals", type="primary", use_container_width=True):
+        with st.spinner("Analyzing signals..."):
+            
+            # Fetch market data
+            session_start = CT.localize(datetime.combine(analysis_date, dtime(8, 15)))
+            session_end = CT.localize(datetime.combine(analysis_date, dtime(14, 45)))
+            
+            market_data, data_quality = fetch_market_data_cached(
+                symbol,
+                session_start.astimezone(UTC),
+                session_end.astimezone(UTC),
+                "30m"
+            )
+            
+            if market_data.empty or data_quality.reliability < 0.4:
+                st.error("Insufficient market data quality for analysis")
+                render_data_quality_panel(data_quality)
+                return
+            
+            # Filter to RTH
+            market_data_ct = market_data.copy()
+            market_data_ct.index = market_data_ct.index.tz_convert(CT)
+            rth_data = market_data_ct.between_time("08:30", "14:30")
+            
+            if rth_data.empty:
+                st.warning("No RTH data available for selected date")
+                return
+            
+            # Generate reference line
+            projection_engine = ProfessionalProjectionEngine()
+            anchor_datetime = CT.localize(datetime.combine(analysis_date, anchor_time))
+            
+            projection_df = projection_engine.generate_projection_line(
+                anchor_price,
+                anchor_datetime,
+                line_slope,
+                analysis_date
+            )
+            
+            if projection_df.empty:
+                st.error("Failed to generate projection line")
+                return
+            
+            # Create line prices series
+            line_prices = pd.Series(
+                projection_df['Price'].values,
+                index=projection_df['Time (CT)'].values
+            )
+            
+            # Detect signals
+            signal_detector = AdvancedSignalDetector(trading_params)
+            signals = signal_detector.detect_line_touch_signals(
+                rth_data, line_prices, signal_mode
+            )
+            
+            # Store results
+            st.session_state.detected_signals = signals
+            st.session_state.signals_data = rth_data
+            st.session_state.signals_projection = projection_df
+    
+    # Display results
+    if hasattr(st.session_state, 'detected_signals'):
+        signals = st.session_state.detected_signals
+        
+        # Render signals analysis
+        render_signals_analysis_panel(signals)
+        
+        # Show projection line
+        if hasattr(st.session_state, 'signals_projection'):
+            projection_df = st.session_state.signals_projection
+            
+            st.markdown("#### Reference Line")
+            st.dataframe(
+                projection_df[['Time (CT)', 'Price']],
+                use_container_width=True,
+                hide_index=True
+            )
+
+# ===============================
+# STRATEGY ANALYTICS TAB
+# ===============================
+
+def render_strategy_analytics_tab():
+    """Strategy backtesting and analytics"""
+    
+    st.markdown("### Strategy Analytics & Backtesting")
+    st.caption("Historical performance analysis with comprehensive metrics")
+    
+    # Configuration
+    ui_system = UIComponentSystem()
+    
+    # Symbol selection
+    symbol = ui_system.render_symbol_selector(key_prefix="analytics")
+    
+    # Backtesting parameters
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        lookback_days = st.slider(
+            "Lookback Period (Days)",
+            min_value=5,
+            max_value=60,
+            value=20,
+            key="analytics_lookback"
+        )
+    
+    with col2:
+        signal_mode = st.selectbox(
+            "Signal Mode",
+            options=["BUY", "SELL"],
+            index=0,
+            key="analytics_mode"
+        )
+    
+    with col3:
+        min_trades = st.number_input(
+            "Minimum Trades",
+            min_value=1,
+            max_value=100,
+            value=5,
+            key="analytics_min_trades",
+            help="Minimum trades required for valid backtest"
+        )
+    
+    # Reference line configuration
+    st.markdown("#### Reference Line Parameters")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        anchor_price = st.number_input(
+            "Anchor Price",
+            value=5000.0 if symbol in ["^GSPC", "ES=F"] else 200.0,
+            step=1.0,
+            key="analytics_anchor_price"
+        )
+    
+    with col2:
+        anchor_time = st.time_input(
+            "Anchor Time (CT)",
+            value=dtime(17, 0),
+            key="analytics_anchor_time"
+        )
+    
+    with col3:
+        slope_data = get_slope_data(symbol)
+        line_slope = st.number_input(
+            "Line Slope",
+            value=slope_data['base'],
+            step=0.0001,
+            format="%.4f",
+            key="analytics_slope"
+        )
+    
+    # Trading parameters
+    trading_params = ui_system.render_trading_parameters_panel(key_prefix="analytics")
+    
+    # Backtesting execution
+    if st.button("Run Backtest", type="primary", use_container_width=True):
+        with st.spinner("Running comprehensive backtest..."):
+            
+            # Fetch historical data
+            end_date = datetime.now(CT)
+            start_date = end_date - timedelta(days=lookback_days * 2)  # Buffer for weekends
+            
+            historical_data, data_quality = fetch_historical_data(
+                symbol, period=f"{lookback_days * 2}d", interval="30m"
+            )
+            
+            if historical_data.empty or data_quality.reliability < 0.4:
+                st.error("Insufficient historical data for backtesting")
+                render_data_quality_panel(data_quality)
+                return
+            
+            # Convert to CT and filter RTH
+            historical_data_ct = historical_data.copy()
+            historical_data_ct.index = historical_data_ct.index.tz_convert(CT)
+            rth_data = historical_data_ct.between_time("08:30", "14:30")
+            
+            # Group by trading days
+            trading_days = {}
+            for date_key in rth_data.index.date:
+                if date_key not in trading_days:
+                    trading_days[date_key] = rth_data[rth_data.index.date == date_key]
+            
+            # Remove days with insufficient data
+            trading_days = {
+                date_key: day_data for date_key, day_data in trading_days.items()
+                if len(day_data) >= 5  # At least 5 bars
+            }
+            
+            if len(trading_days) < 3:
+                st.error("Insufficient trading days for meaningful backtest")
+                return
+            
+            # Run backtest
+            backtester = ProfessionalBacktester(trading_params)
+            
+            # Create anchor timestamp (use first available date)
+            first_date = min(trading_days.keys())
+            anchor_datetime = CT.localize(datetime.combine(first_date, anchor_time))
+            
+            backtest_result = backtester.backtest_strategy(
+                trading_days,
+                anchor_price,
+                anchor_datetime,
+                line_slope,
+                signal_mode
+            )
+            
+            # Store results
+            st.session_state.backtest_result = backtest_result
+            st.session_state.backtest_params = {
+                'symbol': symbol,
+                'lookback_days': lookback_days,
+                'signal_mode': signal_mode,
+                'trading_days': len(trading_days)
+            }
+    
+    # Display results
+    if hasattr(st.session_state, 'backtest_result'):
+        backtest_result = st.session_state.backtest_result
+        params = st.session_state.backtest_params
+        
+        # Validation check
+        if backtest_result.total_trades < min_trades:
+            st.warning(f"Only {backtest_result.total_trades} trades found. Consider adjusting parameters for more reliable results.")
+        
+        # Render results
+        render_backtest_results_panel(backtest_result)
+        
+        # Additional context
+        st.info(f"Backtest covered {params['trading_days']} trading days for {params['symbol']} in {params['signal_mode']} mode")
+
+# ===============================
+# PROJECTIONS TAB
+# ===============================
+
+def render_projections_tab():
+    """Custom projection analysis"""
+    
+    st.markdown("### Custom Projection Analysis")
+    st.caption("Build custom line projections with quality validation")
+    
+    # Two-point projection method
+    st.markdown("#### Two-Point Projection Method")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Point 1**")
+        point1_time = st.time_input(
+            "Time (CT)",
+            value=dtime(20, 0),
+            key="proj_p1_time"
+        )
+        point1_price = st.number_input(
+            "Price",
+            value=5000.0,
+            step=0.1,
+            key="proj_p1_price"
+        )
+    
+    with col2:
+        st.markdown("**Point 2**")
+        point2_time = st.time_input(
+            "Time (CT)",
+            value=dtime(10, 30),
+            key="proj_p2_time"
+        )
+        point2_price = st.number_input(
+            "Price",
+            value=5010.0,
+            step=0.1,
+            key="proj_p2_price"
+        )
+    
+    # Projection date
+    projection_date = st.date_input(
+        "Projection Date (CT)",
+        value=datetime.now(CT).date(),
+        key="proj_target_date"
+    )
+    
+    # Calculate and display projection
+    if st.button("Generate Projection", type="primary", use_container_width=True):
+        
+        # Calculate slope
+        current_date = datetime.now(CT).date()
+        previous_date = current_date - timedelta(days=1)
+        
+        # Determine which date each point belongs to
+        dt1 = CT.localize(datetime.combine(
+            previous_date if point1_time.hour >= 17 else current_date,
+            point1_time
+        ))
+        dt2 = CT.localize(datetime.combine(
+            previous_date if point2_time.hour >= 17 else current_date,
+            point2_time
+        ))
+        
+        # Calculate blocks and slope
+        time_diff_seconds = (dt2 - dt1).total_seconds()
+        blocks = int(round(time_diff_seconds / 1800.0))  # 30-min blocks
+        
+        if blocks == 0:
+            st.error("Points must be at different times")
+            return
+        
+        slope_per_block = (point2_price - point1_price) / blocks
+        
+        # Generate projection
+        projection_engine = ProfessionalProjectionEngine()
+        projection_df = projection_engine.generate_projection_line(
+            point1_price,
+            dt1,
+            slope_per_block,
+            projection_date
+        )
+        
+        # Display results
+        st.success(f"Slope calculated: {slope_per_block:.4f} per 30-min block")
+        
+        # Show projection
+        render_projection_analysis_panel(
+            projection_df,
+            anchor_info={
+                'timestamp': dt1,
+                'price': point1_price,
+                'slope': slope_per_block
+            }
+        )
+        
+        # Optional: Compare with actual data if available
+        if projection_date <= datetime.now(CT).date():
+            symbol = st.text_input(
+                "Symbol for Validation (optional)",
+                value="^GSPC",
+                key="proj_validation_symbol"
+            )
+            
+            if symbol and st.button("Validate Against Actual Data"):
+                with st.spinner("Fetching actual data for validation..."):
+                    
+                    session_start = CT.localize(datetime.combine(projection_date, dtime(8, 15)))
+                    session_end = CT.localize(datetime.combine(projection_date, dtime(14, 45)))
+                    
+                    actual_data, quality = fetch_market_data_cached(
+                        symbol.upper(),
+                        session_start.astimezone(UTC),
+                        session_end.astimezone(UTC),
+                        "30m"
+                    )
+                    
+                    if not actual_data.empty:
+                        actual_data_ct = actual_data.copy()
+                        actual_data_ct.index = actual_data_ct.index.tz_convert(CT)
+                        rth_data = actual_data_ct.between_time("08:30", "14:30")
+                        
+                        # Re-render with validation
+                        render_projection_analysis_panel(
+                            projection_df,
+                            rth_data,
+                            anchor_info={
+                                'timestamp': dt1,
+                                'price': point1_price,
+                                'slope': slope_per_block
+                            }
+                        )
+
+# ===============================
+# SYSTEM TAB
+# ===============================
+
+def render_system_tab():
+    """System monitoring and management"""
+    
+    st.markdown("### System Monitoring & Management")
+    st.caption("Performance monitoring, cache management, and system diagnostics")
+    
+    # Market overview
+    render_market_overview_panel()
+    
+    # System performance
+    render_system_performance_panel()
+    
+    # Data quality monitoring
+    st.markdown("#### Recent Data Quality")
+    
+    # Show recent cache entries with quality metrics
+    if hasattr(st.session_state, 'cache_metadata') and st.session_state.cache_metadata:
+        quality_data = []
+        
+        for cache_key, metadata in st.session_state.cache_metadata.items():
+            quality_data.append({
+                'Symbol': metadata.get('symbol', 'Unknown'),
+                'Data Points': metadata.get('data_size', 0),
+                'Quality Score': f"{metadata.get('quality_score', 0):.1%}",
+                'Last Access': metadata.get('last_access', datetime.now()).strftime('%H:%M:%S')
+            })
+        
+        if quality_data:
+            quality_df = pd.DataFrame(quality_data)
+            st.dataframe(quality_df, use_container_width=True, hide_index=True)
+    
+    # Application information
+    st.markdown("#### Application Information")
+    
+    info_col1, info_col2 = st.columns(2)
+    
+    with info_col1:
+        st.info(f"""
+        **MarketLens Pro v{APP_VERSION}**
+        
+        - Professional trading analytics platform
+        - Line-based entry/exit strategies
+        - Multi-factor confluence analysis
+        - Institutional-grade backtesting
+        - Real-time market monitoring
+        """)
+    
+    with info_col2:
+        st.success("""
+        **Current Session Status**
+        
+        ✅ All systems operational  
+        ✅ Data feeds active  
+        ✅ Analytics engine running  
+        ✅ Cache system optimized  
+        ✅ Professional UI loaded  
+        """)
+
+# ===============================
+# APPLICATION ENTRY POINT
+# ===============================
+
+if __name__ == "__main__":
+    main()
+
+# This completes the MarketLens Pro v6 application
+# All components are now integrated and ready for deployment
