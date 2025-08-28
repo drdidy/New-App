@@ -73,27 +73,27 @@ def get_enhanced_theme(mode: str = "Dark") -> Dict[str, str]:
             "backdrop_filter": "blur(20px) saturate(180%)"
         },
         "Light": {
-            "primary_bg": "#fafbfc",
-            "secondary_bg": "#ffffff",
-            "surface": "rgba(255, 255, 255, 0.90)",
-            "surface_elevated": "rgba(255, 255, 255, 0.95)",
-            "glass": "rgba(255, 255, 255, 0.80)",
-            "text_primary": "#0f172a",
-            "text_secondary": "#334155",
-            "text_muted": "#64748b",
-            "accent_primary": "#059669",
+            "primary_bg": "#ffffff",
+            "secondary_bg": "#f8fafc",
+            "surface": "rgba(255, 255, 255, 0.95)",
+            "surface_elevated": "rgba(248, 250, 252, 0.98)",
+            "glass": "rgba(255, 255, 255, 0.85)",
+            "text_primary": "#1a202c",
+            "text_secondary": "#2d3748",
+            "text_muted": "#4a5568",
+            "accent_primary": "#0369a1",
             "accent_secondary": "#0284c7",
-            "success": "#16a34a",
-            "warning": "#d97706",
-            "danger": "#dc2626",
-            "border": "rgba(15, 23, 42, 0.08)",
-            "border_hover": "rgba(5, 150, 105, 0.3)",
-            "shadow": "0 10px 25px -3px rgba(15, 23, 42, 0.1)",
-            "shadow_elevated": "0 20px 25px -5px rgba(15, 23, 42, 0.15)",
-            "glow": "0 0 30px rgba(5, 150, 105, 0.12)",
-            "gradient_bg": "radial-gradient(1200px 800px at 20% 10%, rgba(5, 150, 105, 0.04), transparent 70%), radial-gradient(1000px 600px at 80% 20%, rgba(2, 132, 199, 0.03), transparent 70%)",
-            "gradient_accent": "linear-gradient(135deg, #059669 0%, #0284c7 100%)",
-            "backdrop_filter": "blur(20px) saturate(180%)"
+            "success": "#047857",
+            "warning": "#b45309",
+            "danger": "#be123c",
+            "border": "rgba(26, 32, 44, 0.12)",
+            "border_hover": "rgba(3, 105, 161, 0.3)",
+            "shadow": "0 4px 20px rgba(26, 32, 44, 0.08)",
+            "shadow_elevated": "0 8px 25px rgba(26, 32, 44, 0.12)",
+            "glow": "0 0 25px rgba(3, 105, 161, 0.15)",
+            "gradient_bg": "radial-gradient(1200px 800px at 20% 10%, rgba(3, 105, 161, 0.03), transparent 70%), radial-gradient(1000px 600px at 80% 20%, rgba(2, 132, 199, 0.02), transparent 70%)",
+            "gradient_accent": "linear-gradient(135deg, #0369a1 0%, #0284c7 100%)",
+            "backdrop_filter": "blur(16px) saturate(150%)"
         }
     }
     
@@ -670,7 +670,7 @@ def render_analytics_card(title: str, subtitle: str = "", badge: str = "", conte
 def initialize_session_state():
     """Initialize session state with default values"""
     defaults = {
-        'theme_mode': 'Dark',
+        'theme_mode': 'Light',
         'selected_symbol': 'AAPL',
         'analysis_mode': 'Live',
         'show_advanced': False,
