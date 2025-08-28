@@ -717,3 +717,556 @@ def setup_application():
 
 # This completes Part 1 of the modular redesign
 # Next parts will include: Data Management, Analytics Engine, UI Components, and Main Application Logic
+
+
+
+# MarketLens Pro v6 - Part 2A: Data Quality & Enhanced Fetching System
+# Advanced data validation, caching, and quality assessment
+
+from dataclasses import dataclass
+from enum import Enum
+import hashlib
+import json
+
+# ===============================
+# DATA QUALITY & VALIDATION SYSTEM
+# ===============================
+
+class DataQuality(Enum):
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+    INSUFFICIENT = "insufficient"
+
+@dataclass
+class MarketDataQuality:
+    symbol: str
+    timeframe: str
+    completeness: float  # 0-1
+    consistency: float   # 0-1 
+    freshness: float     # 0-1 (how recent)
+    reliability: float   # 0-1 (overall score)
+    quality_grade: DataQuality
+    issues: List[str]
+    last_updated: datetime
+
+def assess_data_quality(df: pd.DataFrame, symbol: str, expected_intervals: int = None) -> MarketDataQuality:
+    """Comprehensive data quality assessment for trading decisions"""
+    
+    if df.empty:
+        return MarketDataQuality(
+            symbol=symbol,
+            timeframe="30min",
+            completeness=0.0,
+            consistency=0.0,
+            freshness=0.0,
+            reliability=0.0,
+            quality_grade=DataQuality.INSUFFICIENT,
+            issues=["No data available"],
+            last_updated=datetime.now()
+        )
+    
+    issues = []
+    
+    # Completeness analysis
+    if expected_intervals:
+        completeness = len(df) / expected_intervals
+    else:
+        total_cells = len(df) * len(df.columns)
+        missing_cells = df.isnull().sum().sum()
+        completeness = 1.0 - (missing_cells / total_cells) if total_cells > 0 else 0.0
+    
+    if completeness < 0.9:
+        issues.append(f"Data completeness: {completeness*100:.1f}%")
+    
+    # Price consistency validation
+    consistency = 1.0
+    if 'Close' in df.columns:
+        close_prices = pd.to_numeric(df['Close'], errors='coerce').dropna()
+        
+        if len(close_prices) > 1:
+            # Check for extreme price movements (>15% in single bar)
+            price_changes = close_prices.pct_change().abs()
+            extreme_moves = (price_changes > 0.15).sum()
+            
+            if extreme_moves > len(close_prices) * 0.02:  # >2% of bars
+                consistency -= 0.3
+                issues.append(f"Detected {extreme_moves} extreme price movements")
+            
+            # Check for zero or negative prices
+            invalid_prices = (close_prices <= 0).sum()
+            if invalid_prices > 0:
+                consistency -= 0.5
+                issues.append(f"Found {invalid_prices} invalid price points")
+            
+            # Price sequence validation (ensure OHLC relationships)
+            if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
+                ohlc_valid = (
+                    (df['High'] >= df['Low']) &
+                    (df['High'] >= df['Open']) &
+                    (df['High'] >= df['Close']) &
+                    (df['Low'] <= df['Open']) &
+                    (df['Low'] <= df['Close'])
+                ).sum()
+                
+                invalid_ohlc = len(df) - ohlc_valid
+                if invalid_ohlc > len(df) * 0.01:  # >1% invalid
+                    consistency -= 0.2
+                    issues.append(f"OHLC validation failed for {invalid_ohlc} bars")
+    
+    # Volume analysis (if available)
+    if 'Volume' in df.columns:
+        volumes = pd.to_numeric(df['Volume'], errors='coerce').dropna()
+        if len(volumes) > 0:
+            zero_volume_pct = (volumes == 0).sum() / len(volumes)
+            if zero_volume_pct > 0.1:  # >10% zero volume
+                consistency -= 0.15
+                issues.append(f"High zero-volume frequency: {zero_volume_pct*100:.1f}%")
+    
+    # Data freshness assessment
+    if not df.empty:
+        latest_timestamp = df.index[-1]
+        if latest_timestamp.tzinfo is None:
+            latest_timestamp = UTC.localize(latest_timestamp)
+        
+        current_time = datetime.now(UTC)
+        time_delta = current_time - latest_timestamp
+        hours_old = time_delta.total_seconds() / 3600
+        
+        # Freshness score (decays over 24 hours)
+        freshness = max(0.0, 1.0 - (hours_old / 24))
+        
+        if hours_old > 2:
+            issues.append(f"Data is {hours_old:.1f} hours old")
+    else:
+        freshness = 0.0
+    
+    # Calculate overall reliability
+    weights = {'completeness': 0.35, 'consistency': 0.45, 'freshness': 0.20}
+    reliability = (
+        completeness * weights['completeness'] + 
+        consistency * weights['consistency'] + 
+        freshness * weights['freshness']
+    )
+    
+    # Assign quality grade
+    if reliability >= 0.90:
+        grade = DataQuality.EXCELLENT
+    elif reliability >= 0.75:
+        grade = DataQuality.GOOD
+    elif reliability >= 0.60:
+        grade = DataQuality.FAIR
+    elif reliability >= 0.40:
+        grade = DataQuality.POOR
+    else:
+        grade = DataQuality.INSUFFICIENT
+    
+    return MarketDataQuality(
+        symbol=symbol,
+        timeframe="30min",
+        completeness=completeness,
+        consistency=consistency,
+        freshness=freshness,
+        reliability=reliability,
+        quality_grade=grade,
+        issues=issues,
+        last_updated=datetime.now()
+    )
+
+def render_data_quality_panel(quality: MarketDataQuality) -> None:
+    """Render comprehensive data quality assessment panel"""
+    
+    # Quality grade color mapping
+    grade_colors = {
+        DataQuality.EXCELLENT: "var(--success)",
+        DataQuality.GOOD: "var(--accent-primary)", 
+        DataQuality.FAIR: "var(--warning)",
+        DataQuality.POOR: "var(--danger)",
+        DataQuality.INSUFFICIENT: "var(--text-muted)"
+    }
+    
+    grade_color = grade_colors.get(quality.quality_grade, "var(--text-muted)")
+    
+    st.markdown(f"""
+    <div class="analytics-card">
+        <div class="card-header">
+            <div>
+                <h4 class="card-title">Data Quality Assessment</h4>
+                <p class="card-subtitle">{quality.symbol} • {quality.timeframe} • Updated {quality.last_updated.strftime('%H:%M:%S')}</p>
+            </div>
+            <div class="card-badge" style="background: {grade_color}">{quality.quality_grade.value.title()}</div>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Reliability Score</div>
+                <div class="metric-value" style="color: {grade_color}">{quality.reliability:.1%}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Completeness</div>
+                <div class="metric-value metric-{'positive' if quality.completeness > 0.9 else 'neutral'}">{quality.completeness:.1%}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Consistency</div>
+                <div class="metric-value metric-{'positive' if quality.consistency > 0.9 else 'neutral'}">{quality.consistency:.1%}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Freshness</div>
+                <div class="metric-value metric-{'positive' if quality.freshness > 0.8 else 'neutral'}">{quality.freshness:.1%}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Show issues if any
+    if quality.issues:
+        with st.expander("Quality Issues Detected", expanded=False):
+            for issue in quality.issues:
+                st.warning(f"⚠️ {issue}")
+
+# ===============================
+# ADVANCED CACHING SYSTEM
+# ===============================
+
+class DataCacheManager:
+    """Advanced caching system with intelligent invalidation"""
+    
+    def __init__(self, cache_duration: int = 300, max_cache_size: int = 100):
+        self.cache_duration = cache_duration
+        self.max_cache_size = max_cache_size
+        
+        # Initialize cache in session state
+        if 'market_data_cache' not in st.session_state:
+            st.session_state.market_data_cache = {}
+        if 'cache_metadata' not in st.session_state:
+            st.session_state.cache_metadata = {}
+    
+    def _generate_cache_key(self, symbol: str, start: datetime, end: datetime, interval: str) -> str:
+        """Generate deterministic cache key"""
+        key_components = [
+            symbol.upper(),
+            start.isoformat(),
+            end.isoformat(), 
+            interval
+        ]
+        key_string = "|".join(key_components)
+        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+    
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check cache validity with multiple criteria"""
+        if cache_key not in st.session_state.cache_metadata:
+            return False
+        
+        metadata = st.session_state.cache_metadata[cache_key]
+        current_time = datetime.now()
+        
+        # Time-based expiry
+        age_seconds = (current_time - metadata['timestamp']).total_seconds()
+        if age_seconds > self.cache_duration:
+            return False
+        
+        # Market hours consideration (fresher data needed during market hours)
+        market_state = get_market_state(current_time)
+        if market_state['is_market_open'] and age_seconds > 60:  # 1 minute during market hours
+            return False
+        
+        return True
+    
+    def _cleanup_old_cache(self):
+        """Remove expired or excess cache entries"""
+        current_time = datetime.now()
+        
+        # Remove expired entries
+        expired_keys = []
+        for key, metadata in st.session_state.cache_metadata.items():
+            age = (current_time - metadata['timestamp']).total_seconds()
+            if age > self.cache_duration * 2:  # Double expiry for cleanup
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            self._remove_cache_entry(key)
+        
+        # Enforce size limit (LRU eviction)
+        if len(st.session_state.market_data_cache) > self.max_cache_size:
+            # Sort by last access time
+            sorted_entries = sorted(
+                st.session_state.cache_metadata.items(),
+                key=lambda x: x[1].get('last_access', x[1]['timestamp'])
+            )
+            
+            # Remove oldest entries
+            excess_count = len(st.session_state.market_data_cache) - self.max_cache_size
+            for i in range(excess_count):
+                key_to_remove = sorted_entries[i][0]
+                self._remove_cache_entry(key_to_remove)
+    
+    def _remove_cache_entry(self, cache_key: str):
+        """Safely remove cache entry"""
+        st.session_state.market_data_cache.pop(cache_key, None)
+        st.session_state.cache_metadata.pop(cache_key, None)
+    
+    def get_cached_data(self, symbol: str, start: datetime, end: datetime, 
+                       interval: str) -> Optional[Tuple[pd.DataFrame, MarketDataQuality]]:
+        """Retrieve cached data if valid"""
+        cache_key = self._generate_cache_key(symbol, start, end, interval)
+        
+        if cache_key in st.session_state.market_data_cache and self._is_cache_valid(cache_key):
+            # Update access time
+            st.session_state.cache_metadata[cache_key]['last_access'] = datetime.now()
+            return st.session_state.market_data_cache[cache_key]
+        
+        return None
+    
+    def store_data(self, symbol: str, start: datetime, end: datetime, interval: str,
+                  data: pd.DataFrame, quality: MarketDataQuality):
+        """Store data in cache with metadata"""
+        cache_key = self._generate_cache_key(symbol, start, end, interval)
+        
+        # Cleanup before storing
+        self._cleanup_old_cache()
+        
+        # Store data and metadata
+        st.session_state.market_data_cache[cache_key] = (data.copy(), quality)
+        st.session_state.cache_metadata[cache_key] = {
+            'timestamp': datetime.now(),
+            'last_access': datetime.now(),
+            'symbol': symbol.upper(),
+            'data_size': len(data),
+            'quality_score': quality.reliability
+        }
+    
+    def clear_symbol_cache(self, symbol: str):
+        """Clear all cache entries for a specific symbol"""
+        symbol = symbol.upper()
+        keys_to_remove = [
+            key for key, metadata in st.session_state.cache_metadata.items()
+            if metadata.get('symbol') == symbol
+        ]
+        
+        for key in keys_to_remove:
+            self._remove_cache_entry(key)
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache performance statistics"""
+        total_entries = len(st.session_state.market_data_cache)
+        total_size = sum(
+            metadata.get('data_size', 0) 
+            for metadata in st.session_state.cache_metadata.values()
+        )
+        
+        avg_quality = np.mean([
+            metadata.get('quality_score', 0)
+            for metadata in st.session_state.cache_metadata.values()
+        ]) if total_entries > 0 else 0
+        
+        return {
+            'total_entries': total_entries,
+            'total_data_points': total_size,
+            'average_quality': avg_quality,
+            'cache_utilization': min(1.0, total_entries / self.max_cache_size)
+        }
+
+# Initialize global cache manager
+cache_manager = DataCacheManager(cache_duration=300, max_cache_size=50)
+
+# ===============================
+# ENHANCED DATA FETCHING SYSTEM
+# ===============================
+
+def normalize_market_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Advanced market data normalization with validation"""
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Handle MultiIndex columns from yfinance
+    if isinstance(df.columns, pd.MultiIndex):
+        level_0_cols = set([col[0] for col in df.columns])
+        if {'Open', 'High', 'Low', 'Close', 'Volume'}.issubset(level_0_cols):
+            # Standard OHLCV structure
+            df.columns = [col[0] for col in df.columns]
+        else:
+            # Flatten other structures
+            df.columns = ['_'.join([str(c) for c in col if pd.notna(c)]).strip('_') for col in df.columns.values]
+    
+    # Create standardized OHLCV DataFrame
+    standard_data = {}
+    column_mapping = {
+        'Open': ['Open', 'open'],
+        'High': ['High', 'high'], 
+        'Low': ['Low', 'low'],
+        'Close': ['Close', 'close'],
+        'Volume': ['Volume', 'volume', 'Vol']
+    }
+    
+    for standard_col, possible_cols in column_mapping.items():
+        found_col = None
+        for col in possible_cols:
+            if col in df.columns:
+                found_col = col
+                break
+        
+        if found_col:
+            standard_data[standard_col] = pd.to_numeric(df[found_col], errors='coerce')
+        else:
+            # Create empty series if not found
+            standard_data[standard_col] = pd.Series(np.nan, index=df.index)
+    
+    # Handle Adjusted Close if available
+    if 'Adj Close' in df.columns:
+        standard_data['Adj Close'] = pd.to_numeric(df['Adj Close'], errors='coerce')
+    
+    normalized_df = pd.DataFrame(standard_data, index=df.index)
+    
+    # Data validation and correction
+    if not normalized_df.empty:
+        # Remove completely empty rows
+        ohlc_cols = ['Open', 'High', 'Low', 'Close']
+        normalized_df = normalized_df.dropna(subset=ohlc_cols, how='all')
+        
+        # Fix basic OHLC relationship violations
+        if len(normalized_df) > 0:
+            # Ensure High >= Low
+            invalid_hl = normalized_df['High'] < normalized_df['Low']
+            if invalid_hl.any():
+                # Swap High and Low for invalid rows
+                normalized_df.loc[invalid_hl, ['High', 'Low']] = (
+                    normalized_df.loc[invalid_hl, ['Low', 'High']].values
+                )
+            
+            # Ensure High >= max(Open, Close) and Low <= min(Open, Close)
+            normalized_df['High'] = np.maximum.reduce([
+                normalized_df['High'], 
+                normalized_df['Open'], 
+                normalized_df['Close']
+            ])
+            
+            normalized_df['Low'] = np.minimum.reduce([
+                normalized_df['Low'],
+                normalized_df['Open'],
+                normalized_df['Close'] 
+            ])
+    
+    return normalized_df
+
+@st.cache_data(ttl=300, show_spinner=False, max_entries=20)
+def fetch_market_data_cached(symbol: str, start_time: datetime, end_time: datetime,
+                           interval: str = "30m") -> Tuple[pd.DataFrame, MarketDataQuality]:
+    """Enhanced market data fetching with caching and quality assessment"""
+    
+    # Check cache first
+    cached_result = cache_manager.get_cached_data(symbol, start_time, end_time, interval)
+    if cached_result is not None:
+        return cached_result
+    
+    try:
+        # Fetch from yfinance with error handling
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(
+            start=start_time,
+            end=end_time,
+            interval=interval,
+            auto_adjust=False,
+            back_adjust=False,
+            progress=False,
+            actions=False
+        )
+        
+        if df.empty:
+            # Try alternative method
+            df = yf.download(
+                symbol,
+                start=start_time,
+                end=end_time,
+                interval=interval,
+                auto_adjust=False,
+                progress=False,
+                show_errors=False
+            )
+        
+        # Handle timezone information
+        if not df.empty and df.index.tz is None:
+            df.index = df.index.tz_localize(UTC)
+        
+        # Normalize the data structure
+        normalized_df = normalize_market_data(df)
+        
+        # Calculate expected intervals for quality assessment
+        total_minutes = (end_time - start_time).total_seconds() / 60
+        expected_intervals = int(total_minutes / 30) if interval == "30m" else None
+        
+        # Assess data quality
+        quality = assess_data_quality(normalized_df, symbol, expected_intervals)
+        
+        # Store in cache
+        cache_manager.store_data(symbol, start_time, end_time, interval, normalized_df, quality)
+        
+        return normalized_df, quality
+        
+    except Exception as e:
+        error_msg = f"Failed to fetch data for {symbol}: {str(e)}"
+        st.error(error_msg)
+        
+        # Return empty result with error quality assessment
+        quality = MarketDataQuality(
+            symbol=symbol,
+            timeframe=interval,
+            completeness=0.0,
+            consistency=0.0,
+            freshness=0.0,
+            reliability=0.0,
+            quality_grade=DataQuality.INSUFFICIENT,
+            issues=[error_msg],
+            last_updated=datetime.now()
+        )
+        
+        return pd.DataFrame(), quality
+
+def validate_trading_data(df: pd.DataFrame, min_price: float = 0.01, 
+                         max_price_ratio: float = 10.0) -> Tuple[bool, List[str]]:
+    """Comprehensive trading data validation"""
+    
+    if df.empty:
+        return False, ["No data provided"]
+    
+    issues = []
+    
+    # Basic structure validation
+    required_columns = ['Open', 'High', 'Low', 'Close']
+    missing_cols = [col for col in required_columns if col not in df.columns]
+    if missing_cols:
+        issues.append(f"Missing required columns: {missing_cols}")
+        return False, issues
+    
+    # Price range validation
+    for col in required_columns:
+        prices = pd.to_numeric(df[col], errors='coerce').dropna()
+        if len(prices) == 0:
+            issues.append(f"No valid prices in {col} column")
+            continue
+            
+        min_col_price = prices.min()
+        max_col_price = prices.max()
+        
+        if min_col_price < min_price:
+            issues.append(f"{col} contains prices below ${min_price}")
+        
+        if max_col_price / min_col_price > max_price_ratio:
+            issues.append(f"{col} price range too wide (ratio: {max_col_price/min_col_price:.1f})")
+    
+    # Temporal validation
+    if not df.index.is_monotonic_increasing:
+        issues.append("Timestamps are not in chronological order")
+    
+    # Check for duplicate timestamps
+    duplicate_times = df.index.duplicated().sum()
+    if duplicate_times > 0:
+        issues.append(f"Found {duplicate_times} duplicate timestamps")
+    
+    return len(issues) == 0, issues
+
+# This completes Part 2A: Data Quality & Enhanced Fetching System
+
+
+
+
