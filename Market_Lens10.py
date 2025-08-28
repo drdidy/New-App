@@ -1,6 +1,5 @@
-# app.py
 # MarketLens Pro v5 by Max Pointe Consulting — Streamlit-only (no Plotly)
-# All timestamps are displayed in Central Time (CT).
+# All timestamps displayed in Central Time (CT).
 # Run:
 #   pip install -r requirements.txt
 #   streamlit run app.py
@@ -11,6 +10,7 @@ import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta, time as dtime, date
 import pytz
+from typing import Iterable, List, Tuple, Optional
 
 APP_NAME = "MarketLens Pro v5 by Max Pointe Consulting"
 
@@ -119,7 +119,7 @@ def format_ct(ts: datetime, with_date=True) -> str:
     ts_ct = as_ct(ts)
     return ts_ct.strftime("%Y-%m-%d %H:%M CT" if with_date else "%H:%M")
 
-def rth_slots_ct_dt(proj_date: date, start="08:30", end="14:30"):
+def rth_slots_ct_dt(proj_date: date, start="08:30", end="14:30") -> List[datetime]:
     h1, m1 = map(int, start.split(":"))
     h2, m2 = map(int, end.split(":"))
     start_dt = CT.localize(datetime.combine(proj_date, dtime(h1, m1)))
@@ -136,26 +136,78 @@ SLOPES = {
 }
 
 # ===============================
+# DATA NORMALIZATION (handle MultiIndex columns)
+# ===============================
+
+ESSENTIALS = ["Open","High","Low","Close","Volume","Adj Close"]
+
+def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure single-level OHLCV columns even if yfinance returns MultiIndex."""
+    if isinstance(df.columns, pd.MultiIndex):
+        # If top level looks like fields and second level like tickers:
+        maybe_fields = set([c[0] for c in df.columns])
+        if {"Open","High","Low","Close","Adj Close","Volume"}.issubset(maybe_fields):
+            # Keep first level only
+            df = df.copy()
+            df.columns = [c[0] for c in df.columns]
+        else:
+            # Fallback: join all levels
+            df = df.copy()
+            df.columns = ["|".join([str(x) for x in c if x is not None]) for c in df.columns]
+    return df
+
+def _coerce_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Coerce/rename columns so df has standard OHLCV single-level columns.
+    If exact names are missing, try suffix matches (e.g., 'AAPL Close').
+    """
+    df = _flatten_ohlcv(df)
+    cols = list(df.columns)
+    out = {}
+    for target in ["Open","High","Low","Close","Volume"]:
+        if target in df.columns:
+            out[target] = pd.to_numeric(df[target], errors="coerce")
+        else:
+            # try suffix match
+            cand = [c for c in cols if isinstance(c, str) and c.endswith(target)]
+            if cand:
+                out[target] = pd.to_numeric(df[cand[0]], errors="coerce")
+            else:
+                out[target] = pd.Series(index=df.index, dtype=float)
+    out_df = pd.DataFrame(out, index=df.index)
+    # Retain Adj Close if present
+    if "Adj Close" in df.columns:
+        out_df["Adj Close"] = pd.to_numeric(df["Adj Close"], errors="coerce")
+    return out_df
+
+# ===============================
 # DATA FETCHING (yfinance) + CACHING
 # ===============================
 
 @st.cache_data(ttl=60)
-def fetch_live(symbol: str, start_utc: datetime, end_utc: datetime, interval="30m"):
+def fetch_live(symbol: str, start_utc: datetime, end_utc: datetime, interval="30m") -> pd.DataFrame:
     df = yf.download(symbol, start=start_utc, end=end_utc, interval=interval, auto_adjust=False, progress=False)
-    if not df.empty and getattr(df.index, "tz", None) is None:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if getattr(df.index, "tz", None) is None:
         df.index = df.index.tz_localize(UTC)
+    df = _coerce_ohlcv(df)
     return df
 
 @st.cache_data(ttl=300)
-def fetch_hist(symbol: str, period="5d", interval="30m"):
+def fetch_hist(symbol: str, period="5d", interval="30m") -> pd.DataFrame:
     df = yf.download(symbol, period=period, interval=interval, auto_adjust=False, progress=False)
-    if not df.empty and getattr(df.index, "tz", None) is None:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if getattr(df.index, "tz", None) is None:
         df.index = df.index.tz_localize(UTC)
+    df = _coerce_ohlcv(df)
     return df
 
 def price_range_ok(df: pd.DataFrame) -> bool:
-    if df.empty: return False
-    lo, hi = float(df["Close"].min()), float(df["Close"].max())
+    if df.empty or "Close" not in df.columns: 
+        return False
+    lo, hi = float(df["Close"].min(skipna=True)), float(df["Close"].max(skipna=True))
     return (lo > 0) and (hi/lo < 5.0)
 
 # ===============================
@@ -167,10 +219,16 @@ def mark_swings(df: pd.DataFrame, col: str = "Close", k: int = 1) -> pd.DataFram
     Local swings using CLOSE-only.
     swing_high: CLOSE > CLOSE of previous k bars AND next k bars.
     swing_low : CLOSE < CLOSE of previous k bars AND next k bars.
-    Uses NumPy masks to avoid index-alignment issues.
+    Robust to MultiIndex/duplicate columns; guarantees Series via .squeeze().
     """
     out = df.copy()
-    s = pd.to_numeric(df[col], errors="coerce")
+    series = df[col]
+    # Guarantee 1-D
+    series = series.squeeze()
+    if isinstance(series, pd.DataFrame):
+        # Shouldn't happen after squeeze; extra guard
+        series = series.iloc[:, 0]
+    s = pd.to_numeric(series, errors="coerce")
     n = len(s)
     if n == 0:
         out["swing_high"] = False
@@ -183,20 +241,17 @@ def mark_swings(df: pd.DataFrame, col: str = "Close", k: int = 1) -> pd.DataFram
     for j in range(1, k + 1):
         prev = s.shift(j)
         nxt  = s.shift(-j)
-        # For swing highs, missing neighbors should make the condition False → fill with -inf
-        cond_high &= (s > prev.fillna(-np.inf)) & (s > nxt.fillna(-np.inf)).to_numpy()
-        # For swing lows, missing neighbors should make the condition False → fill with +inf
-        cond_low  &= (s < prev.fillna(np.inf))  & (s < nxt.fillna(np.inf)).to_numpy()
+        cond_high &= (s > prev.fillna(-np.inf)).to_numpy() & (s > nxt.fillna(-np.inf)).to_numpy()
+        cond_low  &= (s < prev.fillna( np.inf)).to_numpy() & (s < nxt.fillna( np.inf)).to_numpy()
 
     out["swing_high"] = cond_high
     out["swing_low"]  = cond_low
     return out
 
-def pick_anchor_from_swings(df_sw: pd.DataFrame, kind: str):
+def pick_anchor_from_swings(df_sw: pd.DataFrame, kind: str) -> Optional[Tuple[float, pd.Timestamp]]:
     """
     kind == "skyline": among swing_high rows → highest CLOSE (tie: highest VOLUME)
     kind == "baseline": among swing_low rows → lowest CLOSE (tie: highest VOLUME)
-    Returns (close_price: float, timestamp: pd.Timestamp) or None.
     """
     if kind == "skyline":
         sub = df_sw[df_sw["swing_high"]]
@@ -236,6 +291,7 @@ def detect_spx_anchors_from_es(previous_day: date, k: int = 1):
     sky = pick_anchor_from_swings(sw, "skyline")
     base = pick_anchor_from_swings(sw, "baseline")
 
+    # Suggest ES→SPX offset from previous RTH (14:30–15:30 CT)
     rth_prev_start = CT.localize(datetime.combine(previous_day, dtime(14,30)))
     rth_prev_end   = CT.localize(datetime.combine(previous_day, dtime(15,30)))
     spx_prev = fetch_live("^GSPC", rth_prev_start.astimezone(UTC), rth_prev_end.astimezone(UTC))
@@ -275,10 +331,8 @@ def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date, k:
     sky_p, sky_t_et = sky_et
     base_p, base_t_et = base_et
 
-    raw_ct = df_et.copy()
-    raw_ct.index = raw_ct.index.tz_convert(CT)
-    sw_ct = sw_et.copy()
-    sw_ct.index = sw_ct.index.tz_convert(CT)
+    raw_ct = df_et.copy(); raw_ct.index = raw_ct.index.tz_convert(CT)
+    sw_ct  = sw_et.copy();  sw_ct.index  = sw_ct.index.tz_convert(CT)
 
     sky_ct = (sky_p, sky_t_et.astimezone(CT))
     base_ct = (base_p, base_t_et.astimezone(CT))
@@ -288,7 +342,7 @@ def detect_stock_anchors_two_day(symbol: str, mon_date: date, tue_date: date, k:
 # PROJECTIONS & SIGNALS
 # ===============================
 
-def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, rth_slots_ct):
+def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, rth_slots_ct: List[datetime]) -> pd.DataFrame:
     """
     Project a line from an anchor (CT datetime) using slope per 30-min block.
     Uses signed block deltas across days, aligning anchor down to nearest 30m.
@@ -306,7 +360,7 @@ def project_line(anchor_price: float, anchor_time_ct: datetime, slope_per_block:
         times.append(dt.strftime("%H:%M"))
     return pd.DataFrame({"Time (CT)": times, "Price": prices})
 
-def detect_signals(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, mode="BUY"):
+def detect_signals(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, mode="BUY") -> pd.DataFrame:
     """
     BUY: bearish candle touches line from above & closes ABOVE.
     SELL: bullish candle touches line from below & closes BELOW.
@@ -522,8 +576,7 @@ def main():
             slope_mag = SLOPES.get(sym, SLOPES.get(sym.capitalize(), 0.015))
             # Next Wednesday after Tuesday
             days_ahead = (2 - tue_date.weekday()) % 7
-            if days_ahead == 0:
-                days_ahead = 7
+            if days_ahead == 0: days_ahead = 7
             first_wed = tue_date + timedelta(days=days_ahead)
 
             proj_day = st.date_input("Projection day (CT)", value=first_wed, key=f"{sym}_proj_day")
