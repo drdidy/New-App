@@ -1,5 +1,6 @@
-# MarketLens Pro v5 — Analytics Edition (no Plotly)
-# All timestamps in Central Time (CT). CLOSE-only swing logic.
+# app.py
+# MarketLens Pro v5 — Analytics Edition (Streamlit-only, no Plotly)
+# Focus: actionable analytics for entries/exits on 30m bars (CLOSE-only), all times in CT.
 # Run:
 #   pip install -r requirements.txt
 #   streamlit run app.py
@@ -15,7 +16,7 @@ from typing import List, Tuple, Optional, Dict
 APP_NAME = "MarketLens Pro v5 — Max Pointe Consulting (Analytics)"
 
 # ===============================
-# THEMING — Glassmorphism (Dark/Light)
+# THEME — Glassmorphism (Dark/Light)
 # ===============================
 
 def theme_css(mode: str):
@@ -135,7 +136,7 @@ SLOPES = {
 }
 
 # ===============================
-# DATA NORMALIZATION / FETCH (yfinance)
+# DATA NORMALIZATION / FETCH
 # ===============================
 
 def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
@@ -292,7 +293,6 @@ def detect_signals(rth_ohlc_ct: pd.DataFrame, line_df: pd.DataFrame, mode="BUY")
     return pd.DataFrame(rows)
 
 def intraday_vwap(df_ct: pd.DataFrame) -> pd.Series:
-    """VWAP per day using 30m typical price * volume, reset daily (CT)."""
     if df_ct.empty: return pd.Series(dtype=float)
     d = df_ct.copy()
     d.index = d.index.tz_convert(CT)
@@ -322,13 +322,6 @@ def ema_series(series: pd.Series, span: int):
 # ANALYTICS / BACKTEST
 # ===============================
 
-def fetch_ct_range(symbol: str, start_ct: datetime, end_ct: datetime) -> pd.DataFrame:
-    df = fetch_live(symbol, start_ct.astimezone(UTC), end_ct.astimezone(UTC))
-    if df.empty: return df
-    df = df.copy(); df.index = df.index.tz_convert(CT)
-    # limit to RTH
-    return df.between_time("08:30","14:30")[["Open","High","Low","Close","Volume"]].copy()
-
 def generate_line_for_day(anchor_price: float, anchor_time_ct: datetime, slope_per_block: float, day_ct: date) -> pd.DataFrame:
     slots = rth_slots_ct_dt(day_ct, "08:30","14:30")
     return project_line(anchor_price, anchor_time_ct, slope_per_block, slots)
@@ -336,17 +329,14 @@ def generate_line_for_day(anchor_price: float, anchor_time_ct: datetime, slope_p
 def simulate_day(df_day: pd.DataFrame, line_df: pd.DataFrame, mode: str, atr: pd.Series,
                  rr_target: float, atr_multiple_stop: float,
                  vwap: pd.Series, use_vwap: bool, ema8: pd.Series, ema21: pd.Series, use_ema: bool) -> Tuple[pd.DataFrame, Dict]:
-    # signals
     trades = detect_signals(df_day, line_df, mode=mode)
     if trades.empty:
         return trades, {"trades":0,"wins":0,"losses":0,"avg_R":0.0,"expectancy":0.0}
 
-    # merge with df_day to get OHLC for next bars if needed
     df = df_day.copy()
     df["Time (CT)"] = df.index.strftime("%H:%M")
     merged = trades.merge(df.reset_index()[["Time (CT)","Open","High","Low","Close"]], on="Time (CT)", how="left")
 
-    # filters: VWAP, EMA regime
     if use_vwap:
         vwmap = vwap.reindex(df.index).astype(float)
         merged["vw"] = merged["Time (CT)"].map(dict(zip(df["Time (CT)"], vwmap)))
@@ -367,36 +357,30 @@ def simulate_day(df_day: pd.DataFrame, line_df: pd.DataFrame, mode: str, atr: pd
     if merged.empty:
         return merged, {"trades":0,"wins":0,"losses":0,"avg_R":0.0,"expectancy":0.0}
 
-    # Risk model (R based on ATR multiple)
     atr_map = atr.reindex(df.index).astype(float)
     merged["atr"] = merged["Time (CT)"].map(dict(zip(df["Time (CT)"], atr_map)))
     merged["R_stop"] = atr_multiple_stop * merged["atr"]
-    # entry at close of signal bar
+
     if mode=="BUY":
-        merged["entry"] = merged["Close"]
-        merged["stop"]  = merged["entry"] - merged["R_stop"]
-        merged["target"]= merged["entry"] + rr_target * merged["R_stop"]
-        # win if subsequent high reaches target before low hits stop; approximate within same bar close
-        merged["outcome_R"] = np.where(merged["High"] >= merged["target"],
-                                       rr_target,
-                                       np.where(merged["Low"] <= merged["stop"], -1.0, 0.0))
+        merged["Entry"]  = merged["Close"]
+        merged["Stop"]   = merged["Entry"] - merged["R_stop"]
+        merged["Target"] = merged["Entry"] + rr_target * merged["R_stop"]
+        merged["Outcome (R)"] = np.where(merged["High"] >= merged["Target"], rr_target,
+                                  np.where(merged["Low"]  <= merged["Stop"], -1.0, 0.0))
     else:
-        merged["entry"] = merged["Close"]
-        merged["stop"]  = merged["entry"] + merged["R_stop"]
-        merged["target"]= merged["entry"] - rr_target * merged["R_stop"]
-        merged["outcome_R"] = np.where(merged["Low"] <= merged["target"],
-                                       rr_target,
-                                       np.where(merged["High"] >= merged["stop"], -1.0, 0.0))
+        merged["Entry"]  = merged["Close"]
+        merged["Stop"]   = merged["Entry"] + merged["R_stop"]
+        merged["Target"] = merged["Entry"] - rr_target * merged["R_stop"]
+        merged["Outcome (R)"] = np.where(merged["Low"]  <= merged["Target"], rr_target,
+                                  np.where(merged["High"] >= merged["Stop"], -1.0, 0.0))
 
-    wins = int((merged["outcome_R"] > 0).sum())
-    losses = int((merged["outcome_R"] < 0).sum())
+    wins = int((merged["Outcome (R)"] > 0).sum())
+    losses = int((merged["Outcome (R)"] < 0).sum())
     trades_n = int(len(merged))
-    avg_R = float(merged["outcome_R"].replace(0.0, np.nan).mean(skipna=True)) if trades_n else 0.0
-    expectancy = float(merged["outcome_R"].mean()) if trades_n else 0.0
+    avg_R = float(merged["Outcome (R)"].replace(0.0, np.nan).mean(skipna=True)) if trades_n else 0.0
+    expectancy = float(merged["Outcome (R)"].mean()) if trades_n else 0.0
 
-    merged = merged[["Time (CT)","Type","entry","stop","target","outcome_R"]].rename(columns={
-        "Type":"Signal","entry":"Entry","stop":"Stop","target":"Target","outcome_R":"Outcome (R)"
-    })
+    merged = merged[["Time (CT)","Type","Entry","Stop","Target","Outcome (R)"]].rename(columns={"Type":"Signal"})
     merged["Entry"] = merged["Entry"].round(4)
     merged["Stop"] = merged["Stop"].round(4)
     merged["Target"] = merged["Target"].round(4)
@@ -405,7 +389,6 @@ def simulate_day(df_day: pd.DataFrame, line_df: pd.DataFrame, mode: str, atr: pd
     return merged, {"trades":trades_n,"wins":wins,"losses":losses,"avg_R":round(avg_R,2),"expectancy":round(expectancy,2)}
 
 def confluence_table(df_ct: pd.DataFrame, line_df: pd.DataFrame, ema8: pd.Series, ema21: pd.Series, vwap: pd.Series) -> pd.DataFrame:
-    # Proximity to line (abs(close - line) / ATR proxy using TR)
     if df_ct.empty: return pd.DataFrame()
     df = df_ct.copy()
     df["Time (CT)"] = df.index.strftime("%H:%M")
@@ -414,12 +397,11 @@ def confluence_table(df_ct: pd.DataFrame, line_df: pd.DataFrame, ema8: pd.Series
     df = df.dropna(subset=["line"])
     tr = (df["High"] - df["Low"]).ewm(span=14, adjust=False).mean()
     proximity = (df["Close"] - df["line"]).abs() / tr.replace(0,np.nan)
-    e8 = ema8.reindex(df.index)
-    e21 = ema21.reindex(df.index)
+    e8 = ema_series(df_ct["Close"], 8).reindex(df.index)
+    e21 = ema_series(df_ct["Close"], 21).reindex(df.index)
     regime = np.where(e8 > e21, 1, -1)
     vw = vwap.reindex(df.index)
     vreg = np.where(df["Close"] > vw, 1, -1)
-    # Confluence Score: higher is better (close to line AND regime aligned)
     score = (1 / (1 + proximity.fillna(9.9))) + 0.5*(regime) + 0.5*(vreg)
     out = pd.DataFrame({
         "Time (CT)": df["Time (CT)"],
@@ -448,7 +430,7 @@ def card(title, sub=None, body_fn=None, badge=None):
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================
-# MAIN
+# MAIN APP
 # ===============================
 
 def main():
@@ -456,11 +438,11 @@ def main():
 
     with st.sidebar:
         st.markdown("## ⚙️ Display")
-        mode = st.radio("Theme", ["Dark", "Light"], index=0)
+        mode = st.radio("Theme", ["Dark", "Light"], index=0, key="ui_theme")
         inject_theme(mode)
         st.markdown("### 🧮 Slopes (per 30-min)")
-        spx_sky  = st.number_input("SPX Skyline (+)", value=SLOPES["SPX"]["Skyline"], step=0.001, format="%.3f")
-        spx_base = st.number_input("SPX Baseline (−)", value=SLOPES["SPX"]["Baseline"], step=0.001, format="%.3f")
+        spx_sky  = st.number_input("SPX Skyline (+)", value=SLOPES["SPX"]["Skyline"], step=0.001, format="%.3f", key="sb_spx_sky")
+        spx_base = st.number_input("SPX Baseline (−)", value=SLOPES["SPX"]["Baseline"], step=0.001, format="%.3f", key="sb_spx_base")
         st.caption("Stocks use ± magnitudes (e.g., AAPL 0.0155 → Skyline +0.0155 / Baseline −0.0155).")
 
     st.markdown(f"## {APP_NAME}")
@@ -499,24 +481,24 @@ def main():
             with c1:
                 st.write("SPX Skyline (+0.268/blk)")
                 st.dataframe(df_sky, use_container_width=True, hide_index=True)
-                st.download_button("Download Skyline CSV", df_sky.to_csv(index=False).encode(), "spx_skyline.csv", "text/csv")
+                st.download_button("Download Skyline CSV", df_sky.to_csv(index=False).encode(), "spx_skyline.csv", "text/csv", key="dl_spx_sky")
             with c2:
                 st.write("SPX Baseline (−0.235/blk)")
                 st.dataframe(df_base, use_container_width=True, hide_index=True)
-                st.download_button("Download Baseline CSV", df_base.to_csv(index=False).encode(), "spx_baseline.csv", "text/csv")
+                st.download_button("Download Baseline CSV", df_base.to_csv(index=False).encode(), "spx_baseline.csv", "text/csv", key="dl_spx_base")
         card("SPX Anchors → Projection", "ES Asian session (17:00–19:30 CT) CLOSE-only swings → SPX via offset → RTH projections.", body_fn=body, badge="SPX")
 
     # ======== Stock Anchors (Mon/Tue) ========
     with tab_stk:
         def body():
-            sym = st.text_input("Stock Symbol", value="AAPL").upper()
+            sym = st.text_input("Stock Symbol", value="AAPL", key="stk_sym").upper()
             today_et = datetime.now(ET).date()
             weekday = today_et.weekday()
             last_mon = today_et - timedelta(days=(weekday - 0) % 7 or 7)
             last_tue = last_mon + timedelta(days=1)
             c1, c2 = st.columns(2)
-            with c1: mon_date = st.date_input("Monday (ET session)", value=last_mon, key="mon")
-            with c2: tue_date = st.date_input("Tuesday (ET session)", value=last_tue, key="tue")
+            with c1: mon_date = st.date_input("Monday (ET session)", value=last_mon, key="stk_mon")
+            with c2: tue_date = st.date_input("Tuesday (ET session)", value=last_tue, key="stk_tue")
             k_stk = st.slider("Swing selectivity (bars each side)", 1, 3, 1, key="stk_k")
             sky, base = detect_stock_anchors_two_day(sym, mon_date, tue_date, k=k_stk)
             if (sky is None) or (base is None):
@@ -543,17 +525,17 @@ def main():
             with c1:
                 st.write(f"{sym} Skyline (+{slope_mag:.4f}/blk)")
                 st.dataframe(df_sky, use_container_width=True, hide_index=True)
-                st.download_button(f"Download {sym} Skyline CSV", df_sky.to_csv(index=False).encode(), f"{sym}_skyline.csv", "text/csv")
+                st.download_button(f"Download {sym} Skyline CSV", df_sky.to_csv(index=False).encode(), f"{sym}_skyline.csv", "text/csv", key=f"dl_{sym}_sky")
             with c2:
                 st.write(f"{sym} Baseline (−{slope_mag:.4f}/blk)")
                 st.dataframe(df_base, use_container_width=True, hide_index=True)
-                st.download_button(f"Download {sym} Baseline CSV", df_base.to_csv(index=False).encode(), f"{sym}_baseline.csv", "text/csv")
+                st.download_button(f"Download {sym} Baseline CSV", df_base.to_csv(index=False).encode(), f"{sym}_baseline.csv", "text/csv", key=f"dl_{sym}_base")
         card("Stock Anchors → Projection", "Mon/Tue CLOSE-only swings → stock-specific slopes → RTH projections.", body_fn=body, badge="Stocks")
 
-    # ======== Signals & EMA (single day utility) ========
+    # ======== Signals & EMA (single-day utility) ========
     with tab_sig:
         def body():
-            sym2 = st.text_input("Symbol", value="^GSPC").upper()
+            sym2 = st.text_input("Symbol", value="^GSPC", key="sig_sym").upper()
             day = st.date_input("Day (CT)", value=datetime.now(CT).date(), key="sig_day")
             rth_start = CT.localize(datetime.combine(day, dtime(8,30)))
             rth_end   = CT.localize(datetime.combine(day, dtime(14,30)))
@@ -561,11 +543,13 @@ def main():
             if not df_ct.empty:
                 df_ct.index = df_ct.index.tz_convert(CT)
                 df_ct = df_ct.between_time("08:30","14:30")
+
             st.markdown("##### Reference Line")
             c1,c2,c3 = st.columns(3)
-            with c1: ref_price = st.number_input("Anchor Price", value=5000.0, step=1.0)
-            with c2: ref_time  = st.time_input("Anchor Time (CT)", value=dtime(17,0), step=1800)
-            with c3: ref_slope = st.number_input("Slope per 30m (+/−)", value=0.268, step=0.001, format="%.3f")
+            with c1: ref_price = st.number_input("Anchor Price", value=5000.0, step=1.0, key="sig_anchor_price")
+            with c2: ref_time  = st.time_input("Anchor Time (CT)", value=dtime(17,0), step=1800, key="sig_anchor_time")
+            with c3: ref_slope = st.number_input("Slope per 30m (+/−)", value=0.268, step=0.001, format="%.3f", key="sig_ref_slope")
+
             line_df = project_line(ref_price, CT.localize(datetime.combine(day, ref_time)), ref_slope, rth_slots_ct_dt(day, "08:30","14:30"))
             if not df_ct.empty:
                 buys = detect_signals(df_ct, line_df, "BUY")
@@ -576,7 +560,7 @@ def main():
                 st.dataframe(buys, use_container_width=True, hide_index=True)
                 st.write("Sell Signals")
                 st.dataframe(sells, use_container_width=True, hide_index=True)
-                # EMA
+
                 e8 = ema_series(df_ct["Close"], 8)
                 e21= ema_series(df_ct["Close"], 21)
                 crosses = []
@@ -600,19 +584,22 @@ def main():
         def body():
             st.markdown("##### Configure Reference Line (used for simulation across many days)")
             sym = st.text_input("Symbol", value="^GSPC", key="bt_sym").upper()
-            lookback_days = st.slider("Lookback (trading days, ≤60 for 30m data)", 5, 60, 20)
-            mode = st.selectbox("Signal Mode", ["BUY","SELL"], index=0)
+            lookback_days = st.slider("Lookback (trading days, ≤60 for 30m data)", 5, 60, 20, key="bt_lookback")
+            mode = st.selectbox("Signal Mode", ["BUY","SELL"], index=0, key="bt_mode")
+
             c1,c2,c3 = st.columns(3)
-            with c1: anchor_price = st.number_input("Anchor Price", value=5000.0, step=1.0)
-            with c2: anchor_time  = st.time_input("Anchor Time (CT)", value=dtime(17,0), step=1800)
-            with c3: slope = st.number_input("Slope per 30m (+/−)", value=0.268, step=0.001, format="%.3f")
+            with c1: anchor_price = st.number_input("Anchor Price", value=5000.0, step=1.0, key="bt_anchor_price")
+            with c2: anchor_time  = st.time_input("Anchor Time (CT)", value=dtime(17,0), step=1800, key="bt_anchor_time")
+            with c3: slope        = st.number_input("Slope per 30m (+/−)", value=0.268, step=0.001, format="%.3f", key="bt_slope")
+
             c4,c5,c6 = st.columns(3)
-            with c4: rr_target = st.number_input("Target (R)", value=1.5, step=0.1, min_value=0.5)
-            with c5: atr_stop  = st.number_input("Stop (ATR multiples)", value=1.0, step=0.1, min_value=0.2)
-            with c6: use_vwap  = st.checkbox("Require VWAP alignment", value=True)
+            with c4: rr_target = st.number_input("Target (R)", value=1.5, step=0.1, min_value=0.5, key="bt_rr")
+            with c5: atr_stop  = st.number_input("Stop (ATR multiples)", value=1.0, step=0.1, min_value=0.2, key="bt_atr_stop")
+            with c6: use_vwap  = st.checkbox("Require VWAP alignment", value=True, key="bt_use_vwap")
+
             c7,c8 = st.columns(2)
-            with c7: use_ema = st.checkbox("Require EMA8/21 regime", value=False)
-            with c8: _ = st.caption("If checked: BUY requires EMA8>EMA21, SELL requires EMA8<EMA21")
+            with c7: use_ema = st.checkbox("Require EMA8/21 regime", value=False, key="bt_use_ema")
+            with c8: st.caption("If checked: BUY requires EMA8>EMA21, SELL requires EMA8<EMA21")
 
             end_ct = datetime.now(CT)
             start_ct = end_ct - timedelta(days=lookback_days*2)  # pad for weekends/holidays
@@ -627,13 +614,13 @@ def main():
                 st.error("No RTH bars in selected window.")
                 return
 
-            # Precompute indicators
+            # Indicators
             atr = atr_30m(hist, 14)
             vwap = intraday_vwap(hist)
             e8 = ema_series(hist["Close"], 8)
             e21= ema_series(hist["Close"], 21)
 
-            # Simulate day by day
+            # Simulate per day
             days = sorted(list(set(hist.index.date)))
             day_stats = []
             all_trades = []
@@ -653,23 +640,23 @@ def main():
                 stats["date"] = d.strftime("%Y-%m-%d")
                 day_stats.append(stats)
 
-            # Aggregate
             if all_trades:
                 trade_log = pd.concat(all_trades, ignore_index=True)
                 st.write("**Trade Log**")
                 st.dataframe(trade_log, use_container_width=True, hide_index=True)
-                wins = (trade_log["Outcome (R)"] > 0).sum()
-                losses = (trade_log["Outcome (R)"] < 0).sum()
+
+                wins = int((trade_log["Outcome (R)"] > 0).sum())
+                losses = int((trade_log["Outcome (R)"] < 0).sum())
                 total = len(trade_log)
-                avg_R = trade_log["Outcome (R)"].replace(0.0, np.nan).mean(skipna=True)
-                expectancy = trade_log["Outcome (R)"].mean()
+                avg_R = float(trade_log["Outcome (R)"].replace(0.0, np.nan).mean(skipna=True)) if total else 0.0
+                expectancy = float(trade_log["Outcome (R)"].mean()) if total else 0.0
+
                 st.markdown("<div class='ml-row'>", unsafe_allow_html=True)
                 st.markdown(f"<div class='ml-card'><div class='ml-pill'>Outcome</div><div class='ml-sub'>Across {total} signals</div><div style='height:6px'></div><div style='font-weight:800;font-size:1.3rem'>Win {wins} • Loss {losses}</div></div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='ml-card'><div class='ml-pill'>Avg R</div><div class='ml-sub'>Ignoring 0R</div><div style='height:6px'></div><div style='font-weight:800;font-size:1.3rem'>{avg_R:.2f}</div></div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='ml-card'><div class='ml-pill'>Expectancy</div><div class='ml-sub'>Mean R per trade</div><div style='height:6px'></div><div style='font-weight:800;font-size:1.3rem'>{expectancy:.2f}</div></div>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-                # Time-of-day performance
                 perf_rows = []
                 for t, arr in sorted(time_perf.items()):
                     r = pd.Series(arr)
@@ -678,7 +665,6 @@ def main():
                 st.write("**Time-of-Day Edge (historical)**")
                 st.dataframe(perf_df, use_container_width=True, hide_index=True)
 
-                # Confluence table for the **most recent day**
                 last_day = days[-1]
                 df_last = hist[hist.index.date == last_day]
                 line_last = generate_line_for_day(anchor_price, CT.localize(datetime.combine(last_day, anchor_time)), slope, last_day)
@@ -687,7 +673,6 @@ def main():
                 st.dataframe(conf, use_container_width=True, hide_index=True)
             else:
                 st.info("No qualifying signals in the selected window with current filters/line settings.")
-
         card("Analytics / Backtest", "Simulate your line-touch rules across many days with ATR/VWAP/EMA filters. Find best windows & expectancy.", body_fn=body, badge="Analytics")
 
     # ======== Contract Tool ========
@@ -695,12 +680,12 @@ def main():
         def body():
             c1, c2 = st.columns(2)
             with c1:
-                t1 = st.time_input("Point 1 Time (CT)", value=dtime(20,0), step=1800)
-                p1 = st.number_input("Point 1 Price", value=10.0, step=0.1)
+                t1 = st.time_input("Point 1 Time (CT)", value=dtime(20,0), step=1800, key="ct_p1_time")
+                p1 = st.number_input("Point 1 Price", value=10.0, step=0.1, key="ct_p1_price")
             with c2:
-                t2 = st.time_input("Point 2 Time (CT)", value=dtime(3,30), step=1800)
-                p2 = st.number_input("Point 2 Price", value=12.0, step=0.1)
-            proj_day = st.date_input("Projection Day (CT)", value=datetime.now(CT).date())
+                t2 = st.time_input("Point 2 Time (CT)", value=dtime(3,30), step=1800, key="ct_p2_time")
+                p2 = st.number_input("Point 2 Price", value=12.0, step=0.1, key="ct_p2_price")
+            proj_day = st.date_input("Projection Day (CT)", value=datetime.now(CT).date(), key="ct_proj_day")
             prev_day = proj_day - timedelta(days=1)
             dt1 = CT.localize(datetime.combine(prev_day if t1.hour >= 20 else proj_day, t1))
             dt2 = CT.localize(datetime.combine(prev_day if t2.hour >= 20 else proj_day, t2))
@@ -714,10 +699,10 @@ def main():
             df = pd.DataFrame(rows)
             st.write(f"Slope per 30-min block: **{slope:.4f}**")
             st.dataframe(df, use_container_width=True, hide_index=True)
-            st.download_button("Download Contract Projection CSV", df.to_csv(index=False).encode(), "contract_projection.csv", "text/csv", use_container_width=True)
+            st.download_button("Download Contract Projection CSV", df.to_csv(index=False).encode(), "contract_projection.csv", "text/csv", key="dl_contract")
         card("Contract Projection", "Two points (20:00 prev → 10:00 today) → slope → 08:30–14:30 CT forecast.", body_fn=body, badge="Contracts")
 
-    st.markdown("<div class='muted' style='margin-top:12px'>© 2025 MarketLens Pro • All analytics run on 30-minute bars (CT). CLOSE-only swing logic per your spec.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='muted' style='margin-top:12px'>© 2025 MarketLens Pro • All analytics on 30-minute bars (CT). CLOSE-only swing logic.</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
