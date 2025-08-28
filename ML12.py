@@ -2459,3 +2459,618 @@ def render_confluence_analysis_panel(confluence_df: pd.DataFrame,
 
 # This completes Part 2C: Technical Indicators & Market Analysis Engine
 
+
+# MarketLens Pro v6 - Part 3A: Enhanced UI Components & Signal Detection System
+# Professional user interface components and advanced signal generation
+
+# ===============================
+# PROFESSIONAL UI COMPONENTS
+# ===============================
+
+class UIComponentSystem:
+    """Professional UI component library for trading analytics"""
+    
+    @staticmethod
+    def render_symbol_selector(core_symbols: List[str] = None, 
+                              selected_symbol: str = "AAPL",
+                              key_prefix: str = "main") -> str:
+        """Enhanced symbol selection with quick picks and custom input"""
+        
+        if core_symbols is None:
+            core_symbols = ["AAPL", "MSFT", "NVDA", "GOOGL", "TSLA", "META", "AMZN", "NFLX"]
+        
+        st.markdown("##### Symbol Selection")
+        
+        # Quick select buttons in grid
+        cols = st.columns(len(core_symbols))
+        selected_from_buttons = None
+        
+        for i, symbol in enumerate(core_symbols):
+            with cols[i]:
+                slope_data = get_slope_data(symbol)
+                confidence_color = "var(--success)" if slope_data['confidence'] > 0.8 else "var(--warning)" if slope_data['confidence'] > 0.6 else "var(--danger)"
+                
+                if st.button(
+                    symbol, 
+                    key=f"{key_prefix}_btn_{symbol}",
+                    help=f"Confidence: {slope_data['confidence']:.1%}",
+                    use_container_width=True
+                ):
+                    selected_from_buttons = symbol
+                    st.session_state[f'{key_prefix}_selected_symbol'] = symbol
+        
+        # Selection mode
+        selection_mode = st.selectbox(
+            "Symbol Input Method",
+            options=["Quick Select", "Custom Symbol"],
+            index=0,
+            key=f"{key_prefix}_symbol_mode"
+        )
+        
+        if selection_mode == "Custom Symbol":
+            custom_symbol = st.text_input(
+                "Enter Symbol",
+                value="",
+                key=f"{key_prefix}_custom_symbol",
+                help="Enter any valid ticker symbol (e.g., BRK-B, QQQ, SPY)"
+            ).upper().strip()
+            
+            if custom_symbol:
+                # Validate and show slope data
+                slope_data = get_slope_data(custom_symbol)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Base Slope", f"{slope_data['base']:.4f}")
+                with col2:
+                    st.metric("Confidence", f"{slope_data['confidence']:.1%}")
+                with col3:
+                    range_str = f"{slope_data['range'][0]:.4f} - {slope_data['range'][1]:.4f}"
+                    st.metric("Range", range_str)
+                
+                return custom_symbol
+        
+        # Return selected symbol
+        if selected_from_buttons:
+            return selected_from_buttons
+        else:
+            return st.session_state.get(f'{key_prefix}_selected_symbol', selected_symbol)
+    
+    @staticmethod
+    def render_date_range_selector(default_start: date = None, 
+                                  default_end: date = None,
+                                  key_prefix: str = "main") -> Tuple[date, date]:
+        """Smart date range selector with presets"""
+        
+        if default_start is None:
+            default_start = (datetime.now(CT) - timedelta(days=7)).date()
+        if default_end is None:
+            default_end = datetime.now(CT).date()
+        
+        st.markdown("##### Date Range Selection")
+        
+        # Quick preset buttons
+        preset_cols = st.columns(4)
+        
+        with preset_cols[0]:
+            if st.button("Last 5 Days", key=f"{key_prefix}_preset_5d"):
+                end_date = datetime.now(CT).date()
+                start_date = end_date - timedelta(days=5)
+                st.session_state[f'{key_prefix}_start_date'] = start_date
+                st.session_state[f'{key_prefix}_end_date'] = end_date
+        
+        with preset_cols[1]:
+            if st.button("Last 10 Days", key=f"{key_prefix}_preset_10d"):
+                end_date = datetime.now(CT).date()
+                start_date = end_date - timedelta(days=10)
+                st.session_state[f'{key_prefix}_start_date'] = start_date
+                st.session_state[f'{key_prefix}_end_date'] = end_date
+        
+        with preset_cols[2]:
+            if st.button("This Week", key=f"{key_prefix}_preset_week"):
+                today = datetime.now(CT).date()
+                start_date = today - timedelta(days=today.weekday())
+                end_date = today
+                st.session_state[f'{key_prefix}_start_date'] = start_date
+                st.session_state[f'{key_prefix}_end_date'] = end_date
+        
+        with preset_cols[3]:
+            if st.button("Last Mon-Tue", key=f"{key_prefix}_preset_montue"):
+                today = datetime.now(CT).date()
+                days_since_monday = today.weekday()
+                last_monday = today - timedelta(days=days_since_monday + 7 if days_since_monday < 2 else days_since_monday)
+                last_tuesday = last_monday + timedelta(days=1)
+                st.session_state[f'{key_prefix}_start_date'] = last_monday
+                st.session_state[f'{key_prefix}_end_date'] = last_tuesday
+        
+        # Manual date inputs
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "Start Date",
+                value=st.session_state.get(f'{key_prefix}_start_date', default_start),
+                key=f"{key_prefix}_start_manual"
+            )
+        with col2:
+            end_date = st.date_input(
+                "End Date", 
+                value=st.session_state.get(f'{key_prefix}_end_date', default_end),
+                key=f"{key_prefix}_end_manual"
+            )
+        
+        return start_date, end_date
+    
+    @staticmethod
+    def render_slope_configuration_panel(symbol: str, key_prefix: str = "main") -> Tuple[float, float]:
+        """Advanced slope configuration with confidence intervals"""
+        
+        slope_data = get_slope_data(symbol)
+        
+        st.markdown(f"##### {symbol} Slope Configuration")
+        
+        # Display confidence metrics
+        confidence_color = "success" if slope_data['confidence'] > 0.8 else "warning" if slope_data['confidence'] > 0.6 else "error"
+        
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Confidence Level</div>
+            <div class="metric-value metric-{confidence_color}">{slope_data['confidence']:.1%}</div>
+            <div class="card-subtitle">Based on historical performance</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Slope magnitude input with validation
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            slope_magnitude = st.number_input(
+                "Slope Magnitude (per 30min)",
+                min_value=0.0001,
+                max_value=1.0,
+                value=float(slope_data['base']),
+                step=0.0001,
+                format="%.4f",
+                key=f"{key_prefix}_slope_mag",
+                help=f"Recommended range: {slope_data['range'][0]:.4f} to {slope_data['range'][1]:.4f}"
+            )
+        
+        with col2:
+            slope_adjustment = st.selectbox(
+                "Slope Adjustment",
+                options=["Use Base Slope", "Conservative (-20%)", "Aggressive (+20%)", "Custom Range"],
+                index=0,
+                key=f"{key_prefix}_slope_adj"
+            )
+        
+        # Apply adjustments
+        if slope_adjustment == "Conservative (-20%)":
+            slope_magnitude *= 0.8
+        elif slope_adjustment == "Aggressive (+20%)":
+            slope_magnitude *= 1.2
+        elif slope_adjustment == "Custom Range":
+            range_factor = st.slider(
+                "Range Factor", 
+                min_value=0.5, 
+                max_value=2.0, 
+                value=1.0, 
+                step=0.1,
+                key=f"{key_prefix}_range_factor"
+            )
+            slope_magnitude *= range_factor
+        
+        # Warning if outside recommended range
+        min_slope, max_slope = slope_data['range']
+        if not (min_slope <= slope_magnitude <= max_slope):
+            st.warning(f"⚠️ Slope outside recommended range ({min_slope:.4f} - {max_slope:.4f})")
+        
+        return float(slope_magnitude), float(-slope_magnitude)
+
+    @staticmethod
+    def render_trading_parameters_panel(key_prefix: str = "main") -> Dict[str, Any]:
+        """Professional trading parameters configuration"""
+        
+        st.markdown("##### Trading Parameters")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            risk_reward = st.number_input(
+                "Risk:Reward Target",
+                min_value=0.5,
+                max_value=10.0,
+                value=1.5,
+                step=0.1,
+                key=f"{key_prefix}_rr_target",
+                help="Target profit as multiple of stop loss"
+            )
+        
+        with col2:
+            atr_stop_multiple = st.number_input(
+                "ATR Stop Multiple",
+                min_value=0.2,
+                max_value=5.0,
+                value=1.0,
+                step=0.1,
+                key=f"{key_prefix}_atr_stop",
+                help="Stop loss distance as ATR multiple"
+            )
+        
+        with col3:
+            min_confidence = st.number_input(
+                "Minimum Signal Confidence",
+                min_value=0.1,
+                max_value=1.0,
+                value=0.6,
+                step=0.05,
+                key=f"{key_prefix}_min_conf",
+                help="Minimum confluence score for signals"
+            )
+        
+        # Advanced filters
+        st.markdown("**Signal Filters**")
+        col4, col5, col6 = st.columns(3)
+        
+        with col4:
+            require_vwap = st.checkbox(
+                "Require VWAP Alignment",
+                value=True,
+                key=f"{key_prefix}_req_vwap",
+                help="BUY: price above VWAP, SELL: price below VWAP"
+            )
+        
+        with col5:
+            require_ema_regime = st.checkbox(
+                "Require EMA Regime",
+                value=False,
+                key=f"{key_prefix}_req_ema",
+                help="Align signals with EMA trend direction"
+            )
+        
+        with col6:
+            require_volume = st.checkbox(
+                "Require Volume Confirmation", 
+                value=True,
+                key=f"{key_prefix}_req_volume",
+                help="Higher than average volume required"
+            )
+        
+        return {
+            'risk_reward': risk_reward,
+            'atr_stop_multiple': atr_stop_multiple,
+            'min_confidence': min_confidence,
+            'require_vwap': require_vwap,
+            'require_ema_regime': require_ema_regime,
+            'require_volume': require_volume
+        }
+
+# ===============================
+# ADVANCED SIGNAL DETECTION SYSTEM
+# ===============================
+
+@dataclass
+class TradingSignal:
+    """Enhanced trading signal with comprehensive metadata"""
+    timestamp: datetime
+    signal_type: str  # 'BUY' or 'SELL'
+    entry_price: float
+    line_price: float
+    stop_loss: float
+    target_price: float
+    confluence_score: float
+    confidence_grade: str
+    atr_context: float
+    volume_ratio: float
+    vwap_alignment: str
+    ema_regime: str
+    session: str
+    risk_reward_actual: float
+    
+    def to_display_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for display"""
+        return {
+            'Time (CT)': format_ct_time(self.timestamp, include_date=False),
+            'Signal': self.signal_type,
+            'Entry': f"${self.entry_price:.2f}",
+            'Line': f"${self.line_price:.2f}",
+            'Stop': f"${self.stop_loss:.2f}",
+            'Target': f"${self.target_price:.2f}",
+            'R:R': f"{self.risk_reward_actual:.2f}",
+            'Confluence': f"{self.confluence_score:.3f}",
+            'Grade': self.confidence_grade,
+            'Volume': f"{self.volume_ratio:.1f}x",
+            'VWAP': self.vwap_alignment,
+            'EMA': self.ema_regime,
+            'Session': self.session
+        }
+
+class AdvancedSignalDetector:
+    """Professional signal detection with multi-factor validation"""
+    
+    def __init__(self, trading_params: Dict[str, Any]):
+        self.params = trading_params
+        self.technical_indicators = AdvancedTechnicalIndicators()
+        self.confluence_engine = ConfluenceAnalysisEngine()
+    
+    def detect_line_touch_signals(self, df: pd.DataFrame, line_prices: pd.Series,
+                                 signal_mode: str = "BUY") -> List[TradingSignal]:
+        """Detect line touch signals with comprehensive validation"""
+        
+        if df.empty or line_prices.empty:
+            return []
+        
+        # Calculate technical indicators
+        technical_data = self._calculate_technical_context(df)
+        
+        # Calculate confluence scores
+        confluence_df = self.confluence_engine.calculate_confluence_scores(
+            df, line_prices, technical_data
+        )
+        
+        signals = []
+        
+        for i, (timestamp, row) in enumerate(confluence_df.iterrows()):
+            # Get line price for this time
+            time_str = timestamp.strftime('%H:%M')
+            if time_str not in line_prices.index:
+                continue
+            
+            line_price = line_prices[time_str]
+            
+            # Basic OHLC data
+            open_price = float(row['Open'])
+            high_price = float(row['High'])
+            low_price = float(row['Low'])
+            close_price = float(row['Close'])
+            
+            # Check for line touch
+            line_touched = low_price <= line_price <= high_price
+            if not line_touched:
+                continue
+            
+            # Determine bar type
+            is_bullish_bar = close_price > open_price
+            is_bearish_bar = close_price < open_price
+            
+            # Signal logic
+            valid_signal = False
+            entry_price = close_price
+            
+            if signal_mode == "BUY":
+                # BUY: bearish bar that touches line but closes above line and above open
+                valid_signal = (is_bearish_bar and 
+                              close_price > line_price and 
+                              open_price > line_price)
+            elif signal_mode == "SELL":
+                # SELL: bullish bar that touches line but closes below line and below open  
+                valid_signal = (is_bullish_bar and
+                              close_price < line_price and
+                              open_price < line_price)
+            
+            if not valid_signal:
+                continue
+            
+            # Apply confluence filter
+            confluence_score = float(row.get('confluence_score', 0))
+            if confluence_score < self.params['min_confidence']:
+                continue
+            
+            # Calculate stop loss and target
+            atr_value = technical_data['atr'].iloc[i] if len(technical_data['atr']) > i else 1.0
+            stop_distance = atr_value * self.params['atr_stop_multiple']
+            
+            if signal_mode == "BUY":
+                stop_loss = entry_price - stop_distance
+                target_price = entry_price + (stop_distance * self.params['risk_reward'])
+            else:
+                stop_loss = entry_price + stop_distance  
+                target_price = entry_price - (stop_distance * self.params['risk_reward'])
+            
+            actual_rr = abs(target_price - entry_price) / abs(entry_price - stop_loss)
+            
+            # Apply additional filters
+            if not self._validate_signal_filters(row, technical_data, i):
+                continue
+            
+            # Determine market session
+            session = self._get_market_session(timestamp)
+            
+            # Create signal
+            signal = TradingSignal(
+                timestamp=timestamp,
+                signal_type=signal_mode,
+                entry_price=entry_price,
+                line_price=line_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                confluence_score=confluence_score,
+                confidence_grade=str(row.get('confluence_grade', 'Fair')),
+                atr_context=float(atr_value),
+                volume_ratio=float(row.get('volume_ratio', 1.0)),
+                vwap_alignment=self._get_vwap_alignment(row, technical_data, i),
+                ema_regime=self._get_ema_regime(technical_data, i),
+                session=session,
+                risk_reward_actual=actual_rr
+            )
+            
+            signals.append(signal)
+        
+        # Sort by confluence score (best first)
+        signals.sort(key=lambda s: s.confluence_score, reverse=True)
+        return signals
+    
+    def _calculate_technical_context(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate all technical indicators for context"""
+        
+        technical_data = {}
+        
+        # VWAP with bands
+        vwap_data = self.technical_indicators.intraday_vwap_with_bands(df)
+        technical_data['vwap'] = vwap_data
+        
+        # Adaptive ATR
+        technical_data['atr'] = self.technical_indicators.adaptive_atr(df)
+        
+        # Multi-EMA system
+        emas = self.technical_indicators.multi_ema_system(df)
+        technical_data['emas'] = emas
+        
+        # Regime detection
+        regime_data = self.technical_indicators.regime_detection_advanced(emas, df['Close'])
+        technical_data['regime'] = regime_data
+        
+        # Momentum indicators
+        momentum_data = self.technical_indicators.momentum_oscillator_suite(df)
+        technical_data['momentum'] = momentum_data
+        
+        # Volume profile
+        volume_profile = self.technical_indicators.volume_profile_intraday(df)
+        technical_data['volume_profile'] = volume_profile
+        
+        return technical_data
+    
+    def _validate_signal_filters(self, row: pd.Series, technical_data: Dict[str, Any], 
+                               index: int) -> bool:
+        """Apply additional signal validation filters"""
+        
+        # VWAP filter
+        if self.params.get('require_vwap', False):
+            vwap_alignment = self._get_vwap_alignment(row, technical_data, index)
+            if vwap_alignment not in ['Above', 'Below']:  # Require clear alignment
+                return False
+        
+        # EMA regime filter
+        if self.params.get('require_ema_regime', False):
+            regime_data = technical_data.get('regime', {})
+            if 'ema_alignment' in regime_data:
+                alignment_score = regime_data['ema_alignment'].iloc[index] if len(regime_data['ema_alignment']) > index else 0.5
+                if alignment_score < 0.8:  # Require strong EMA alignment
+                    return False
+        
+        # Volume filter
+        if self.params.get('require_volume', False):
+            volume_ratio = float(row.get('volume_ratio', 1.0))
+            if volume_ratio < 1.2:  # Require above-average volume
+                return False
+        
+        return True
+    
+    def _get_vwap_alignment(self, row: pd.Series, technical_data: Dict[str, Any], 
+                          index: int) -> str:
+        """Determine VWAP alignment"""
+        vwap_data = technical_data.get('vwap', {})
+        if 'vwap' not in vwap_data:
+            return 'Unknown'
+        
+        vwap_series = vwap_data['vwap']
+        if len(vwap_series) <= index:
+            return 'Unknown'
+        
+        vwap_price = vwap_series.iloc[index]
+        close_price = float(row['Close'])
+        
+        if pd.isna(vwap_price):
+            return 'Unknown'
+        
+        return 'Above' if close_price > vwap_price else 'Below'
+    
+    def _get_ema_regime(self, technical_data: Dict[str, Any], index: int) -> str:
+        """Determine EMA regime"""
+        regime_data = technical_data.get('regime', {})
+        if 'regime' not in regime_data:
+            return 'Unknown'
+        
+        regime_series = regime_data['regime']
+        if len(regime_series) <= index:
+            return 'Unknown'
+        
+        return str(regime_series.iloc[index])
+    
+    def _get_market_session(self, timestamp: datetime) -> str:
+        """Determine market session"""
+        ct_time = timestamp.astimezone(CT) if timestamp.tz else CT.localize(timestamp)
+        hour = ct_time.hour
+        
+        if 8 <= hour <= 15:
+            return 'RTH'
+        elif 17 <= hour <= 19:
+            return 'Asian'
+        elif 2 <= hour <= 8:
+            return 'European'
+        else:
+            return 'Extended'
+
+def render_signals_analysis_panel(signals: List[TradingSignal], 
+                                max_display: int = 10) -> None:
+    """Render comprehensive signals analysis panel"""
+    
+    if not signals:
+        st.warning("No signals detected with current parameters")
+        return
+    
+    st.markdown('''
+    <div class="analytics-card">
+        <div class="card-header">
+            <div>
+                <h4 class="card-title">Trading Signals Analysis</h4>
+                <p class="card-subtitle">Line-touch signals with multi-factor validation</p>
+            </div>
+            <div class="card-badge">Professional</div>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+    
+    # Summary metrics
+    total_signals = len(signals)
+    avg_confluence = np.mean([s.confluence_score for s in signals])
+    avg_rr = np.mean([s.risk_reward_actual for s in signals])
+    
+    # Grade distribution
+    grade_counts = {}
+    for signal in signals:
+        grade = signal.confidence_grade
+        grade_counts[grade] = grade_counts.get(grade, 0) + 1
+    
+    # Display summary
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        render_metric_card("Total Signals", total_signals, "detected")
+    with col2:
+        render_metric_card("Avg Confluence", avg_confluence, metric_type="ratio", confidence=avg_confluence)
+    with col3:
+        render_metric_card("Avg Risk:Reward", avg_rr, metric_type="ratio")
+    with col4:
+        excellent_signals = grade_counts.get('Excellent', 0)
+        render_metric_card("Excellent Grade", excellent_signals, f"of {total_signals}", trend="positive" if excellent_signals > 0 else "neutral")
+    
+    # Detailed signals table
+    st.subheader(f"Top {min(max_display, total_signals)} Signals")
+    
+    display_signals = signals[:max_display]
+    signals_data = [signal.to_display_dict() for signal in display_signals]
+    
+    if signals_data:
+        signals_df = pd.DataFrame(signals_data)
+        st.dataframe(signals_df, use_container_width=True, hide_index=True)
+        
+        # Download option
+        csv_data = pd.DataFrame([{
+            'Timestamp': signal.timestamp.isoformat(),
+            'Signal_Type': signal.signal_type,
+            'Entry_Price': signal.entry_price,
+            'Stop_Loss': signal.stop_loss,
+            'Target_Price': signal.target_price,
+            'Confluence_Score': signal.confluence_score,
+            'Confidence_Grade': signal.confidence_grade,
+            'Session': signal.session
+        } for signal in signals])
+        
+        st.download_button(
+            "Download Signals CSV",
+            csv_data.to_csv(index=False).encode(),
+            "trading_signals.csv",
+            "text/csv",
+            use_container_width=True
+        )
+
+# This completes Part 3A: Enhanced UI Components & Signal Detection System
+
