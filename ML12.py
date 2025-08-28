@@ -1268,5 +1268,619 @@ def validate_trading_data(df: pd.DataFrame, min_price: float = 0.01,
 # This completes Part 2A: Data Quality & Enhanced Fetching System
 
 
+# MarketLens Pro v6 - Part 2B: Advanced Swing Detection & Anchor System
+# Sophisticated swing detection with confidence scoring and anchor identification
 
+# ===============================
+# SWING POINT DATA STRUCTURES
+# ===============================
+
+@dataclass
+class SwingPoint:
+    """Enhanced swing point with comprehensive metadata"""
+    price: float
+    timestamp: datetime
+    swing_type: str  # 'high' or 'low'
+    strength: int    # lookback/lookahead periods used
+    volume: float
+    confidence: float  # 0-1 confidence score
+    atr_ratio: float  # price move relative to ATR
+    volume_ratio: float  # volume relative to average
+    market_session: str  # 'RTH', 'Asian', 'European', etc.
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for display"""
+        return {
+            'Price': f"${self.price:.2f}",
+            'Time (CT)': format_ct_time(self.timestamp),
+            'Type': self.swing_type.title(),
+            'Confidence': f"{self.confidence:.1%}",
+            'Volume Ratio': f"{self.volume_ratio:.1f}x",
+            'ATR Ratio': f"{self.atr_ratio:.2f}",
+            'Session': self.market_session
+        }
+
+class SwingDetectionConfig:
+    """Configuration for swing detection parameters"""
+    
+    def __init__(self, 
+                 lookback: int = 1,
+                 min_confidence: float = 0.5,
+                 volume_weight: float = 0.3,
+                 atr_weight: float = 0.4,
+                 time_weight: float = 0.3):
+        self.lookback = lookback
+        self.min_confidence = min_confidence
+        self.volume_weight = volume_weight
+        self.atr_weight = atr_weight
+        self.time_weight = time_weight
+
+# ===============================
+# ADVANCED SWING DETECTION ENGINE
+# ===============================
+
+class AdvancedSwingDetector:
+    """Professional-grade swing detection with multi-factor confidence scoring"""
+    
+    def __init__(self, config: SwingDetectionConfig = None):
+        self.config = config or SwingDetectionConfig()
+        
+    def detect_swings_with_confidence(self, df: pd.DataFrame, 
+                                    price_col: str = 'Close') -> pd.DataFrame:
+        """Detect swings with comprehensive confidence analysis"""
+        
+        if df.empty or price_col not in df.columns:
+            return self._empty_swing_result(df)
+        
+        # Prepare data
+        result_df = df.copy()
+        prices = pd.to_numeric(df[price_col], errors='coerce')
+        volumes = pd.to_numeric(df.get('Volume', pd.Series(1.0, index=df.index)), errors='coerce')
+        
+        # Calculate ATR for context
+        atr_series = self._calculate_atr(df) if self._has_ohlc(df) else pd.Series(1.0, index=df.index)
+        
+        # Initialize swing arrays
+        n = len(prices)
+        swing_highs = np.zeros(n, dtype=bool)
+        swing_lows = np.zeros(n, dtype=bool)
+        confidence_scores = np.zeros(n, dtype=float)
+        volume_ratios = np.zeros(n, dtype=float)
+        atr_ratios = np.zeros(n, dtype=float)
+        
+        # Detect swings with lookback/lookahead
+        for i in range(self.config.lookback, n - self.config.lookback):
+            if pd.isna(prices.iloc[i]):
+                continue
+                
+            current_price = prices.iloc[i]
+            
+            # Check for swing high
+            is_high = self._is_swing_high(prices, i, self.config.lookback)
+            
+            # Check for swing low
+            is_low = self._is_swing_low(prices, i, self.config.lookback)
+            
+            if is_high or is_low:
+                # Calculate confidence components
+                price_confidence = self._calculate_price_confidence(prices, i, self.config.lookback)
+                volume_confidence = self._calculate_volume_confidence(volumes, i, self.config.lookback)
+                atr_confidence = self._calculate_atr_confidence(prices, atr_series, i)
+                time_confidence = self._calculate_time_confidence(df.index[i])
+                
+                # Combined confidence score
+                total_confidence = (
+                    price_confidence * (1 - self.config.volume_weight - self.config.atr_weight - self.config.time_weight) +
+                    volume_confidence * self.config.volume_weight +
+                    atr_confidence * self.config.atr_weight +
+                    time_confidence * self.config.time_weight
+                )
+                
+                # Apply minimum confidence threshold
+                if total_confidence >= self.config.min_confidence:
+                    swing_highs[i] = is_high
+                    swing_lows[i] = is_low
+                    confidence_scores[i] = total_confidence
+                    
+                    # Store additional metrics
+                    volume_ratios[i] = self._get_volume_ratio(volumes, i, self.config.lookback)
+                    atr_ratios[i] = self._get_atr_ratio(prices, atr_series, i, self.config.lookback)
+        
+        # Add results to DataFrame
+        result_df['swing_high'] = swing_highs
+        result_df['swing_low'] = swing_lows
+        result_df['swing_confidence'] = confidence_scores
+        result_df['volume_ratio'] = volume_ratios
+        result_df['atr_ratio'] = atr_ratios
+        
+        return result_df
+    
+    def find_optimal_anchors(self, swing_df: pd.DataFrame, 
+                           price_col: str = 'Close') -> Tuple[Optional[SwingPoint], Optional[SwingPoint]]:
+        """Find optimal swing anchors using multi-criteria optimization"""
+        
+        if swing_df.empty:
+            return None, None
+        
+        # Find swing high anchor (skyline)
+        high_candidates = swing_df[swing_df['swing_high'] == True].copy()
+        skyline_anchor = None
+        
+        if not high_candidates.empty:
+            # Score highs: prefer higher prices with good confidence
+            high_candidates['anchor_score'] = (
+                (high_candidates[price_col] / high_candidates[price_col].max()) * 0.4 +
+                high_candidates['swing_confidence'] * 0.35 +
+                (high_candidates['volume_ratio'] / high_candidates['volume_ratio'].max()) * 0.15 +
+                (high_candidates['atr_ratio'] / high_candidates['atr_ratio'].max()) * 0.1
+            )
+            
+            best_high = high_candidates.loc[high_candidates['anchor_score'].idxmax()]
+            skyline_anchor = self._create_swing_point(best_high, 'high', price_col)
+        
+        # Find swing low anchor (baseline)  
+        low_candidates = swing_df[swing_df['swing_low'] == True].copy()
+        baseline_anchor = None
+        
+        if not low_candidates.empty:
+            # Score lows: prefer lower prices with good confidence
+            low_candidates['anchor_score'] = (
+                (1 - low_candidates[price_col] / low_candidates[price_col].max()) * 0.4 +
+                low_candidates['swing_confidence'] * 0.35 +
+                (low_candidates['volume_ratio'] / low_candidates['volume_ratio'].max()) * 0.15 +
+                (low_candidates['atr_ratio'] / low_candidates['atr_ratio'].max()) * 0.1
+            )
+            
+            best_low = low_candidates.loc[low_candidates['anchor_score'].idxmax()]
+            baseline_anchor = self._create_swing_point(best_low, 'low', price_col)
+        
+        return skyline_anchor, baseline_anchor
+    
+    def _is_swing_high(self, prices: pd.Series, index: int, lookback: int) -> bool:
+        """Check if point is a swing high"""
+        current = prices.iloc[index]
+        
+        for j in range(1, lookback + 1):
+            if (index - j < 0 or index + j >= len(prices) or
+                pd.isna(prices.iloc[index - j]) or pd.isna(prices.iloc[index + j])):
+                continue
+                
+            if (current <= prices.iloc[index - j] or current <= prices.iloc[index + j]):
+                return False
+        
+        return True
+    
+    def _is_swing_low(self, prices: pd.Series, index: int, lookback: int) -> bool:
+        """Check if point is a swing low"""
+        current = prices.iloc[index]
+        
+        for j in range(1, lookback + 1):
+            if (index - j < 0 or index + j >= len(prices) or
+                pd.isna(prices.iloc[index - j]) or pd.isna(prices.iloc[index + j])):
+                continue
+                
+            if (current >= prices.iloc[index - j] or current >= prices.iloc[index + j]):
+                return False
+        
+        return True
+    
+    def _calculate_price_confidence(self, prices: pd.Series, index: int, lookback: int) -> float:
+        """Calculate confidence based on price separation"""
+        current = prices.iloc[index]
+        surrounding_prices = []
+        
+        for j in range(1, lookback + 1):
+            if index - j >= 0 and not pd.isna(prices.iloc[index - j]):
+                surrounding_prices.append(prices.iloc[index - j])
+            if index + j < len(prices) and not pd.isna(prices.iloc[index + j]):
+                surrounding_prices.append(prices.iloc[index + j])
+        
+        if not surrounding_prices:
+            return 0.0
+        
+        avg_surrounding = np.mean(surrounding_prices)
+        if avg_surrounding == 0:
+            return 0.0
+        
+        separation = abs(current - avg_surrounding) / avg_surrounding
+        return min(1.0, separation * 8)  # Scale factor for reasonable confidence range
+    
+    def _calculate_volume_confidence(self, volumes: pd.Series, index: int, lookback: int) -> float:
+        """Calculate confidence based on volume confirmation"""
+        if volumes.empty or pd.isna(volumes.iloc[index]):
+            return 0.5  # Neutral if no volume data
+        
+        current_volume = volumes.iloc[index]
+        surrounding_volumes = []
+        
+        for j in range(1, lookback + 2):  # Slightly wider range for volume
+            if index - j >= 0 and not pd.isna(volumes.iloc[index - j]):
+                surrounding_volumes.append(volumes.iloc[index - j])
+            if index + j < len(volumes) and not pd.isna(volumes.iloc[index + j]):
+                surrounding_volumes.append(volumes.iloc[index + j])
+        
+        if not surrounding_volumes or current_volume == 0:
+            return 0.3
+        
+        avg_volume = np.mean(surrounding_volumes)
+        if avg_volume == 0:
+            return 0.3
+        
+        volume_ratio = current_volume / avg_volume
+        # Higher volume increases confidence, but with diminishing returns
+        return min(1.0, 0.3 + (volume_ratio - 1) * 0.2) if volume_ratio > 1 else 0.3
+    
+    def _calculate_atr_confidence(self, prices: pd.Series, atr_series: pd.Series, index: int) -> float:
+        """Calculate confidence based on price move relative to ATR"""
+        if atr_series.empty or pd.isna(atr_series.iloc[index]):
+            return 0.5
+        
+        current_atr = atr_series.iloc[index]
+        if current_atr == 0:
+            return 0.5
+        
+        # Look at price range around the swing point
+        range_start = max(0, index - 2)
+        range_end = min(len(prices), index + 3)
+        local_prices = prices.iloc[range_start:range_end].dropna()
+        
+        if len(local_prices) < 2:
+            return 0.5
+        
+        price_range = local_prices.max() - local_prices.min()
+        atr_ratio = price_range / current_atr
+        
+        # Moderate ATR ratios (0.5-2.0) are most reliable
+        if 0.5 <= atr_ratio <= 2.0:
+            return 0.8
+        elif atr_ratio < 0.5:
+            return 0.4  # Too small move
+        else:
+            return max(0.2, 1.0 - (atr_ratio - 2.0) * 0.1)  # Diminishing confidence for extreme moves
+    
+    def _calculate_time_confidence(self, timestamp: pd.Timestamp) -> float:
+        """Calculate confidence based on market session timing"""
+        if timestamp.tz is None:
+            timestamp = UTC.localize(timestamp)
+        
+        ct_time = timestamp.astimezone(CT)
+        hour = ct_time.hour
+        minute = ct_time.minute
+        
+        # Higher confidence during key market sessions
+        if 8 <= hour <= 10:  # Market open
+            return 0.9
+        elif 14 <= hour <= 15:  # Market close
+            return 0.85
+        elif 10 <= hour <= 14:  # Mid-day
+            return 0.7
+        elif 17 <= hour <= 19:  # Asian session
+            return 0.8
+        else:  # Off-hours
+            return 0.4
+    
+    def _get_volume_ratio(self, volumes: pd.Series, index: int, lookback: int) -> float:
+        """Get volume ratio for the swing point"""
+        if volumes.empty or pd.isna(volumes.iloc[index]):
+            return 1.0
+        
+        current_volume = volumes.iloc[index]
+        surrounding_volumes = []
+        
+        for j in range(1, lookback + 2):
+            if index - j >= 0 and not pd.isna(volumes.iloc[index - j]):
+                surrounding_volumes.append(volumes.iloc[index - j])
+        
+        if not surrounding_volumes:
+            return 1.0
+        
+        avg_volume = np.mean(surrounding_volumes)
+        return current_volume / avg_volume if avg_volume > 0 else 1.0
+    
+    def _get_atr_ratio(self, prices: pd.Series, atr_series: pd.Series, 
+                      index: int, lookback: int) -> float:
+        """Get ATR ratio for the swing point"""
+        if atr_series.empty or pd.isna(atr_series.iloc[index]):
+            return 1.0
+        
+        current_atr = atr_series.iloc[index]
+        if current_atr == 0:
+            return 1.0
+        
+        # Price move from previous bar
+        if index > 0 and not pd.isna(prices.iloc[index - 1]):
+            price_move = abs(prices.iloc[index] - prices.iloc[index - 1])
+            return price_move / current_atr
+        
+        return 1.0
+    
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average True Range"""
+        if not self._has_ohlc(df):
+            return pd.Series(1.0, index=df.index)
+        
+        high = pd.to_numeric(df['High'], errors='coerce')
+        low = pd.to_numeric(df['Low'], errors='coerce')
+        close = pd.to_numeric(df['Close'], errors='coerce')
+        prev_close = close.shift(1)
+        
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        return true_range.ewm(span=period, adjust=False).mean()
+    
+    def _has_ohlc(self, df: pd.DataFrame) -> bool:
+        """Check if DataFrame has OHLC columns"""
+        return all(col in df.columns for col in ['Open', 'High', 'Low', 'Close'])
+    
+    def _empty_swing_result(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Return empty swing result structure"""
+        result = df.copy() if not df.empty else pd.DataFrame()
+        result['swing_high'] = False
+        result['swing_low'] = False  
+        result['swing_confidence'] = 0.0
+        result['volume_ratio'] = 1.0
+        result['atr_ratio'] = 1.0
+        return result
+    
+    def _create_swing_point(self, row: pd.Series, swing_type: str, price_col: str) -> SwingPoint:
+        """Create SwingPoint from DataFrame row"""
+        timestamp = row.name
+        if timestamp.tz is None:
+            timestamp = UTC.localize(timestamp)
+        
+        # Determine market session
+        ct_time = timestamp.astimezone(CT)
+        hour = ct_time.hour
+        
+        if 8 <= hour <= 15:
+            session = 'RTH'
+        elif 17 <= hour <= 19:
+            session = 'Asian'
+        elif 2 <= hour <= 8:
+            session = 'European'
+        else:
+            session = 'Extended'
+        
+        return SwingPoint(
+            price=float(row[price_col]),
+            timestamp=timestamp,
+            swing_type=swing_type,
+            strength=self.config.lookback,
+            volume=float(row.get('Volume', 0)),
+            confidence=float(row.get('swing_confidence', 0.5)),
+            atr_ratio=float(row.get('atr_ratio', 1.0)),
+            volume_ratio=float(row.get('volume_ratio', 1.0)),
+            market_session=session
+        )
+
+# ===============================
+# ANCHOR DETECTION SYSTEM
+# ===============================
+
+class ProfessionalAnchorDetector:
+    """Professional anchor detection system for SPX and individual stocks"""
+    
+    def __init__(self):
+        self.swing_detector = AdvancedSwingDetector()
+        self.ct_tz = CT
+        self.et_tz = ET
+    
+    def detect_spx_anchors_from_es(self, reference_date: date, 
+                                  strength: int = 1) -> Tuple[Optional[SwingPoint], Optional[SwingPoint], Optional[float], Dict[str, Any]]:
+        """Enhanced SPX anchor detection from ES Asian session"""
+        
+        # Configure swing detector
+        config = SwingDetectionConfig(
+            lookback=strength,
+            min_confidence=0.6,  # Higher threshold for ES
+            volume_weight=0.2,   # Lower volume weight for futures
+            atr_weight=0.5,      # Higher ATR weight
+            time_weight=0.3
+        )
+        self.swing_detector.config = config
+        
+        # Define Asian session window (17:00-19:30 CT)
+        session_start = self.ct_tz.localize(datetime.combine(reference_date, dtime(16, 45)))
+        session_end = self.ct_tz.localize(datetime.combine(reference_date, dtime(19, 45)))
+        
+        # Fetch ES futures data with quality assessment
+        es_data, es_quality = fetch_market_data_cached(
+            "ES=F",
+            session_start.astimezone(UTC),
+            session_end.astimezone(UTC),
+            "30m"
+        )
+        
+        analysis_metadata = {
+            'session_start': session_start,
+            'session_end': session_end,
+            'data_quality': es_quality,
+            'bars_analyzed': 0,
+            'swing_candidates': {'highs': 0, 'lows': 0}
+        }
+        
+        if es_data.empty or es_quality.reliability < 0.5:
+            return None, None, None, analysis_metadata
+        
+        # Convert to CT timezone and filter
+        es_data_ct = es_data.copy()
+        es_data_ct.index = es_data_ct.index.tz_convert(self.ct_tz)
+        session_data = es_data_ct.between_time("17:00", "19:30")
+        
+        if session_data.empty:
+            return None, None, None, analysis_metadata
+        
+        analysis_metadata['bars_analyzed'] = len(session_data)
+        
+        # Detect swings with confidence scoring
+        swing_data = self.swing_detector.detect_swings_with_confidence(session_data, 'Close')
+        
+        # Count swing candidates
+        analysis_metadata['swing_candidates']['highs'] = swing_data['swing_high'].sum()
+        analysis_metadata['swing_candidates']['lows'] = swing_data['swing_low'].sum()
+        
+        # Find optimal anchors
+        skyline_anchor, baseline_anchor = self.swing_detector.find_optimal_anchors(swing_data, 'Close')
+        
+        # Calculate ES to SPX offset
+        es_spx_offset = self._calculate_es_spx_offset(reference_date)
+        
+        return skyline_anchor, baseline_anchor, es_spx_offset, analysis_metadata
+    
+    def detect_stock_anchors_multi_session(self, symbol: str, start_date: date, 
+                                         end_date: date, strength: int = 1) -> Tuple[Optional[SwingPoint], Optional[SwingPoint], Dict[str, Any]]:
+        """Enhanced stock anchor detection across multiple sessions"""
+        
+        # Configure swing detector for stocks
+        config = SwingDetectionConfig(
+            lookback=strength,
+            min_confidence=0.5,
+            volume_weight=0.4,   # Higher volume weight for stocks
+            atr_weight=0.3,
+            time_weight=0.3
+        )
+        self.swing_detector.config = config
+        
+        # Define session window (09:30-16:00 ET)
+        session_start = self.et_tz.localize(datetime.combine(start_date, dtime(9, 15)))
+        session_end = self.et_tz.localize(datetime.combine(end_date, dtime(16, 15)))
+        
+        # Fetch stock data
+        stock_data, stock_quality = fetch_market_data_cached(
+            symbol,
+            session_start.astimezone(UTC),
+            session_end.astimezone(UTC),
+            "30m"
+        )
+        
+        analysis_metadata = {
+            'symbol': symbol,
+            'session_start': session_start,
+            'session_end': session_end,
+            'data_quality': stock_quality,
+            'bars_analyzed': 0,
+            'swing_candidates': {'highs': 0, 'lows': 0},
+            'price_range': {'min': 0, 'max': 0}
+        }
+        
+        if stock_data.empty or stock_quality.reliability < 0.4:
+            return None, None, analysis_metadata
+        
+        # Convert to ET and filter to RTH
+        stock_data_et = stock_data.copy()
+        stock_data_et.index = stock_data_et.index.tz_convert(self.et_tz)
+        rth_data = stock_data_et.between_time("09:30", "16:00")
+        
+        if rth_data.empty:
+            return None, None, analysis_metadata
+        
+        analysis_metadata['bars_analyzed'] = len(rth_data)
+        analysis_metadata['price_range']['min'] = float(rth_data['Close'].min())
+        analysis_metadata['price_range']['max'] = float(rth_data['Close'].max())
+        
+        # Detect swings
+        swing_data = self.swing_detector.detect_swings_with_confidence(rth_data, 'Close')
+        
+        # Count candidates
+        analysis_metadata['swing_candidates']['highs'] = swing_data['swing_high'].sum()
+        analysis_metadata['swing_candidates']['lows'] = swing_data['swing_low'].sum()
+        
+        # Find optimal anchors
+        skyline_anchor, baseline_anchor = self.swing_detector.find_optimal_anchors(swing_data, 'Close')
+        
+        # Convert timestamps to CT for consistency
+        if skyline_anchor:
+            skyline_anchor.timestamp = skyline_anchor.timestamp.tz_convert(self.ct_tz)
+        if baseline_anchor:
+            baseline_anchor.timestamp = baseline_anchor.timestamp.tz_convert(self.ct_tz)
+        
+        return skyline_anchor, baseline_anchor, analysis_metadata
+    
+    def _calculate_es_spx_offset(self, reference_date: date) -> Optional[float]:
+        """Calculate ES to SPX offset using recent RTH comparison"""
+        
+        # Use previous trading day RTH close (14:30-15:30 CT)
+        rth_start = self.ct_tz.localize(datetime.combine(reference_date, dtime(14, 15)))
+        rth_end = self.ct_tz.localize(datetime.combine(reference_date, dtime(15, 45)))
+        
+        try:
+            # Fetch both instruments
+            es_data, es_qual = fetch_market_data_cached("ES=F", rth_start.astimezone(UTC), rth_end.astimezone(UTC))
+            spx_data, spx_qual = fetch_market_data_cached("^GSPC", rth_start.astimezone(UTC), rth_end.astimezone(UTC))
+            
+            if (not es_data.empty and not spx_data.empty and 
+                es_qual.reliability > 0.6 and spx_qual.reliability > 0.6):
+                
+                es_close = float(es_data['Close'].iloc[-1])
+                spx_close = float(spx_data['Close'].iloc[-1])
+                return spx_close - es_close
+        
+        except Exception:
+            pass
+        
+        return None
+
+def render_anchor_analysis_panel(anchors: Tuple[Optional[SwingPoint], Optional[SwingPoint]], 
+                               metadata: Dict[str, Any], symbol: str = "SPX") -> None:
+    """Render comprehensive anchor analysis panel"""
+    
+    skyline, baseline = anchors
+    
+    st.markdown(f'''
+    <div class="analytics-card">
+        <div class="card-header">
+            <div>
+                <h4 class="card-title">{symbol} Anchor Analysis</h4>
+                <p class="card-subtitle">Professional swing detection with confidence scoring</p>
+            </div>
+            <div class="card-badge">{symbol}</div>
+        </div>
+    ''', unsafe_allow_html=True)
+    
+    # Data quality summary
+    if 'data_quality' in metadata:
+        quality = metadata['data_quality']
+        quality_color = "var(--success)" if quality.reliability > 0.8 else "var(--warning)" if quality.reliability > 0.6 else "var(--danger)"
+        
+        st.markdown(f'''
+        <div style="margin-bottom: 16px; padding: 12px; background: var(--surface-elevated); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Data Quality: <strong style="color: {quality_color}">{quality.quality_grade.value.title()}</strong></span>
+                <span>{metadata.get('bars_analyzed', 0)} bars analyzed</span>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
+    # Anchor results
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if skyline:
+            st.markdown("**Skyline Anchor (High)**")
+            anchor_data = skyline.to_dict()
+            for key, value in anchor_data.items():
+                st.text(f"{key}: {value}")
+        else:
+            st.warning("No valid skyline anchor found")
+    
+    with col2:
+        if baseline:
+            st.markdown("**Baseline Anchor (Low)**")
+            anchor_data = baseline.to_dict()
+            for key, value in anchor_data.items():
+                st.text(f"{key}: {value}")
+        else:
+            st.warning("No valid baseline anchor found")
+    
+    # Analysis metadata
+    if metadata.get('swing_candidates'):
+        candidates = metadata['swing_candidates']
+        st.info(f"Swing candidates found: {candidates['highs']} highs, {candidates['lows']} lows")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# This completes Part 2B: Advanced Swing Detection & Anchor System
 
