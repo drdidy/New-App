@@ -445,7 +445,6 @@ def compute_boosters_score(df_1m: pd.DataFrame,
     tr = true_range(upto)
     atr = tr.rolling(ATR_LOOKBACK).mean()
     if atr.notna().sum() >= ATR_LOOKBACK:
-        last_atr = float(atr.iloc[-1])
         pct = (atr.rank(pct=True).iloc[-1]) * 100.0
         # Interpret: low ATR → edges hold; high ATR → breaks succeed
         if expected_hint in ("BuyHigherFromTop","UpToTopThenSell"):  # "hold then move" flavor
@@ -460,7 +459,7 @@ def compute_boosters_score(df_1m: pd.DataFrame,
     if any(abs((ts.hour*60 + ts.minute) - (hh*60+mm)) <= KEY_TOD_WINDOW_MIN for (hh,mm) in KEY_TOD):
         comps["tod"] = weights.get("tod",0)
 
-    # Oscillator divergence (lightweight proxy)
+    # Oscillator divergence (optional; weight default 0)
     if weights.get("div",0) > 0:
         r = rsi(upto["Close"], RSI_LEN)
         if r.notna().sum() >= RSI_LEN + 2:
@@ -830,7 +829,10 @@ with tab1:
                     strat_df = pd.DataFrame(rows)
 
                     st.markdown("### 🎯 Fan Lines (Top / Bottom @ 30-min)")
-                    st.dataframe(fan_df[{"Time","Top","Bottom","Fan_Width"}], use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        fan_df.loc[:, ["Time","Top","Bottom","Fan_Width"]],
+                        use_container_width=True, hide_index=True
+                    )
 
                     st.markdown("### 📋 Strategy Table (Corrected Bias)")
                     st.caption("Bias uses **descending anchor line** & within-fan proximity tolerance. 8:30 AM row is marked with ⭐.")
