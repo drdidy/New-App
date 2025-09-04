@@ -1,12 +1,12 @@
 # app.py
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🔮 SPX PROPHET — Enterprise (1m edge detection • 30m boosters • 5m fallback)
+# 🔮 SPX PROPHET — Enterprise (robust historical mode)
 # - Anchor: SPX previous session ≤3:00 PM CT close (manual override supported)
 # - Fan: ASYMMETRIC slopes per 30m (Top +0.312, Bottom −0.25) • overrideable
-# - Edge interactions: detected on 1m (fallback 5m)
-# - Probability boosters: computed on **resampled 30m bars** with exact CT :00/:30 ends
-# - ES→SPX mapping: offset at anchor from ES(1m→5m) – robust fallbacks
-# - UX: forms for inputs (no disruptive reruns), session caching, ⭐ 8:30 highlights
+# - Edge interactions: detect on **1m**, fallback to **5m**, last-resort **30m** (for deep history)
+# - ES→SPX offset ladder: 1m ±15min → 5m ±15min → 30m (nearest ≤) → median of last 5 sessions
+# - Boosters: computed on **resampled 30m bars** with exact CT :00/:30 ends
+# - UX: forms to prevent disruptive reruns; ⭐ 8:30 highlights; corrected bias
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import streamlit as st
@@ -152,7 +152,7 @@ def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str) -> pd
     """
     Robust fetch for yfinance with CT normalization.
     - 1m/2m/5m/15m: use period-limited windows (<=7d) per yfinance constraints.
-    - 30m+: use start/end.
+    - 30m+: use start/end (long history OK).
     """
     try:
         t = yf.Ticker(symbol)
@@ -176,7 +176,7 @@ def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str) -> pd
         return pd.DataFrame()
 
 def resample_to_30m_ct(min_df: pd.DataFrame) -> pd.DataFrame:
-    """Resample minute-level (or 5m) CT-indexed data to 30m bars with exact :00/:30 ends."""
+    """Resample minute-level (or 5m/30m) CT-indexed data to 30m bars with exact :00/:30 ends."""
     if min_df.empty:
         return min_df
     agg = {
@@ -275,7 +275,7 @@ def touched_line(low, high, line) -> bool:
 
 def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[Dict]:
     """
-    Edge logic (works for any bar size; we apply on 1m/5m):
+    Edge logic (bar-agnostic; we apply on 1m/5m/30m as needed):
     - Top touched + Bearish close **inside** → expect drop to Bottom → buy from Bottom
     - Top touched + Bearish close **above**  → Top holds as support → buy higher
     - Bottom touched + Bullish close **inside** → expect push to Top → sell from Top
@@ -390,49 +390,101 @@ def compute_boosters_score_30m(df_30m: pd.DataFrame, idx_30m: pd.Timestamp,
     return score, comps
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ES→SPX OFFSET & OVERNIGHT (1m→5m) + 30m boosters
+# ES→SPX OFFSET (robust ladder) & OVERNIGHT FETCH
 # ───────────────────────────────────────────────────────────────────────────────
+def _nearest_le_index(idx: pd.DatetimeIndex, ts: pd.Timestamp) -> Optional[pd.Timestamp]:
+    s = idx[idx <= ts]
+    return s[-1] if len(s) else None
+
 def es_spx_offset_at_anchor(prev_day: date, spx_30m: pd.DataFrame) -> Optional[float]:
     """
-    Compute ES–SPX offset at the actual SPX anchor time using ES=F 1m; fallback to 5m.
-    Returns None if neither 1m nor 5m provides prints ≤ anchor.
+    Robust offset at SPX anchor:
+      1) ES 1m in [anchor-15m, anchor] → last ≤ anchor
+      2) ES 5m in [anchor-15m, anchor]
+      3) ES 30m: bar ending ≤ anchor
+      4) Median of last 5 sessions (using ES 5m around each day's anchor)
+    Works for historical dates when 1m is unavailable.
     """
     spx_anchor_close, spx_anchor_time = get_prev_day_anchor_close_and_time(spx_30m, prev_day)
     if spx_anchor_close is None or spx_anchor_time is None:
         return None
 
-    es_1m = fetch_intraday("ES=F", prev_day, prev_day, "1m")
-    if not es_1m.empty:
-        es_upto = es_1m.loc[es_1m.index <= spx_anchor_time]
-        if not es_upto.empty and "Close" in es_upto.columns:
-            try:
-                return float(es_upto["Close"].iloc[-1] - spx_anchor_close)
-            except Exception:
-                pass
+    def try_sym_interval(sym: str, interval: str) -> Optional[float]:
+        df = fetch_intraday(sym, prev_day, prev_day, interval)
+        if df.empty or "Close" not in df.columns:
+            return None
+        lo = spx_anchor_time - timedelta(minutes=15)
+        hi = spx_anchor_time
+        window = df.loc[(df.index >= lo) & (df.index <= hi)]
+        if not window.empty:
+            es_close = float(window["Close"].iloc[-1])
+            return es_close - spx_anchor_close
+        # fallback: nearest ≤ anchor (for misaligned cuts)
+        idx = _nearest_le_index(df.index, spx_anchor_time)
+        if idx is None:
+            return None
+        es_close = float(df.loc[idx, "Close"])
+        return es_close - spx_anchor_close
 
-    es_5m = fetch_intraday("ES=F", prev_day, prev_day, "5m")
-    if not es_5m.empty:
-        es_upto = es_5m.loc[es_5m.index <= spx_anchor_time]
-        if not es_upto.empty and "Close" in es_upto.columns:
-            try:
-                return float(es_upto["Close"].iloc[-1] - spx_anchor_close)
-            except Exception:
-                pass
+    # 1) ES 1m, 2) ES 5m
+    for interval in ["1m","5m"]:
+        off = try_sym_interval("ES=F", interval)
+        if off is not None:
+            return float(off)
+
+    # 3) ES 30m bar ≤ anchor
+    es_30m = fetch_intraday("ES=F", prev_day, prev_day, "30m")
+    if not es_30m.empty and "Close" in es_30m.columns:
+        idx30 = _nearest_le_index(es_30m.index, spx_anchor_time)
+        if idx30 is not None:
+            return float(es_30m.loc[idx30, "Close"] - spx_anchor_close)
+
+    # 4) Median of last 5 sessions (ES 5m around each day's anchor)
+    med_vals = []
+    for i in range(1, 6):
+        d = prev_day - timedelta(days=i)
+        spx_d = fetch_intraday("^GSPC", d, d, "30m")
+        if spx_d.empty:
+            spx_d = fetch_intraday("SPY", d, d, "30m")
+        s_close, s_time = get_prev_day_anchor_close_and_time(spx_d, d)
+        if s_close is None or s_time is None:
+            continue
+        es5 = fetch_intraday("ES=F", d, d, "5m")
+        if not es5.empty and "Close" in es5.columns:
+            lo, hi = s_time - timedelta(minutes=15), s_time
+            win = es5.loc[(es5.index >= lo) & (es5.index <= hi)]
+            if not win.empty:
+                med_vals.append(float(win["Close"].iloc[-1] - s_close))
+            else:
+                idxd = _nearest_le_index(es5.index, s_time)
+                if idxd is not None:
+                    med_vals.append(float(es5.loc[idxd, "Close"] - s_close))
+    if med_vals:
+        return float(np.median(med_vals))
 
     return None
 
 def fetch_overnight_minute(prev_day: date, proj_day: date) -> Tuple[pd.DataFrame, str]:
-    """Fetch overnight ES bars with best effort: try 1m (preferred) then 5m."""
+    """
+    Overnight ES bars with tiered fallbacks:
+      - First try 1m [prev 17:00 → proj 08:30]
+      - Then 5m for wider availability
+      - Last resort: 30m (so historical dates still return something)
+    """
     start = fmt_ct(datetime.combine(prev_day, time(17,0)))
     end   = fmt_ct(datetime.combine(proj_day, time(8,30)))
-    # Try 1m
+    # 1m
     es_1m = fetch_intraday("ES=F", prev_day, proj_day, "1m")
     if not es_1m.empty:
         return es_1m.loc[start:end].copy(), "1m"
-    # Fallback to 5m
+    # 5m
     es_5m = fetch_intraday("ES=F", prev_day, proj_day, "5m")
     if not es_5m.empty:
         return es_5m.loc[start:end].copy(), "5m"
+    # 30m (historical last resort)
+    es_30m = fetch_intraday("ES=F", prev_day, proj_day, "30m")
+    if not es_30m.empty:
+        return es_30m.loc[start:end].copy(), "30m"
     return pd.DataFrame(), "none"
 
 def adjust_to_spx_frame(es_df: pd.DataFrame, offset: float) -> pd.DataFrame:
@@ -443,7 +495,7 @@ def adjust_to_spx_frame(es_df: pd.DataFrame, offset: float) -> pd.DataFrame:
     return df
 
 def nearest_30m_index(idx_30m: pd.DatetimeIndex, ts: pd.Timestamp) -> Optional[pd.Timestamp]:
-    """Return the 30m bar end time <= ts (ffill)."""
+    """Return the 30m bar end time ≤ ts (ffill)."""
     if idx_30m.empty:
         return None
     loc_df = idx_30m[idx_30m <= ts]
@@ -451,6 +503,9 @@ def nearest_30m_index(idx_30m: pd.DatetimeIndex, ts: pd.Timestamp) -> Optional[p
         return None
     return loc_df[-1]
 
+# ───────────────────────────────────────────────────────────────────────────────
+# PROBABILITY DASHBOARD BUILD
+# ───────────────────────────────────────────────────────────────────────────────
 def build_probability_dashboard(prev_day: date, proj_day: date,
                                 anchor_close: float, anchor_time: datetime,
                                 tol_frac: float, weights: Dict[str,int]) -> Tuple[pd.DataFrame, pd.DataFrame, float, str]:
@@ -464,22 +519,28 @@ def build_probability_dashboard(prev_day: date, proj_day: date,
 
     off = es_spx_offset_at_anchor(prev_day, spx_prev_30m)
     if off is None:
+        # return empty touches but still allow fan display
         return pd.DataFrame(), fan_df, 0.0, "none"
 
-    # Overnight ES minute (or 5m) → adjust to SPX frame
-    on_min, used_interval = fetch_overnight_minute(prev_day, proj_day)
-    if on_min.empty:
-        return pd.DataFrame(), fan_df, off, used_interval
-    on_adj = adjust_to_spx_frame(on_min, off)
+    # Overnight ES data with fallback
+    on_bars, used_interval = fetch_overnight_minute(prev_day, proj_day)
+    if on_bars.empty:
+        return pd.DataFrame(), fan_df, off, "none"
 
-    # Build 30m boosters from resampled on_adj
+    # Adjust ES → SPX frame with the offset
+    on_adj = adjust_to_spx_frame(on_bars, off)
+
+    # For boosters, always use a **30m resample** of on_adj
     on_adj_30m = resample_to_30m_ct(on_adj)
 
-    # Detect edge touches on minute (or 5m) bars, then score using the 30m upto the containing bar end
+    # Edge detection:
+    #  - Prefer 1m; else 5m; last-resort 30m (keeps history usable)
+    detect_df = on_adj if used_interval in ("1m","5m") else on_adj_30m
+
     top_slope, bottom_slope = current_spx_slopes()
     rows = []
-
-    for ts, bar in on_adj.iterrows():
+    for ts, bar in detect_df.iterrows():
+        # Fan at this timestamp
         blocks = count_effective_blocks(anchor_time, ts)
         top = anchor_close + top_slope * blocks
         bottom = anchor_close - bottom_slope * blocks
@@ -488,7 +549,7 @@ def build_probability_dashboard(prev_day: date, proj_day: date,
         if touch is None:
             continue
 
-        # Map minute ts -> 30m bar end (<= ts)
+        # Map ts to a 30m end bar for booster scoring
         idx_30m = nearest_30m_index(on_adj_30m.index, ts)
         if idx_30m is None:
             score, comps = 0, {k:0 for k in ["ema","volume","wick","atr","tod","div"]}
@@ -694,8 +755,8 @@ with tab1:
 # ║ TAB 2: PROBABILITY DASHBOARD                                                ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tabProb:
-    st.subheader("Probability Dashboard — 1m edge detection with 30m boosters (⭐ 8:30 ready)")
-    st.caption("Edge interactions detected on 1m (fallback 5m). Booster score computed on resampled 30m bars with exact CT boundaries.")
+    st.subheader("Probability Dashboard — 1m/5m edge detection (30m last-resort) • 30m boosters")
+    st.caption("ES→SPX offset ladder ensures historical robustness. Boosters use your own CT-aligned 30m resample.")
 
     left, right = st.columns(2)
     with left:
@@ -760,8 +821,8 @@ with tabProb:
         with cC:
             st.markdown(f"<div class='metric-card'><p class='metric-title'>ES→SPX Offset</p><div class='metric-value'>Δ {pr['offset_used']:+.2f}</div><div class='kicker'>Data: {pr['used_interval']}</div></div>", unsafe_allow_html=True)
 
-        if pr["offset_used"] == 0.0 and touches_df.empty:
-            st.info("ES→SPX offset could not be computed (even with 5m fallback). Overnight touches may be unavailable for this date.")
+        if pr["used_interval"] == "none":
+            st.info("ES→SPX offset or overnight prints were unavailable for this date even after fallbacks. Try a nearby date.")
 
         st.markdown("### 📡 Overnight Edge Interactions (Scored)")
         if touches_df.empty:
@@ -957,7 +1018,7 @@ with tab3:
     with colS1:
         sig_symbol = st.selectbox("Symbol", ["^GSPC", "SPY", "ES=F"], index=0)
     with colS2:
-        sig_day = st.date_input("Analysis Day", value=today_ct)
+        sig_day = st.date_input("Analysis Day", value= today_ct)
     with colS3:
         interval_pref = st.selectbox("Interval preference", ["1m", "5m", "30m"], index=0,
                                      help="Use 1m/5m for finer touches; 30m matches boosters.")
@@ -1135,4 +1196,4 @@ with colA:
         else:
             st.error("Data fetch failed — try different dates later.")
 with colB:
-    st.caption("Edge detection = **1m (fallback 5m)**. Probability boosters = **resampled 30m**. Fan anchor uses the last SPX bar ≤ **3:00 PM CT**. 8:30 AM highlighted across tables.")
+    st.caption("Offset ladder: **1m → 5m → 30m → median(5)**. Edge detect: **1m/5m**, 30m last-resort for deep history. Boosters: **CT-aligned 30m resample**. ⭐ 8:30 highlighted.")
