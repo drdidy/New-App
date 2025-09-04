@@ -1,13 +1,12 @@
 # app.py
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🔮 SPX PROPHET — Enterprise App (EDGE INTERACTIONS ON 30-MIN BARS)
-# (SPX Fan Anchors • Probability Dashboard • Stock Anchors • Signals • Contract Tool)
-# - Anchor: SPX previous trading day ≤3:00 PM CT close (manual override supported)
-# - SPX fan uses ASYMMETRIC slopes per 30m: Top +0.312, Bottom −0.25 (overrideable)
-# - Block counter skips 4–5 PM CT maintenance & Fri 5 PM → Sun 5 PM weekend gap
-# - Probability Dashboard: ES overnight → aligned into SPX frame using 30m offset
-# - Edge interactions & boosters computed on **30-minute bars** (not 1/5m)
-# - Stable UX: forms for inputs, session_state caching, 8:30 highlights
+# 🔮 SPX PROPHET — Enterprise (1m edge detection • 30m boosters • 5m fallback)
+# - Anchor: SPX previous session ≤3:00 PM CT close (manual override supported)
+# - Fan: ASYMMETRIC slopes per 30m (Top +0.312, Bottom −0.25) • overrideable
+# - Edge interactions: detected on 1m (fallback 5m)
+# - Probability boosters: computed on **resampled 30m bars** with exact CT :00/:30 ends
+# - ES→SPX mapping: offset at anchor from ES(1m→5m) – robust fallbacks
+# - UX: forms for inputs (no disruptive reruns), session caching, ⭐ 8:30 highlights
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import streamlit as st
@@ -25,15 +24,15 @@ CT_TZ = pytz.timezone("America/Chicago")
 RTH_START = "08:30"
 RTH_END   = "14:30"
 
-TOP_SLOPE_DEFAULT    = 0.312  # Top line +0.312 per 30m
-BOTTOM_SLOPE_DEFAULT = 0.25   # Bottom line −0.25 per 30m
+TOP_SLOPE_DEFAULT    = 0.312
+BOTTOM_SLOPE_DEFAULT = 0.25
 
 STOCK_SLOPES = {
     "TSLA": 0.0285, "NVDA": 0.0860, "AAPL": 0.0155, "MSFT": 0.0541,
     "AMZN": 0.0139, "GOOGL": 0.0122, "META": 0.0674, "NFLX": 0.0230,
 }
 
-# Probability boosters (30m context)
+# Probability boosters (30m basis)
 WEIGHTS_DEFAULT = {"ema":20, "volume":25, "wick":20, "atr":15, "tod":20, "div":0}
 KEY_TOD = [(8,30), (10,0), (13,30)]
 KEY_TOD_WINDOW_MIN = 7
@@ -42,13 +41,13 @@ ATR_LOOKBACK = 14
 ATR_HIGH_PCTL = 70
 ATR_LOW_PCTL  = 30
 RSI_LEN = 14
-RSI_WINDOW_MIN = 10  # 10×30m ≈ 5h window
+RSI_WINDOW_MIN = 10  # 10×30m
 
 # ───────────────────────────────────────────────────────────────────────────────
 # PAGE & THEME
 # ───────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="🔮 SPX Prophet Analytics (Enterprise • 30m)",
+    page_title="🔮 SPX Prophet Analytics (Enterprise)",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -58,34 +57,25 @@ st.markdown(
     """
 <style>
 :root {
-  --brand: #2563eb; --brand-2: #10b981; --surface: #ffffff; --muted: #f8fafc;
-  --text: #0f172a; --subtext: #475569; --border: #e2e8f0; --warn: #f59e0b; --danger: #ef4444;
+  --brand:#2563eb; --brand-2:#10b981; --surface:#ffffff; --muted:#f8fafc;
+  --text:#0f172a; --subtext:#475569; --border:#e2e8f0; --warn:#f59e0b; --danger:#ef4444;
 }
-html, body, [class*="css"]  { background: var(--muted); color: var(--text); }
+html, body, [class*="css"] { background: var(--muted); color: var(--text); }
 .block-container { padding-top: 1.1rem; }
 h1, h2, h3 { color: var(--text); }
 .card, .metric-card {
   background: rgba(255,255,255,0.9); border: 1px solid var(--border); border-radius: 16px; padding: 16px;
   box-shadow: 0 12px 32px rgba(2,6,23,0.07); backdrop-filter: blur(8px);
 }
-.metric-title { font-size: 0.9rem; color: var(--subtext); margin: 0; }
+.metric-title { font-size: .9rem; color: var(--subtext); margin: 0; }
 .metric-value { font-size: 1.8rem; font-weight: 700; margin-top: 6px; }
-.kicker { font-size: 0.8rem; color: var(--subtext); }
-.badge-open { color: #065f46; background: #d1fae5; border: 1px solid #99f6e4; padding: 2px 8px;
-  border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
-.badge-closed { color: #7c2d12; background: #ffedd5; border: 1px solid #fed7aa; padding: 2px 8px;
-  border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.kicker { font-size: .8rem; color: var(--subtext); }
+.badge-open { color:#065f46; background:#d1fae5; border:1px solid #99f6e4; padding:2px 8px; border-radius:999px; font-size:.8rem; font-weight:600; }
+.badge-closed { color:#7c2d12; background:#ffedd5; border:1px solid #fed7aa; padding:2px 8px; border-radius:999px; font-size:.8rem; font-weight:600; }
+.badge-slot { color:#1f2937; background:#e2e8f0; border:1px solid #cbd5e1; padding:2px 8px; border-radius:999px; font-size:.75rem; font-weight:600; }
 hr { border-top: 1px solid var(--border); }
 .dataframe { background: var(--surface); border-radius: 12px; overflow: hidden; }
-.small-note { color: var(--subtext); font-size: 0.85rem; }
-.override-tag {
-  font-size: 0.75rem; color: #334155; background: #e2e8f0; border: 1px solid #cbd5e1;
-  padding: 2px 8px; border-radius: 999px; display:inline-block; margin-top:6px;
-}
-.badge-slot {
-  color:#1f2937; background:#e2e8f0; border:1px solid #cbd5e1;
-  padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600;
-}
+.override-tag { font-size:.75rem; color:#334155; background:#e2e8f0; border:1px solid #cbd5e1; padding:2px 8px; border-radius:999px; display:inline-block; margin-top:6px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -103,8 +93,8 @@ def between_time(df: pd.DataFrame, start_str: str, end_str: str) -> pd.DataFrame
     return df.between_time(start_str, end_str) if not df.empty else df
 
 def rth_slots_ct(target_date: date) -> List[datetime]:
-    start_dt = fmt_ct(datetime.combine(target_date, time(8, 30)))
-    end_dt   = fmt_ct(datetime.combine(target_date, time(14, 30)))
+    start_dt = fmt_ct(datetime.combine(target_date, time(8,30)))
+    end_dt   = fmt_ct(datetime.combine(target_date, time(14,30)))
     slots = []
     cur = start_dt
     while cur <= end_dt:
@@ -139,8 +129,8 @@ def ensure_ohlc_cols(df: pd.DataFrame) -> pd.DataFrame:
         return df
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[0] if isinstance(c, tuple) else str(c) for c in df.columns]
-    required = ["Open", "High", "Low", "Close", "Volume"]
-    if any(c not in df.columns for c in required):
+    req = ["Open","High","Low","Close","Volume"]
+    if any(c not in df.columns for c in req):
         return pd.DataFrame()
     return df
 
@@ -153,22 +143,26 @@ def normalize_to_ct(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFram
     if df.index.tz is None:
         df.index = df.index.tz_localize("US/Eastern")
     df.index = df.index.tz_convert(CT_TZ)
-    sdt = fmt_ct(datetime.combine(start_d, time(0, 0)))
-    edt = fmt_ct(datetime.combine(end_d, time(23, 59)))
+    sdt = fmt_ct(datetime.combine(start_d, time(0,0)))
+    edt = fmt_ct(datetime.combine(end_d, time(23,59)))
     return df.loc[sdt:edt]
 
 @st.cache_data(ttl=120)
-def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str = "30m") -> pd.DataFrame:
-    """General fetch with interval (default 30m)."""
+def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str) -> pd.DataFrame:
+    """
+    Robust fetch for yfinance with CT normalization.
+    - 1m/2m/5m/15m: use period-limited windows (<=7d) per yfinance constraints.
+    - 30m+: use start/end.
+    """
     try:
         t = yf.Ticker(symbol)
-        if interval in ["1m", "2m", "5m", "15m"]:
+        if interval in ["1m","2m","5m","15m"]:
             days = max(1, min(7, (end_d - start_d).days + 2))
-            df = t.history(period=f"{days}d", interval=interval,
-                           prepost=True, auto_adjust=False, back_adjust=False)
+            df = t.history(period=f"{days}d", interval=interval, prepost=True,
+                           auto_adjust=False, back_adjust=False)
             df = normalize_to_ct(df, start_d - timedelta(days=1), end_d + timedelta(days=1))
-            sdt = fmt_ct(datetime.combine(start_d, time(0, 0)))
-            edt = fmt_ct(datetime.combine(end_d, time(23, 59)))
+            sdt = fmt_ct(datetime.combine(start_d, time(0,0)))
+            edt = fmt_ct(datetime.combine(end_d, time(23,59)))
             df = df.loc[sdt:edt]
         else:
             df = t.history(
@@ -181,16 +175,28 @@ def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str = "30m
     except Exception:
         return pd.DataFrame()
 
+def resample_to_30m_ct(min_df: pd.DataFrame) -> pd.DataFrame:
+    """Resample minute-level (or 5m) CT-indexed data to 30m bars with exact :00/:30 ends."""
+    if min_df.empty:
+        return min_df
+    agg = {
+        "Open":"first","High":"max","Low":"min","Close":"last",
+        "Volume":("Volume" if "Volume" in min_df.columns else (lambda s: np.nan))
+    }
+    out = min_df.resample("30T", label="right", closed="right").agg(agg)
+    out = out.dropna(subset=["Open","High","Low","Close"], how="any")
+    return out
+
 def get_prev_day_anchor_close_and_time(df_30m: pd.DataFrame, prev_day: date) -> Tuple[Optional[float], Optional[datetime]]:
-    """Return (anchor_close, anchor_time). Uses 3:00 PM CT if present; else last bar ≤ 3:00."""
+    """Return (anchor_close, anchor_time). Use 3:00 PM CT if present; else last bar ≤ 3:00."""
     if df_30m.empty:
         return None, None
-    day_start = fmt_ct(datetime.combine(prev_day, time(0, 0)))
-    day_end   = fmt_ct(datetime.combine(prev_day, time(23, 59)))
+    day_start = fmt_ct(datetime.combine(prev_day, time(0,0)))
+    day_end   = fmt_ct(datetime.combine(prev_day, time(23,59)))
     d = df_30m.loc[day_start:day_end].copy()
     if d.empty:
         return None, None
-    target = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+    target = fmt_ct(datetime.combine(prev_day, time(15,0)))
     if target in d.index:
         return float(d.loc[target, "Close"]), target
     prior = d.loc[:target]
@@ -211,8 +217,8 @@ def project_fan_from_close(close_price: float, anchor_time: datetime, target_day
         top = close_price + top_slope * blocks
         bot = close_price - bottom_slope * blocks
         rows.append({"TimeDT": slot, "Time": slot.strftime("%H:%M"),
-                     "Top": round(top, 2), "Bottom": round(bot, 2),
-                     "Fan_Width": round(top - bot, 2)})
+                     "Top": round(top,2), "Bottom": round(bot,2),
+                     "Fan_Width": round(top-bot,2)})
     return pd.DataFrame(rows)
 
 def ema(series: pd.Series, span: int) -> pd.Series:
@@ -222,10 +228,10 @@ def compute_ema_cross_df(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "Close" not in df:
         return pd.DataFrame()
     out = df.copy()
-    out["EMA8"] = ema(out["Close"], 8)
+    out["EMA8"]  = ema(out["Close"], 8)
     out["EMA21"] = ema(out["Close"], 21)
     out["Crossover"] = np.where(out["EMA8"] > out["EMA21"], "Bullish",
-                         np.where(out["EMA8"] < out["EMA21"], "Bearish", "None"))
+                         np.where(out["EMA8"] < out["EMA21"], "Bearish","None"))
     return out
 
 def rsi(series: pd.Series, length: int = 14) -> pd.Series:
@@ -242,15 +248,15 @@ def true_range(df: pd.DataFrame) -> pd.Series:
     tr1 = df["High"] - df["Low"]
     tr2 = (df["High"] - prev_close).abs()
     tr3 = (df["Low"] - prev_close).abs()
-    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return pd.concat([tr1,tr2,tr3], axis=1).max(axis=1)
 
 # ───────────────────────────────────────────────────────────────────────────────
-# BIAS / EDGE LOGIC (per 30m bar)
+# BIAS / EDGE LOGIC
 # ───────────────────────────────────────────────────────────────────────────────
 def compute_bias(price: float, top: float, bottom: float, tol_frac: float) -> str:
     if bottom <= price <= top:
         width = top - bottom
-        center = (top + bottom) / 2.0
+        center = (top + bottom)/2.0
         band = tol_frac * width
         if center - band <= price <= center + band:
             return "NO BIAS"
@@ -269,16 +275,16 @@ def touched_line(low, high, line) -> bool:
 
 def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[Dict]:
     """
-    30m edge logic:
-    - Top touched + Bearish close INSIDE → expect drop to Bottom then BUY from Bottom
-    - Top touched + Bearish close ABOVE  → Top holds as support → buy higher from Top
-    - Bottom touched + Bullish close INSIDE → expect push to Top then SELL from Top
-    - Bottom touched + Bullish close BELOW  → Bottom fails → sell further
+    Edge logic (works for any bar size; we apply on 1m/5m):
+    - Top touched + Bearish close **inside** → expect drop to Bottom → buy from Bottom
+    - Top touched + Bearish close **above**  → Top holds as support → buy higher
+    - Bottom touched + Bullish close **inside** → expect push to Top → sell from Top
+    - Bottom touched + Bullish close **below**  → Bottom fails → sell further
     """
     o = float(bar.get("Open", np.nan))
     h = float(bar.get("High", np.nan))
-    l = float(bar.get("Low", np.nan))
-    c = float(bar.get("Close", np.nan))
+    l = float(bar.get("Low",  np.nan))
+    c = float(bar.get("Close",np.nan))
     cls = candle_class(o, c)
 
     inside = (bottom <= c <= top)
@@ -308,18 +314,18 @@ def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[D
     return None
 
 # ───────────────────────────────────────────────────────────────────────────────
-# PROBABILITY BOOSTERS (computed on 30m bars)
+# PROBABILITY BOOSTERS (30m context)
 # ───────────────────────────────────────────────────────────────────────────────
-def compute_boosters_score(df_30m: pd.DataFrame, idx: pd.Timestamp,
-                           expected_hint: str, weights: Dict[str,int]) -> Tuple[int, Dict[str,int]]:
+def compute_boosters_score_30m(df_30m: pd.DataFrame, idx_30m: pd.Timestamp,
+                               expected_hint: str, weights: Dict[str,int]) -> Tuple[int, Dict[str,int]]:
     comps = {k:0 for k in ["ema","volume","wick","atr","tod","div"]}
-    if df_30m.empty or idx not in df_30m.index:
+    if df_30m.empty or idx_30m not in df_30m.index:
         return 0, comps
-    upto = df_30m.loc[:idx].copy()
+    upto = df_30m.loc[:idx_30m].copy()
     if upto.shape[0] < 10:
         return 0, comps
 
-    # EMA(8/21) on 30m
+    # EMA 8/21 on 30m
     ema8 = ema(upto["Close"], 8)
     ema21 = ema(upto["Close"], 21)
     ema_state = "Bullish" if ema8.iloc[-1] > ema21.iloc[-1] else ("Bearish" if ema8.iloc[-1] < ema21.iloc[-1] else "None")
@@ -327,13 +333,14 @@ def compute_boosters_score(df_30m: pd.DataFrame, idx: pd.Timestamp,
     if (expected_near_term == "Up" and ema_state == "Bullish") or (expected_near_term == "Down" and ema_state == "Bearish"):
         comps["ema"] = weights.get("ema",0)
 
-    # Volume spike (>115% of 20 bars)
+    # Volume >115% of 20-bar average
     if "Volume" in upto.columns and upto["Volume"].notna().any():
-        vol_ma = upto["Volume"].rolling(20).mean()
-        if vol_ma.notna().any() and upto["Volume"].iloc[-1] > (vol_ma.iloc[-1] or 0) * 1.15:
-            comps["volume"] = weights.get("volume",0)
+        vma = upto["Volume"].rolling(20).mean()
+        if vma.notna().any():
+            if upto["Volume"].iloc[-1] > (vma.iloc[-1] or 0) * 1.15:
+                comps["volume"] = weights.get("volume",0)
 
-    # Wick/Body rejection
+    # Wick/Body rejection on last 30m bar
     bar = upto.iloc[-1]
     o,h,l,c = float(bar["Open"]), float(bar["High"]), float(bar["Low"]), float(bar["Close"])
     body = abs(c - o) + 1e-9
@@ -346,7 +353,7 @@ def compute_boosters_score(df_30m: pd.DataFrame, idx: pd.Timestamp,
         if upper_wick / body >= WICK_MIN_RATIO:
             comps["wick"] = weights.get("wick",0)
 
-    # ATR context (14×30m)
+    # ATR context
     tr = true_range(upto)
     atr = tr.rolling(ATR_LOOKBACK).mean()
     if atr.notna().sum() >= ATR_LOOKBACK:
@@ -358,12 +365,12 @@ def compute_boosters_score(df_30m: pd.DataFrame, idx: pd.Timestamp,
             if pct >= ATR_HIGH_PCTL:
                 comps["atr"] = weights.get("atr",0)
 
-    # Time-of-day window (30m resolution is fine)
-    ts = fmt_ct(idx.to_pydatetime())
+    # Time-of-day window (use 30m bar end time)
+    ts = fmt_ct(idx_30m.to_pydatetime())
     if any(abs((ts.hour*60 + ts.minute) - (hh*60+mm)) <= KEY_TOD_WINDOW_MIN for (hh,mm) in KEY_TOD):
         comps["tod"] = weights.get("tod",0)
 
-    # Optional light divergence (30m RSI)
+    # Optional divergence (30m RSI)
     if weights.get("div",0) > 0:
         r = rsi(upto["Close"], RSI_LEN)
         if r.notna().sum() >= RSI_LEN + 2:
@@ -379,37 +386,54 @@ def compute_boosters_score(df_30m: pd.DataFrame, idx: pd.Timestamp,
                     if upto["Close"].iloc[-1] >= prior["Close"].max() and r.iloc[-1] < r.loc[prior_high]:
                         comps["div"] = weights.get("div",0)
 
-    score = sum(comps.values())
-    score = int(min(100, max(0, score)))
+    score = int(min(100, max(0, sum(comps.values()))))
     return score, comps
 
 # ───────────────────────────────────────────────────────────────────────────────
-# PROBABILITY DASHBOARD BUILD (30m offset & 30m overnight)
+# ES→SPX OFFSET & OVERNIGHT (1m→5m) + 30m boosters
 # ───────────────────────────────────────────────────────────────────────────────
-def es_spx_offset_at_anchor_30m(prev_day: date, spx_30m: pd.DataFrame) -> Optional[Tuple[float, datetime]]:
+def es_spx_offset_at_anchor(prev_day: date, spx_30m: pd.DataFrame) -> Optional[float]:
     """
-    Compute ES–SPX offset at the actual SPX anchor time using ES=F 30m bars.
-    Returns (offset, anchor_time_used) or None if unavailable.
+    Compute ES–SPX offset at the actual SPX anchor time using ES=F 1m; fallback to 5m.
+    Returns None if neither 1m nor 5m provides prints ≤ anchor.
     """
     spx_anchor_close, spx_anchor_time = get_prev_day_anchor_close_and_time(spx_30m, prev_day)
     if spx_anchor_close is None or spx_anchor_time is None:
         return None
-    es_30m = fetch_intraday("ES=F", prev_day, prev_day, interval="30m")
-    if es_30m.empty or "Close" not in es_30m.columns:
-        return None
-    es_upto = es_30m.loc[es_30m.index <= spx_anchor_time]
-    if es_upto.empty:
-        return None
-    es_close = float(es_upto["Close"].iloc[-1])
-    return float(es_close - spx_anchor_close), spx_anchor_time
 
-def fetch_overnight_es_30m(prev_day: date, proj_day: date) -> pd.DataFrame:
-    es_30m = fetch_intraday("ES=F", prev_day, proj_day, interval="30m")
-    if es_30m.empty:
-        return pd.DataFrame()
-    start = fmt_ct(datetime.combine(prev_day, time(17, 0)))
-    end   = fmt_ct(datetime.combine(proj_day, time(8, 30)))
-    return es_30m.loc[start:end].copy()
+    es_1m = fetch_intraday("ES=F", prev_day, prev_day, "1m")
+    if not es_1m.empty:
+        es_upto = es_1m.loc[es_1m.index <= spx_anchor_time]
+        if not es_upto.empty and "Close" in es_upto.columns:
+            try:
+                return float(es_upto["Close"].iloc[-1] - spx_anchor_close)
+            except Exception:
+                pass
+
+    es_5m = fetch_intraday("ES=F", prev_day, prev_day, "5m")
+    if not es_5m.empty:
+        es_upto = es_5m.loc[es_5m.index <= spx_anchor_time]
+        if not es_upto.empty and "Close" in es_upto.columns:
+            try:
+                return float(es_upto["Close"].iloc[-1] - spx_anchor_close)
+            except Exception:
+                pass
+
+    return None
+
+def fetch_overnight_minute(prev_day: date, proj_day: date) -> Tuple[pd.DataFrame, str]:
+    """Fetch overnight ES bars with best effort: try 1m (preferred) then 5m."""
+    start = fmt_ct(datetime.combine(prev_day, time(17,0)))
+    end   = fmt_ct(datetime.combine(proj_day, time(8,30)))
+    # Try 1m
+    es_1m = fetch_intraday("ES=F", prev_day, proj_day, "1m")
+    if not es_1m.empty:
+        return es_1m.loc[start:end].copy(), "1m"
+    # Fallback to 5m
+    es_5m = fetch_intraday("ES=F", prev_day, proj_day, "5m")
+    if not es_5m.empty:
+        return es_5m.loc[start:end].copy(), "5m"
+    return pd.DataFrame(), "none"
 
 def adjust_to_spx_frame(es_df: pd.DataFrame, offset: float) -> pd.DataFrame:
     df = es_df.copy()
@@ -418,56 +442,74 @@ def adjust_to_spx_frame(es_df: pd.DataFrame, offset: float) -> pd.DataFrame:
             df[col] = df[col] - offset
     return df
 
+def nearest_30m_index(idx_30m: pd.DatetimeIndex, ts: pd.Timestamp) -> Optional[pd.Timestamp]:
+    """Return the 30m bar end time <= ts (ffill)."""
+    if idx_30m.empty:
+        return None
+    loc_df = idx_30m[idx_30m <= ts]
+    if len(loc_df) == 0:
+        return None
+    return loc_df[-1]
+
 def build_probability_dashboard(prev_day: date, proj_day: date,
                                 anchor_close: float, anchor_time: datetime,
-                                tol_frac: float, weights: Dict[str,int]) -> Tuple[pd.DataFrame, pd.DataFrame, float, datetime]:
-    # Fan for projection day
+                                tol_frac: float, weights: Dict[str,int]) -> Tuple[pd.DataFrame, pd.DataFrame, float, str]:
+    # Fan (RTH target day)
     fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
 
-    # Previous day SPX for anchor + ES offset (30m)
-    spx_prev_30m = fetch_intraday("^GSPC", prev_day, prev_day, interval="30m")
+    # SPX previous day (30m) for anchor + ES offset
+    spx_prev_30m = fetch_intraday("^GSPC", prev_day, prev_day, "30m")
     if spx_prev_30m.empty:
-        spx_prev_30m = fetch_intraday("SPY", prev_day, prev_day, interval="30m")
+        spx_prev_30m = fetch_intraday("SPY", prev_day, prev_day, "30m")
 
-    off_and_time = es_spx_offset_at_anchor_30m(prev_day, spx_prev_30m)
-    if off_and_time is None:
-        return pd.DataFrame(), fan_df, 0.0, anchor_time
-    off, anchor_time_used = off_and_time
+    off = es_spx_offset_at_anchor(prev_day, spx_prev_30m)
+    if off is None:
+        return pd.DataFrame(), fan_df, 0.0, "none"
 
-    # Overnight ES 30m
-    on_30m = fetch_overnight_es_30m(prev_day, proj_day)
-    if on_30m.empty:
-        return pd.DataFrame(), fan_df, off, anchor_time_used
+    # Overnight ES minute (or 5m) → adjust to SPX frame
+    on_min, used_interval = fetch_overnight_minute(prev_day, proj_day)
+    if on_min.empty:
+        return pd.DataFrame(), fan_df, off, used_interval
+    on_adj = adjust_to_spx_frame(on_min, off)
 
-    # Align ES→SPX frame
-    on_adj = adjust_to_spx_frame(on_30m, off)
+    # Build 30m boosters from resampled on_adj
+    on_adj_30m = resample_to_30m_ct(on_adj)
 
-    # Score touches vs fan using 30m bars
+    # Detect edge touches on minute (or 5m) bars, then score using the 30m upto the containing bar end
     top_slope, bottom_slope = current_spx_slopes()
     rows = []
-    on_booster = on_adj.copy()
 
     for ts, bar in on_adj.iterrows():
         blocks = count_effective_blocks(anchor_time, ts)
         top = anchor_close + top_slope * blocks
         bottom = anchor_close - bottom_slope * blocks
+
         touch = classify_edge_touch(bar, top, bottom)
         if touch is None:
             continue
-        score, comps = compute_boosters_score(on_booster, ts, touch["direction_hint"], weights)
+
+        # Map minute ts -> 30m bar end (<= ts)
+        idx_30m = nearest_30m_index(on_adj_30m.index, ts)
+        if idx_30m is None:
+            score, comps = 0, {k:0 for k in ["ema","volume","wick","atr","tod","div"]}
+        else:
+            score, comps = compute_boosters_score_30m(on_adj_30m, idx_30m, touch["direction_hint"], weights)
+
         price = float(bar["Close"])
         bias = compute_bias(price, top, bottom, tol_frac)
+
         rows.append({
             "TimeDT": ts, "Time": ts.strftime("%H:%M"),
             "Price": round(price,2), "Top": round(top,2), "Bottom": round(bottom,2),
             "Edge": touch["edge"], "Case": touch["case"],
             "Expectation": touch["expected"], "DirectionHint": touch["direction_hint"],
             "Bias": bias, "Score": score,
-            "EMA_w": comps["ema"], "Vol_w": comps["volume"], "Wick_w": comps["wick"],
-            "ATR_w": comps["atr"], "ToD_w": comps["tod"], "Div_w": comps["div"],
+            "EMA_w": comps.get("ema",0), "Vol_w": comps.get("volume",0), "Wick_w": comps.get("wick",0),
+            "ATR_w": comps.get("atr",0), "ToD_w": comps.get("tod",0), "Div_w": comps.get("div",0),
         })
+
     touches_df = pd.DataFrame(rows).sort_values("TimeDT").reset_index(drop=True)
-    return touches_df, fan_df, off, anchor_time_used
+    return touches_df, fan_df, off, used_interval
 
 # ───────────────────────────────────────────────────────────────────────────────
 # SIDEBAR — Global controls
@@ -476,7 +518,7 @@ st.sidebar.title("🔧 Controls")
 today_ct = datetime.now(CT_TZ).date()
 prev_day = st.sidebar.date_input("Previous Trading Day", value=today_ct - timedelta(days=1))
 proj_day = st.sidebar.date_input("Projection Day", value=prev_day + timedelta(days=1))
-st.sidebar.caption("Anchor at **≤ 3:00 PM CT** on the previous SPX session (last bar ≤ 3:00).")
+st.sidebar.caption("Anchor uses the **last SPX bar ≤ 3:00 PM CT** on the previous session (manual override available).")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("✍️ Manual Close (optional)")
@@ -487,7 +529,7 @@ manual_close_val = st.sidebar.number_input("Manual 3:00 PM Close", value=6400.00
 
 st.sidebar.markdown("---")
 with st.sidebar.expander("⚙️ Advanced (optional)", expanded=False):
-    st.caption("Adjust **asymmetric** slopes and the within-fan neutrality band.")
+    st.caption("Adjust **asymmetric** fan slopes and the within-fan neutrality band.")
     enable_slope = st.checkbox("Enable slope override",
                                value=("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state))
     top_slope_val = st.number_input("Top slope (+ per 30m)",
@@ -506,18 +548,18 @@ with st.sidebar.expander("⚙️ Advanced (optional)", expanded=False):
                 st.session_state["bottom_slope_per_block"] = float(bottom_slope_val)
                 st.success(f"Top=+{top_slope_val:.3f}  •  Bottom=−{bottom_slope_val:.3f}")
             else:
-                for k in ("top_slope_per_block", "bottom_slope_per_block"):
+                for k in ("top_slope_per_block","bottom_slope_per_block"):
                     st.session_state.pop(k, None)
                 st.info("Slope override disabled (using defaults).")
     with col_adv_b:
         if st.button("Reset slopes", use_container_width=True, key="reset_slope"):
-            for k in ("top_slope_per_block", "bottom_slope_per_block"):
+            for k in ("top_slope_per_block","bottom_slope_per_block"):
                 st.session_state.pop(k, None)
-            st.success(f"Reset to defaults: Top=+{TOP_SLOPE_DEFAULT:.3f} • Bottom=−{BOTTOM_SLOPE_DEFAULT:.3f}")
+            st.success(f"Reset → Top=+{TOP_SLOPE_DEFAULT:.3f} • Bottom=−{BOTTOM_SLOPE_DEFAULT:.3f}")
 
 st.sidebar.markdown("---")
-go_spx = st.sidebar.button("🔮 Generate / Refresh SPX Fan & Strategy", type="primary", use_container_width=True)
-run_prob = st.sidebar.button("🧠 Analyze / Refresh Probability Dashboard (30m)", type="secondary", use_container_width=True)
+go_spx  = st.sidebar.button("🔮 Generate / Refresh SPX Fan & Strategy", type="primary",  use_container_width=True)
+run_prob= st.sidebar.button("🧠 Analyze / Refresh Probability Dashboard", type="secondary",use_container_width=True)
 
 # ───────────────────────────────────────────────────────────────────────────────
 # HEADER METRICS
@@ -532,8 +574,7 @@ with c1:
   <div class="metric-value">🕒 {now.strftime("%H:%M:%S")}</div>
   <div class="kicker">{now.strftime("%A, %B %d, %Y")}</div>
 </div>
-""", unsafe_allow_html=True,
-    )
+""", unsafe_allow_html=True)
 with c2:
     is_wkday = now.weekday() < 5
     open_dt = now.replace(hour=8, minute=30, second=0, microsecond=0)
@@ -548,8 +589,7 @@ with c2:
   <div class="metric-value">📊 <span class="{badge}">{text}</span></div>
   <div class="kicker">RTH: 08:30–14:30 CT • Mon–Fri</div>
 </div>
-""", unsafe_allow_html=True,
-    )
+""", unsafe_allow_html=True)
 with c3:
     ts, bs = current_spx_slopes()
     st.markdown(
@@ -557,11 +597,10 @@ with c3:
 <div class="metric-card">
   <p class="metric-title">SPX Slopes / 30m</p>
   <div class="metric-value">📐 Top=+{ts:.3f} • Bottom=−{bs:.3f}</div>
-  <div class="kicker">Asymmetric fan • 30m basis</div>
+  <div class="kicker">Asymmetric fan</div>
   {"<div class='override-tag'>Override active</div>" if ("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state) else ""}
 </div>
-""", unsafe_allow_html=True,
-    )
+""", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -569,7 +608,7 @@ st.markdown("---")
 # TABS
 # ───────────────────────────────────────────────────────────────────────────────
 tab1, tabProb, tab2, tab3, tab4 = st.tabs(
-    ["SPX Anchors", "Probability Dashboard (30m)", "Stock Anchors", "Signals & EMA", "Contract Tool"]
+    ["SPX Anchors", "Probability Dashboard", "Stock Anchors", "Signals & EMA", "Contract Tool"]
 )
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
@@ -580,16 +619,16 @@ with tab1:
 
     if go_spx:
         with st.spinner("Building SPX fan & strategy…"):
-            spx_prev = fetch_intraday("^GSPC", prev_day, prev_day, interval="30m")
+            spx_prev = fetch_intraday("^GSPC", prev_day, prev_day, "30m")
             if spx_prev.empty:
-                spx_prev = fetch_intraday("SPY", prev_day, prev_day, interval="30m")
+                spx_prev = fetch_intraday("SPY", prev_day, prev_day, "30m")
             if spx_prev.empty:
-                st.error("❌ Previous day 30m data missing — can’t compute the anchor.")
+                st.error("❌ Previous day data missing — can’t compute the anchor.")
                 st.stop()
 
             if use_manual_close:
                 anchor_close = float(manual_close_val)
-                anchor_time  = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+                anchor_time  = fmt_ct(datetime.combine(prev_day, time(15,0)))
             else:
                 anchor_close, anchor_time = get_prev_day_anchor_close_and_time(spx_prev, prev_day)
                 if anchor_close is None or anchor_time is None:
@@ -598,19 +637,19 @@ with tab1:
 
             fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
 
-            spx_proj = fetch_intraday("^GSPC", proj_day, proj_day, interval="30m")
+            spx_proj = fetch_intraday("^GSPC", proj_day, proj_day, "30m")
             if spx_proj.empty:
-                spx_proj = fetch_intraday("SPY", proj_day, proj_day, interval="30m")
+                spx_proj = fetch_intraday("SPY", proj_day, proj_day, "30m")
             spx_proj_rth = between_time(spx_proj, RTH_START, RTH_END)
 
-            top_slope, bottom_slope = current_spx_slopes()
+            tslope, bslope = current_spx_slopes()
             rows = []
             iter_index = (spx_proj_rth.index if not spx_proj_rth.empty
                           else pd.DatetimeIndex(rth_slots_ct(proj_day)))
             for dt in iter_index:
                 blocks = count_effective_blocks(anchor_time, dt)
-                top = anchor_close + top_slope * blocks
-                bottom = anchor_close - bottom_slope * blocks
+                top = anchor_close + tslope * blocks
+                bottom = anchor_close - bslope * blocks
                 if not spx_proj_rth.empty and dt in spx_proj_rth.index:
                     price = float(spx_proj_rth.loc[dt, "Close"])
                     bias = compute_bias(price, top, bottom, tol_frac)
@@ -618,7 +657,7 @@ with tab1:
                 else:
                     price = np.nan
                     bias = "NO DATA"
-                    note = "No RTH data yet (pre-market). Fan levels only."
+                    note = "No RTH data yet (pre-market). Fan only."
                 rows.append({
                     "Time": dt.strftime("%H:%M"),
                     "Price": (round(price,2) if not np.isnan(price) else np.nan),
@@ -636,12 +675,11 @@ with tab1:
             }
 
     if "spx_result" in st.session_state:
-        fan_df = st.session_state["spx_result"]["fan_df"]
+        fan_df   = st.session_state["spx_result"]["fan_df"]
         strat_df = st.session_state["spx_result"]["strat_df"]
 
         st.markdown("### 🎯 Fan Lines (Top / Bottom @ 30-min)")
-        st.dataframe(fan_df.loc[:, ["Time","Top","Bottom","Fan_Width"]],
-                     use_container_width=True, hide_index=True)
+        st.dataframe(fan_df[["Time","Top","Bottom","Fan_Width"]], use_container_width=True, hide_index=True)
 
         st.markdown("### 📋 Strategy Table (Corrected Bias)")
         st.caption("Bias uses **descending anchor** proximity & neutrality band. ⭐ marks 8:30.")
@@ -653,11 +691,11 @@ with tab1:
         st.info("Click **Generate / Refresh SPX Fan & Strategy** in the sidebar.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 2: PROBABILITY DASHBOARD (30m)                                          ║
+# ║ TAB 2: PROBABILITY DASHBOARD                                                ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tabProb:
-    st.subheader("Probability Dashboard — Overnight 30m Edge Interactions → RTH Readiness")
-    st.caption("All logic is 30-minute based: ES offset, touches, EMA/Volume/Wick/ATR/ToD (optional RSI divergence).")
+    st.subheader("Probability Dashboard — 1m edge detection with 30m boosters (⭐ 8:30 ready)")
+    st.caption("Edge interactions detected on 1m (fallback 5m). Booster score computed on resampled 30m bars with exact CT boundaries.")
 
     left, right = st.columns(2)
     with left:
@@ -672,17 +710,17 @@ with tabProb:
                            disabled=not enable_div, key="prob_w_div")
 
     if run_prob:
-        with st.spinner("Scoring overnight 30m edge interactions…"):
-            spx_prev = fetch_intraday("^GSPC", prev_day, prev_day, interval="30m")
+        with st.spinner("Scoring overnight edge interactions…"):
+            spx_prev = fetch_intraday("^GSPC", prev_day, prev_day, "30m")
             if spx_prev.empty:
-                spx_prev = fetch_intraday("SPY", prev_day, prev_day, interval="30m")
+                spx_prev = fetch_intraday("SPY", prev_day, prev_day, "30m")
             if spx_prev.empty:
-                st.error("Could not fetch previous day SPX 30m data.")
+                st.error("Could not fetch previous day SPX data.")
                 st.stop()
 
             if use_manual_close:
                 anchor_close = float(manual_close_val)
-                anchor_time  = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+                anchor_time  = fmt_ct(datetime.combine(prev_day, time(15,0)))
             else:
                 anchor_close, anchor_time = get_prev_day_anchor_close_and_time(spx_prev, prev_day)
                 if anchor_close is None or anchor_time is None:
@@ -698,14 +736,14 @@ with tabProb:
                 "div": (st.session_state["prob_w_div"] if st.session_state["prob_enable_div"] else 0)
             }
 
-            touches_df, fan_df, offset_used, anchor_time_used = build_probability_dashboard(
+            touches_df, fan_df, offset_used, used_interval = build_probability_dashboard(
                 prev_day, proj_day, anchor_close, anchor_time, tol_frac, custom_weights
             )
 
             st.session_state["prob_result"] = {
                 "touches_df": touches_df, "fan_df": fan_df,
-                "offset_used": float(offset_used),
-                "anchor_close": anchor_close, "anchor_time": anchor_time_used,
+                "offset_used": float(offset_used), "used_interval": used_interval,
+                "anchor_close": anchor_close, "anchor_time": anchor_time,
                 "prev_day": prev_day, "proj_day": proj_day,
                 "weights": custom_weights, "tol_frac": tol_frac
             }
@@ -716,28 +754,28 @@ with tabProb:
 
         cA, cB, cC = st.columns(3)
         with cA:
-            st.markdown(f"<div class='metric-card'><p class='metric-title'>Anchor Close (Prev ≤3:00 PM CT • 30m)</p><div class='metric-value'>💠 {pr['anchor_close']:.2f}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><p class='metric-title'>Anchor Close (Prev ≤3:00 PM CT)</p><div class='metric-value'>💠 {pr['anchor_close']:.2f}</div></div>", unsafe_allow_html=True)
         with cB:
-            st.markdown(f"<div class='metric-card'><p class='metric-title'>Overnight 30m Touches</p><div class='metric-value'>🧩 {len(touches_df)}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><p class='metric-title'>Overnight Edge Touches</p><div class='metric-value'>🧩 {len(touches_df)}</div></div>", unsafe_allow_html=True)
         with cC:
-            st.markdown(f"<div class='metric-card'><p class='metric-title'>ES→SPX Offset (30m)</p><div class='metric-value'>Δ {pr['offset_used']:+.2f}</div><div class='kicker'>Applied at anchor time</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><p class='metric-title'>ES→SPX Offset</p><div class='metric-value'>Δ {pr['offset_used']:+.2f}</div><div class='kicker'>Data: {pr['used_interval']}</div></div>", unsafe_allow_html=True)
 
         if pr["offset_used"] == 0.0 and touches_df.empty:
-            st.info("ES→SPX 30m offset could not be computed (provider gap). Overnight touches may be unavailable for this date.")
+            st.info("ES→SPX offset could not be computed (even with 5m fallback). Overnight touches may be unavailable for this date.")
 
-        st.markdown("### 📡 Overnight Edge Interactions (30m, Scored)")
+        st.markdown("### 📡 Overnight Edge Interactions (Scored)")
         if touches_df.empty:
-            st.info("No qualifying 30m overnight edge touches detected for this window.")
+            st.info("No qualifying edge touches detected for this window.")
         else:
             view_cols = ["Time","Price","Top","Bottom","Bias","Edge","Case","Expectation","Score","EMA_w","Vol_w","Wick_w","ATR_w","ToD_w","Div_w"]
             st.dataframe(touches_df[view_cols], use_container_width=True, hide_index=True)
 
-            # Contract projection launcher (single FORM → no heavy recomputes)
-            st.markdown("### 🧮 Contract Projection from a Selected 30m Touch")
+            # Contract projection launcher (FORM → prevents reruns while editing)
+            st.markdown("### 🧮 Contract Projection from a Selected Touch")
             with st.form("contract_from_touch_form", clear_on_submit=False):
                 labels = [f"{i} — {row['Time']} • {row['Edge']} • Score {row['Score']}" for i, row in touches_df.iterrows()]
                 default_idx = st.session_state.get("prob_touch_idx", len(labels)-1 if labels else 0)
-                sel = st.selectbox("Pick a 30m touch to seed the contract projection:",
+                sel = st.selectbox("Pick an overnight touch to seed the contract projection:",
                                    options=(labels if labels else ["No touches available"]),
                                    index=(min(default_idx, len(labels)-1) if labels else 0),
                                    key="prob_touch_select")
@@ -759,7 +797,7 @@ with tabProb:
                                              value=st.session_state.get("provide_p2", False), key="provide_p2")
                     if mode == "Two-Point Slope" and provide_p2:
                         p2_time = st.time_input("P2 Time (CT, pre-open OK)",
-                                                value=st.session_state.get("p2_time", time(8, 0)), key="p2_time")
+                                                value=st.session_state.get("p2_time", time(8,0)), key="p2_time")
                         p2_price = st.number_input("Contract Price @ P2", min_value=0.01,
                                                    value=st.session_state.get("p2_price", 12.00),
                                                    step=0.01, format="%.2f", key="p2_price")
@@ -777,10 +815,9 @@ with tabProb:
             if submitted and touches_df.shape[0]:
                 touch_row = touches_df.iloc[sel_idx]
                 touch_dt = touch_row["TimeDT"]
-                top_slope, bottom_slope = current_spx_slopes()
-                expected_hint = touch_row["DirectionHint"]
-                near_term_up = expected_hint in ("BuyHigherFromTop","UpToTopThenSell")
-                underlying_slope = (top_slope if near_term_up else -bottom_slope)
+                tslope, bslope = current_spx_slopes()
+                near_term_up = touch_row["DirectionHint"] in ("BuyHigherFromTop","UpToTopThenSell")
+                underlying_slope = (tslope if near_term_up else -bslope)
                 p1_dt = fmt_ct(touch_dt.to_pydatetime())
 
                 def project_contract_two_point(p1_dt, p1_price, p2_dt, p2_price, proj_day):
@@ -837,7 +874,7 @@ with tabProb:
                     proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
                     st.dataframe(proj_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Click **Analyze / Refresh Probability Dashboard (30m)** in the sidebar.")
+        st.info("Click **Analyze / Refresh Probability Dashboard** in the sidebar.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
 # ║ TAB 3: STOCK ANCHORS                                                        ║
@@ -872,8 +909,8 @@ with tab2:
                 st.error("Please enter a custom symbol.")
                 st.stop()
 
-            mon = fetch_intraday(sym, monday_date, monday_date, interval="30m")
-            tue = fetch_intraday(sym, tuesday_date, tuesday_date, interval="30m")
+            mon = fetch_intraday(sym, monday_date, monday_date, "30m")
+            tue = fetch_intraday(sym, tuesday_date, tuesday_date, "30m")
             if mon.empty and tue.empty:
                 st.error("No data for selected dates.")
                 st.stop()
@@ -922,17 +959,17 @@ with tab3:
     with colS2:
         sig_day = st.date_input("Analysis Day", value=today_ct)
     with colS3:
-        interval_pref = st.selectbox("Interval preference", ["1m", "5m", "30m"], index=2,
-                                     help="30m matches fan & probability dashboard basis.")
+        interval_pref = st.selectbox("Interval preference", ["1m", "5m", "30m"], index=0,
+                                     help="Use 1m/5m for finer touches; 30m matches boosters.")
 
     run_sig = st.button("🔎 Analyze Signals", type="primary")
 
     if run_sig:
         with st.spinner("Computing signals…"):
             prev_day_sig = sig_day - timedelta(days=1)
-            spx_prev = fetch_intraday("^GSPC", prev_day_sig, prev_day_sig, interval="30m")
-            if spx_prev.empty and sig_symbol in ["^GSPC", "SPY"]:
-                spx_prev = fetch_intraday("SPY", prev_day_sig, prev_day_sig, interval="30m")
+            spx_prev = fetch_intraday("^GSPC", prev_day_sig, prev_day_sig, "30m")
+            if spx_prev.empty and sig_symbol in ["^GSPC","SPY"]:
+                spx_prev = fetch_intraday("SPY", prev_day_sig, prev_day_sig, "30m")
 
             if spx_prev.empty:
                 st.error("Could not build fan (prev day data missing).")
@@ -945,11 +982,11 @@ with tab3:
 
             fan_df = project_fan_from_close(anchor_close, anchor_time, sig_day)
 
-            intraday = fetch_intraday(sig_symbol, sig_day, sig_day, interval=interval_pref)
+            intraday = fetch_intraday(sig_symbol, sig_day, sig_day, interval_pref)
             if intraday.empty and interval_pref != "5m":
-                intraday = fetch_intraday(sig_symbol, sig_day, sig_day, interval="5m")
+                intraday = fetch_intraday(sig_symbol, sig_day, sig_day, "5m")
             if intraday.empty and interval_pref != "30m":
-                intraday = fetch_intraday(sig_symbol, sig_day, sig_day, interval="30m")
+                intraday = fetch_intraday(sig_symbol, sig_day, sig_day, "30m")
 
             if intraday.empty:
                 st.error("No intraday data available for the analysis day.")
@@ -970,8 +1007,7 @@ with tab3:
                 touched_bottom = (not pd.isna(low) and not pd.isna(high) and (low <= bot <= high))
                 touched_top    = (not pd.isna(low) and not pd.isna(high) and (low <= top <= high))
                 confirmation = bar['Crossover']
-                action = ""
-                rationale = ""
+                action, rationale = "", ""
 
                 if touched_bottom:
                     if confirmation == 'Bullish':
@@ -1012,11 +1048,11 @@ with tab4:
         point_col1, point_col2 = st.columns(2)
         with point_col1:
             p1_date = st.date_input("Point 1 Date", value=today_ct - timedelta(days=1))
-            p1_time = st.time_input("Point 1 Time (CT)", value=time(20, 0))
+            p1_time = st.time_input("Point 1 Time (CT)", value=time(20,0))
             p1_price = st.number_input("Point 1 Contract Price", value=10.00, min_value=0.01, step=0.01, format="%.2f")
         with point_col2:
             p2_date = st.date_input("Point 2 Date", value=today_ct)
-            p2_time = st.time_input("Point 2 Time (CT)", value=time(8, 0))
+            p2_time = st.time_input("Point 2 Time (CT)", value=time(8,0))
             p2_price = st.number_input("Point 2 Contract Price", value=12.00, min_value=0.01, step=0.01, format="%.2f")
 
         proj_day_ct = st.date_input("RTH Projection Day", value=p2_date)
@@ -1091,12 +1127,12 @@ st.markdown("---")
 colA, colB = st.columns([1, 2])
 with colA:
     if st.button("🔌 Test Data Connection"):
-        td = fetch_intraday("^GSPC", today_ct - timedelta(days=3), today_ct, interval="30m")
+        td = fetch_intraday("^GSPC", today_ct - timedelta(days=3), today_ct, "30m")
         if td.empty:
-            td = fetch_intraday("SPY", today_ct - timedelta(days=3), today_ct, interval="30m")
+            td = fetch_intraday("SPY", today_ct - timedelta(days=3), today_ct, "30m")
         if not td.empty:
             st.success(f"OK — received {len(td)} bars (30m).")
         else:
             st.error("Data fetch failed — try different dates later.")
 with colB:
-    st.caption("All analytics are **30-minute based**. Fan anchor uses **Prev Day ≤3:00 PM CT SPX close**. Overnight analysis aligns ES → SPX with a 30m offset. 8:30 AM is highlighted in all tables.")
+    st.caption("Edge detection = **1m (fallback 5m)**. Probability boosters = **resampled 30m**. Fan anchor uses the last SPX bar ≤ **3:00 PM CT**. 8:30 AM highlighted across tables.")
