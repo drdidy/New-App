@@ -1,13 +1,13 @@
 # app.py
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🔮 SPX PROPHET — Enterprise App (stable reruns)
+# 🔮 SPX PROPHET — Enterprise App (stable reruns • robust ES offset)
 # (SPX Fan Anchors • Probability Dashboard • Stock Anchors • Signals • Contract Tool)
 # - Anchor: exact 3:00 PM CT previous-day SPX close (manual override supported)
 # - SPX fan uses ASYMMETRIC slopes per 30m: Top +0.312, Bottom −0.25 (overrideable)
 # - Block counter skips 4–5 PM CT maintenance & Fri 5 PM → Sun 5 PM weekend gap
-# - Probability Dashboard uses overnight data (offset-aligned) to score edge tests
-# - Bias logic uses descending anchor (Bottom line) + within-fan proximity tolerance
-# - All heavy computations are memoized in session_state (no surprise reloads)
+# - Probability Dashboard uses ES overnight (offset-aligned) to score edge tests
+# - Bias uses within-fan proximity to descending/ascending anchors (+ neutrality band)
+# - All heavy work cached in session_state; forms prevent disruptive reruns
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import streamlit as st
@@ -44,7 +44,7 @@ RSI_LEN = 14
 RSI_WINDOW_MIN = 30
 
 # ───────────────────────────────────────────────────────────────────────────────
-# PAGE THEME
+# PAGE & THEME
 # ───────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="🔮 SPX Prophet Analytics (Enterprise)",
@@ -57,38 +57,23 @@ st.markdown(
     """
 <style>
 :root {
-  --brand: #2563eb;      /* blue-600 */
-  --brand-2: #10b981;    /* emerald-500 */
-  --surface: #ffffff;
-  --muted: #f8fafc;      /* slate-50 */
-  --text: #0f172a;       /* slate-900 */
-  --subtext: #475569;    /* slate-600 */
-  --border: #e2e8f0;     /* slate-200 */
-  --warn: #f59e0b;       /* amber-500 */
-  --danger: #ef4444;     /* red-500 */
+  --brand: #2563eb; --brand-2: #10b981; --surface: #ffffff; --muted: #f8fafc;
+  --text: #0f172a; --subtext: #475569; --border: #e2e8f0; --warn: #f59e0b; --danger: #ef4444;
 }
 html, body, [class*="css"]  { background: var(--muted); color: var(--text); }
 .block-container { padding-top: 1.1rem; }
 h1, h2, h3 { color: var(--text); }
 .card, .metric-card {
-  background: rgba(255,255,255,0.9);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 12px 32px rgba(2,6,23,0.07);
-  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,0.9); border: 1px solid var(--border); border-radius: 16px; padding: 16px;
+  box-shadow: 0 12px 32px rgba(2,6,23,0.07); backdrop-filter: blur(8px);
 }
 .metric-title { font-size: 0.9rem; color: var(--subtext); margin: 0; }
 .metric-value { font-size: 1.8rem; font-weight: 700; margin-top: 6px; }
 .kicker { font-size: 0.8rem; color: var(--subtext); }
-.badge-open {
-  color: #065f46; background: #d1fae5; border: 1px solid #99f6e4;
-  padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
-}
-.badge-closed {
-  color: #7c2d12; background: #ffedd5; border: 1px solid #fed7aa;
-  padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
-}
+.badge-open { color: #065f46; background: #d1fae5; border: 1px solid #99f6e4; padding: 2px 8px;
+  border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.badge-closed { color: #7c2d12; background: #ffedd5; border: 1px solid #fed7aa; padding: 2px 8px;
+  border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
 hr { border-top: 1px solid var(--border); }
 .dataframe { background: var(--surface); border-radius: 12px; overflow: hidden; }
 .small-note { color: var(--subtext); font-size: 0.85rem; }
@@ -301,6 +286,13 @@ def touched_line(low, high, line) -> bool:
     return (low <= line <= high)
 
 def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[Dict]:
+    """
+    User-specified edge logic:
+    - Top touched + Bearish close INSIDE → expect drop to Bottom then BUY from Bottom
+    - Top touched + Bearish close ABOVE  → Top holds as support → buy higher from Top
+    - Bottom touched + Bullish close INSIDE → expect push to Top then SELL from Top
+    - Bottom touched + Bullish close BELOW  → Bottom fails → sell further
+    """
     o = float(bar.get("Open", np.nan))
     h = float(bar.get("High", np.nan))
     l = float(bar.get("Low", np.nan))
@@ -339,24 +331,27 @@ def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[D
 def compute_boosters_score(df_1m: pd.DataFrame, idx: pd.Timestamp,
                            expected_hint: str, weights: Dict[str,int]) -> Tuple[int, Dict[str,int]]:
     comps = {k:0 for k in ["ema","volume","wick","atr","tod","div"]}
-    if idx not in df_1m.index:
+    if df_1m.empty or idx not in df_1m.index:
         return 0, comps
     upto = df_1m.loc[:idx].copy()
     if upto.shape[0] < 20:
         return 0, comps
 
+    # EMA
     ema8 = ema(upto["Close"], 8)
     ema21 = ema(upto["Close"], 21)
     ema_state = "Bullish" if ema8.iloc[-1] > ema21.iloc[-1] else ("Bearish" if ema8.iloc[-1] < ema21.iloc[-1] else "None")
-
     expected_near_term = "Up" if expected_hint in ("BuyHigherFromTop","UpToTopThenSell") else "Down"
     if (expected_near_term == "Up" and ema_state == "Bullish") or (expected_near_term == "Down" and ema_state == "Bearish"):
         comps["ema"] = weights.get("ema",0)
 
-    vol = upto["Volume"]
-    if vol.notna().all() and vol.iloc[-1] > vol.rolling(20).mean().iloc[-1] * 1.15:
-        comps["volume"] = weights.get("volume",0)
+    # Volume spike (>115% of 20)
+    if "Volume" in upto.columns:
+        vol = upto["Volume"]
+        if vol.notna().all() and vol.iloc[-1] > vol.rolling(20).mean().iloc[-1] * 1.15:
+            comps["volume"] = weights.get("volume",0)
 
+    # Wick/Body rejection
     bar = upto.iloc[-1]
     o,h,l,c = float(bar["Open"]), float(bar["High"]), float(bar["Low"]), float(bar["Close"])
     body = abs(c - o) + 1e-9
@@ -369,6 +364,7 @@ def compute_boosters_score(df_1m: pd.DataFrame, idx: pd.Timestamp,
         if upper_wick / body >= WICK_MIN_RATIO:
             comps["wick"] = weights.get("wick",0)
 
+    # ATR context
     tr = true_range(upto)
     atr = tr.rolling(ATR_LOOKBACK).mean()
     if atr.notna().sum() >= ATR_LOOKBACK:
@@ -380,10 +376,12 @@ def compute_boosters_score(df_1m: pd.DataFrame, idx: pd.Timestamp,
             if pct >= ATR_HIGH_PCTL:
                 comps["atr"] = weights.get("atr",0)
 
+    # Time-of-day window
     ts = fmt_ct(idx.to_pydatetime())
     if any(abs((ts.hour*60 + ts.minute) - (hh*60+mm)) <= KEY_TOD_WINDOW_MIN for (hh,mm) in KEY_TOD):
         comps["tod"] = weights.get("tod",0)
 
+    # Optional light divergence
     if weights.get("div",0) > 0:
         r = rsi(upto["Close"], RSI_LEN)
         if r.notna().sum() >= RSI_LEN + 2:
@@ -404,20 +402,28 @@ def compute_boosters_score(df_1m: pd.DataFrame, idx: pd.Timestamp,
     return score, comps
 
 # ───────────────────────────────────────────────────────────────────────────────
-# PROBABILITY DASHBOARD BUILD
+# PROBABILITY DASHBOARD BUILD (robust ES offset)
 # ───────────────────────────────────────────────────────────────────────────────
 def es_spx_offset_at_3pm(prev_day: date, spx_30m: pd.DataFrame) -> Optional[float]:
+    """Compute ES–SPX offset at 3:00 PM CT using ES=F 1m; robust to missing bars."""
     spx_close = get_prev_day_3pm_close(spx_30m, prev_day)
     if spx_close is None:
         return None
+
     es_1m = fetch_intraday_interval("ES=F", prev_day, prev_day, "1m")
-    if es_1m.empty:
+    if es_1m.empty or "Close" not in es_1m.columns:
         return None
-    t3 = fmt_ct(datetime.combine(prev_day, time(15,0)))
-    if t3 in es_1m.index:
-        es_close = float(es_1m.loc[t3, "Close"])
-    else:
-        es_close = float(es_1m.loc[:t3]["Close"].iloc[-1])
+
+    t3 = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+    es_upto_3 = es_1m.loc[es_1m.index <= t3]
+    if es_upto_3.empty:
+        return None
+
+    try:
+        es_close = float(es_upto_3["Close"].iloc[-1])
+    except Exception:
+        return None
+
     return float(es_close - spx_close)
 
 def fetch_overnight_1m(prev_day: date, proj_day: date) -> pd.DataFrame:
@@ -581,12 +587,11 @@ tab1, tabProb, tab2, tab3, tab4 = st.tabs(
 )
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 1: SPX ANCHORS (persist results; no surprise recompute)                 ║
+# ║ TAB 1: SPX ANCHORS                                                          ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab1:
     st.subheader("SPX Close-Anchor Fan (3:00 PM CT) — with ⭐ 8:30 Highlight & Correct Bias")
 
-    # Compute only when button is pressed
     if go_spx:
         with st.spinner("Building SPX fan & strategy…"):
             spx_prev = fetch_intraday("^GSPC", prev_day, prev_day)
@@ -606,8 +611,10 @@ with tab1:
                 anchor_close = float(prev_3pm_close)
             anchor_time  = fmt_ct(datetime.combine(prev_day, time(15, 0)))
 
+            # Fan always available
             fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
 
+            # Projection data may be empty pre-market → synth rows
             spx_proj = fetch_intraday("^GSPC", proj_day, proj_day)
             if spx_proj.empty:
                 spx_proj = fetch_intraday("SPY", proj_day, proj_day)
@@ -639,14 +646,12 @@ with tab1:
                 })
             strat_df = pd.DataFrame(rows)
 
-            # Persist results so later UI changes don't wipe them
             st.session_state["spx_result"] = {
                 "fan_df": fan_df, "strat_df": strat_df,
                 "anchor_close": anchor_close, "anchor_time": anchor_time,
                 "prev_day": prev_day, "proj_day": proj_day, "tol_frac": tol_frac
             }
 
-    # Render whatever we have (persisted or just computed)
     if "spx_result" in st.session_state:
         fan_df = st.session_state["spx_result"]["fan_df"]
         strat_df = st.session_state["spx_result"]["strat_df"]
@@ -656,22 +661,21 @@ with tab1:
                      use_container_width=True, hide_index=True)
 
         st.markdown("### 📋 Strategy Table (Corrected Bias)")
-        st.caption("Bias uses **descending anchor line** & within-fan proximity tolerance. 8:30 AM row is marked with ⭐.")
+        st.caption("Bias uses **descending anchor** proximity & neutrality band. ⭐ marks 8:30.")
         st.dataframe(
             strat_df[["Slot","Time","Price","Bias","Top","Bottom","Fan_Width","Note"]],
             use_container_width=True, hide_index=True
         )
     else:
-        st.info("Click **Generate / Refresh SPX Fan & Strategy** to compute and persist results here.")
+        st.info("Click **Generate / Refresh SPX Fan & Strategy** in the sidebar.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB PROB: PROBABILITY DASHBOARD (persist; contract form)                    ║
+# ║ TAB 2: PROBABILITY DASHBOARD                                                ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tabProb:
     st.subheader("Probability Dashboard (Overnight Edge Interactions → RTH Readiness)")
     st.caption("Scores: EMA/Volume/Wick/ATR/Time-of-Day (+ optional Divergence).")
 
-    # Weight controls (changing these does NOT recompute until you click the sidebar button)
     left, right = st.columns(2)
     with left:
         enable_div = st.checkbox("Enable Oscillator Divergence (lightweight)", value=False, key="prob_enable_div")
@@ -725,7 +729,7 @@ with tabProb:
             }
 
     # Render persisted probability analysis (if available)
-    if "prob_result" in st.session_state and not st.session_state["prob_result"]["touches_df"].empty:
+    if "prob_result" in st.session_state:
         pr = st.session_state["prob_result"]
         touches_df = pr["touches_df"]
 
@@ -735,127 +739,131 @@ with tabProb:
         with cB:
             st.markdown(f"<div class='metric-card'><p class='metric-title'>Overnight Touches Scored</p><div class='metric-value'>🧩 {len(touches_df)}</div></div>", unsafe_allow_html=True)
         with cC:
-            st.markdown(f"<div class='metric-card'><p class='metric-title'>Overnight Readiness</p><div class='metric-value'>⭐ Focus 08:30</div><div class='kicker'>First RTH decision point</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card'><p class='metric-title'>ES→SPX Offset</p><div class='metric-value'>Δ {pr['offset_used']:+.2f}</div><div class='kicker'>Applied at 3:00 PM CT</div></div>", unsafe_allow_html=True)
+
+        if pr["offset_used"] == 0.0 and touches_df.empty:
+            st.info("ES→SPX offset could not be computed (no ES 1-min prints at/earlier than 3:00 PM CT). Overnight touches may be unavailable for this date.")
 
         st.markdown("### 📡 Overnight Edge Interactions (Scored)")
-        view_cols = ["Time","Price","Top","Bottom","Bias","Edge","Case","Expectation","Score","EMA_w","Vol_w","Wick_w","ATR_w","ToD_w","Div_w"]
-        st.dataframe(touches_df[view_cols], use_container_width=True, hide_index=True)
+        if touches_df.empty:
+            st.info("No qualifying overnight edge touches detected for this window.")
+        else:
+            view_cols = ["Time","Price","Top","Bottom","Bias","Edge","Case","Expectation","Score","EMA_w","Vol_w","Wick_w","ATR_w","ToD_w","Div_w"]
+            st.dataframe(touches_df[view_cols], use_container_width=True, hide_index=True)
 
-        # Entire launcher in a single FORM (changes don't trigger heavy recompute)
-        st.markdown("### 🧮 Contract Projection from a Selected Touch")
-        with st.form("contract_from_touch_form", clear_on_submit=False):
-            labels = [f"{i} — {row['Time']} • {row['Edge']} • Score {row['Score']}" for i, row in touches_df.iterrows()]
-            default_idx = st.session_state.get("prob_touch_idx", len(labels)-1)
-            sel = st.selectbox("Pick an overnight touch to seed the contract projection:",
-                               options=labels, index=min(default_idx, len(labels)-1), key="prob_touch_select")
-            sel_idx = int(sel.split(" — ")[0])
-            st.session_state["prob_touch_idx"] = labels.index(sel)
+            # Contract projection launcher (single FORM → no heavy recomputes)
+            st.markdown("### 🧮 Contract Projection from a Selected Touch")
+            with st.form("contract_from_touch_form", clear_on_submit=False):
+                labels = [f"{i} — {row['Time']} • {row['Edge']} • Score {row['Score']}" for i, row in touches_df.iterrows()]
+                default_idx = st.session_state.get("prob_touch_idx", len(labels)-1 if labels else 0)
+                sel = st.selectbox("Pick an overnight touch to seed the contract projection:",
+                                   options=(labels if labels else ["No touches available"]),
+                                   index=(min(default_idx, len(labels)-1) if labels else 0),
+                                   key="prob_touch_select")
+                sel_idx = int(sel.split(" — ")[0]) if touches_df.shape[0] else 0
+                if touches_df.shape[0]:
+                    st.session_state["prob_touch_idx"] = labels.index(sel)
 
-            colc1, colc2, colc3 = st.columns([1,1,1])
-            with colc1:
-                p1_price = st.number_input("Contract Price @ Touch (P1)", min_value=0.01,
-                                           value=st.session_state.get("p1_price_touch", 10.00),
-                                           step=0.01, format="%.2f", key="p1_price_touch")
-            with colc2:
-                mode = st.selectbox("Projection Mode", ["Two-Point Slope","Δ + Θ (model-aware)"],
-                                    index=st.session_state.get("proj_mode_idx", 0), key="proj_mode")
-                st.session_state["proj_mode_idx"] = 0 if mode=="Two-Point Slope" else 1
+                colc1, colc2, colc3 = st.columns([1,1,1])
+                with colc1:
+                    p1_price = st.number_input("Contract Price @ Touch (P1)", min_value=0.01,
+                                               value=st.session_state.get("p1_price_touch", 10.00),
+                                               step=0.01, format="%.2f", key="p1_price_touch")
+                with colc2:
+                    mode = st.selectbox("Projection Mode", ["Two-Point Slope","Δ + Θ (model-aware)"],
+                                        index=st.session_state.get("proj_mode_idx", 0), key="proj_mode")
+                    st.session_state["proj_mode_idx"] = 0 if mode=="Two-Point Slope" else 1
 
-                provide_p2 = st.checkbox("Add a second price (P2) to refine slope",
-                                         value=st.session_state.get("provide_p2", False), key="provide_p2")
-                if mode == "Two-Point Slope" and provide_p2:
-                    p2_time = st.time_input("P2 Time (CT, pre-open OK)",
-                                            value=st.session_state.get("p2_time", time(8, 0)), key="p2_time")
-                    p2_price = st.number_input("Contract Price @ P2", min_value=0.01,
-                                               value=st.session_state.get("p2_price", 12.00),
-                                               step=0.01, format="%.2f", key="p2_price")
+                    provide_p2 = st.checkbox("Add a second price (P2) to refine slope",
+                                             value=st.session_state.get("provide_p2", False), key="provide_p2")
+                    if mode == "Two-Point Slope" and provide_p2:
+                        p2_time = st.time_input("P2 Time (CT, pre-open OK)",
+                                                value=st.session_state.get("p2_time", time(8, 0)), key="p2_time")
+                        p2_price = st.number_input("Contract Price @ P2", min_value=0.01,
+                                                   value=st.session_state.get("p2_price", 12.00),
+                                                   step=0.01, format="%.2f", key="p2_price")
+                    else:
+                        p2_time = None; p2_price = None
+                with colc3:
+                    delta = st.number_input("Δ (Delta, e.g., 0.35)", value=st.session_state.get("delta_dt", 0.35),
+                                            step=0.01, format="%.2f", key="delta_dt")
+                    theta_day = st.number_input("Θ per day (negative, e.g., -20.00)",
+                                                value=st.session_state.get("theta_dt", -20.00),
+                                                step=0.5, format="%.2f", key="theta_dt")
+
+                submitted = st.form_submit_button("📤 Project 8:30 → 14:30")
+
+            if submitted and touches_df.shape[0]:
+                touch_row = touches_df.iloc[sel_idx]
+                touch_dt = touch_row["TimeDT"]
+                top_slope, bottom_slope = current_spx_slopes()
+                expected_hint = touch_row["DirectionHint"]
+                near_term_up = expected_hint in ("BuyHigherFromTop","UpToTopThenSell")
+                underlying_slope = (top_slope if near_term_up else -bottom_slope)
+                p1_dt = fmt_ct(touch_dt.to_pydatetime())
+
+                def project_contract_two_point(p1_dt, p1_price, p2_dt, p2_price, proj_day):
+                    if p2_dt is not None and p2_price is not None and p2_dt > p1_dt:
+                        blocks = count_effective_blocks(p1_dt, p2_dt)
+                        slope = (p2_price - p1_price) / blocks if blocks > 0 else 0.0
+                    else:
+                        slope = 0.0
+                    rows = []
+                    for slot in rth_slots_ct(proj_day):
+                        b = count_effective_blocks(p1_dt, slot)
+                        price = p1_price + slope * b
+                        rows.append({"Time": slot.strftime("%H:%M"),
+                                     "Contract_Price": round(price, 2),
+                                     "Blocks": round(b, 1)})
+                    return pd.DataFrame(rows), slope, float(count_effective_blocks(p1_dt, fmt_ct(datetime.combine(proj_day, time(8,30)))))
+
+                def project_contract_delta_theta(p1_dt, p1_price, underlying_slope_per_30m, delta, theta_per_day, proj_day):
+                    theta_per_30m = theta_per_day / 48.0
+                    contract_slope = delta * underlying_slope_per_30m + theta_per_30m
+                    rows = []
+                    for slot in rth_slots_ct(proj_day):
+                        b = count_effective_blocks(p1_dt, slot)
+                        price = p1_price + contract_slope * b
+                        rows.append({"Time": slot.strftime("%H:%M"),
+                                     "Contract_Price": round(price, 2),
+                                     "Blocks": round(b, 1)})
+                    return pd.DataFrame(rows), contract_slope
+
+                if mode == "Two-Point Slope":
+                    p2_dt = (fmt_ct(datetime.combine(proj_day, p2_time)) if provide_p2 and p2_time else None)
+                    proj_df, slope_used, blocks_to_open = project_contract_two_point(
+                        p1_dt, float(p1_price), p2_dt, (float(p2_price) if provide_p2 else None), proj_day
+                    )
+                    st.markdown("#### Projection (Two-Point Slope)")
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
+                    with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks to 8:30</p><div class='metric-value'>🧩 {blocks_to_open:.1f}</div></div>", unsafe_allow_html=True)
+                    with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_used:+.3f}</div></div>", unsafe_allow_html=True)
+                    with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Touch Score</p><div class='metric-value'>⭐ {int(touch_row['Score'])}</div></div>", unsafe_allow_html=True)
+                    proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+                    st.dataframe(proj_df, use_container_width=True, hide_index=True)
                 else:
-                    p2_time = None; p2_price = None
-            with colc3:
-                delta = st.number_input("Δ (Delta, e.g., 0.35)", value=st.session_state.get("delta_dt", 0.35),
-                                        step=0.01, format="%.2f", key="delta_dt")
-                theta_day = st.number_input("Θ per day (negative, e.g., -20.00)",
-                                            value=st.session_state.get("theta_dt", -20.00),
-                                            step=0.5, format="%.2f", key="theta_dt")
-
-            submitted = st.form_submit_button("📤 Project 8:30 → 14:30")
-
-        # Run projection only when the form is submitted
-        if submitted:
-            touch_row = touches_df.iloc[sel_idx]
-            touch_dt = touch_row["TimeDT"]
-            top_slope, bottom_slope = current_spx_slopes()
-            expected_hint = touch_row["DirectionHint"]
-            near_term_up = expected_hint in ("BuyHigherFromTop","UpToTopThenSell")
-            underlying_slope = (top_slope if near_term_up else -bottom_slope)
-            p1_dt = fmt_ct(touch_dt.to_pydatetime())
-
-            def project_contract_two_point(p1_dt, p1_price, p2_dt, p2_price, proj_day):
-                if p2_dt is not None and p2_price is not None and p2_dt > p1_dt:
-                    blocks = count_effective_blocks(p1_dt, p2_dt)
-                    slope = (p2_price - p1_price) / blocks if blocks > 0 else 0.0
-                else:
-                    slope = 0.0
-                rows = []
-                for slot in rth_slots_ct(proj_day):
-                    b = count_effective_blocks(p1_dt, slot)
-                    price = p1_price + slope * b
-                    rows.append({"Time": slot.strftime("%H:%M"),
-                                 "Contract_Price": round(price, 2),
-                                 "Blocks": round(b, 1)})
-                return pd.DataFrame(rows), slope, float(count_effective_blocks(p1_dt, fmt_ct(datetime.combine(proj_day, time(8,30)))))
-
-            def project_contract_delta_theta(p1_dt, p1_price, underlying_slope_per_30m, delta, theta_per_day, proj_day):
-                theta_per_30m = theta_per_day / 48.0
-                contract_slope = delta * underlying_slope_per_30m + theta_per_30m
-                rows = []
-                for slot in rth_slots_ct(proj_day):
-                    b = count_effective_blocks(p1_dt, slot)
-                    price = p1_price + contract_slope * b
-                    rows.append({"Time": slot.strftime("%H:%M"),
-                                 "Contract_Price": round(price, 2),
-                                 "Blocks": round(b, 1)})
-                return pd.DataFrame(rows), contract_slope
-
-            if mode == "Two-Point Slope":
-                p2_dt = (fmt_ct(datetime.combine(proj_day, p2_time)) if provide_p2 and p2_time else None)
-                proj_df, slope_used, blocks_to_open = project_contract_two_point(
-                    p1_dt, float(p1_price), p2_dt, (float(p2_price) if provide_p2 else None), proj_day
-                )
-                st.markdown("#### Projection (Two-Point Slope)")
-                mc1, mc2, mc3, mc4 = st.columns(4)
-                with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
-                with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks to 8:30</p><div class='metric-value'>🧩 {blocks_to_open:.1f}</div></div>", unsafe_allow_html=True)
-                with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_used:+.3f}</div></div>", unsafe_allow_html=True)
-                with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Touch Score</p><div class='metric-value'>⭐ {int(touch_row['Score'])}</div></div>", unsafe_allow_html=True)
-                proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
-                st.dataframe(proj_df, use_container_width=True, hide_index=True)
-
-            else:
-                proj_df, c_slope = project_contract_delta_theta(
-                    p1_dt, float(p1_price), float(underlying_slope),
-                    float(delta), float(theta_day), proj_day
-                )
-                st.markdown("#### Projection (Δ + Θ Model)")
-                mc1, mc2, mc3, mc4 = st.columns(4)
-                with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
-                with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Δ</p><div class='metric-value'>Δ {delta:.2f}</div></div>", unsafe_allow_html=True)
-                with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Θ / 30m</p><div class='metric-value'>θ {theta_day/48.0:+.3f}</div></div>", unsafe_allow_html=True)
-                with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contract Slope / 30m</p><div class='metric-value'>📐 {c_slope:+.3f}</div></div>", unsafe_allow_html=True)
-                proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
-                st.dataframe(proj_df, use_container_width=True, hide_index=True)
-
-    elif "prob_result" in st.session_state and st.session_state["prob_result"]["touches_df"].empty:
-        st.info("Overnight analyzed, but no qualifying edge touches were found for that window.")
+                    proj_df, c_slope = project_contract_delta_theta(
+                        p1_dt, float(p1_price), float(underlying_slope),
+                        float(delta), float(theta_day), proj_day
+                    )
+                    st.markdown("#### Projection (Δ + Θ Model)")
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
+                    with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Δ</p><div class='metric-value'>Δ {delta:.2f}</div></div>", unsafe_allow_html=True)
+                    with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Θ / 30m</p><div class='metric-value'>θ {theta_day/48.0:+.3f}</div></div>", unsafe_allow_html=True)
+                    with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contract Slope / 30m</p><div class='metric-value'>📐 {c_slope:+.3f}</div></div>", unsafe_allow_html=True)
+                    proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+                    st.dataframe(proj_df, use_container_width=True, hide_index=True)
     else:
         st.info("Click **Analyze / Refresh Probability Dashboard** in the sidebar to compute and persist results here.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 2: STOCK ANCHORS                                                        ║
+# ║ TAB 3: STOCK ANCHORS                                                        ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab2:
     st.subheader("Stock Anchor Lines (Mon/Tue swings → two lines)")
-    st.caption("Projects an ascending line from the highest swing high and a descending line from the lowest swing low (Mon+Tue combined), using your per-ticker slope.")
+    st.caption("Projects an ascending line from the highest swing high and a descending line from the lowest swing low (Mon+Tue combined).")
 
     core = list(STOCK_SLOPES.keys())
     cc1, cc2, cc3 = st.columns([1.4,1,1])
@@ -891,36 +899,26 @@ with tab2:
 
             combined = mon if tue.empty else (tue if mon.empty else pd.concat([mon, tue]).sort_index())
 
-            def detect_absolute_swings(df: pd.DataFrame):
-                if df.empty: return None, None
-                hi = df['High'].idxmax() if 'High' in df else None
-                lo = df['Low'].idxmin() if 'Low' in df else None
-                high = (float(df.loc[hi, 'High']), hi) if hi is not None else None
-                low  = (float(df.loc[lo, 'Low']),  lo) if lo is not None else None
-                return high, low
-
-            def project_two_stock_lines(high_price, high_time, low_price, low_time, slope_mag, target_day):
-                rows = []
-                for slot in rth_slots_ct(target_day):
-                    b_high = count_effective_blocks(high_time, slot)
-                    b_low  = count_effective_blocks(low_time,  slot)
-                    high_asc = high_price + slope_mag * b_high
-                    low_desc = low_price  - slope_mag * b_low
-                    rows.append({"Time": slot.strftime("%H:%M"),
-                                 "High_Asc": round(high_asc, 2),
-                                 "Low_Desc": round(low_desc, 2)})
-                return pd.DataFrame(rows)
-
-            hi, lo = detect_absolute_swings(combined)
-            if not hi or not lo:
-                st.error("Could not detect swings.")
+            # Detect swings
+            if combined.empty or "High" not in combined or "Low" not in combined:
+                st.error("Data missing High/Low columns.")
                 st.stop()
+            hi_idx = combined["High"].idxmax()
+            lo_idx = combined["Low"].idxmin()
+            high_price, high_time = float(combined.loc[hi_idx, "High"]), fmt_ct(hi_idx)
+            low_price,  low_time  = float(combined.loc[lo_idx, "Low"]),  fmt_ct(lo_idx)
 
-            (high_price, high_time) = hi
-            (low_price,  low_time)  = lo
-            high_time = fmt_ct(high_time); low_time = fmt_ct(low_time)
-
-            proj_df = project_two_stock_lines(high_price, high_time, low_price, low_time, slope_mag, proj_day_stock)
+            # Project two lines
+            rows = []
+            for slot in rth_slots_ct(proj_day_stock):
+                b_high = count_effective_blocks(high_time, slot)
+                b_low  = count_effective_blocks(low_time,  slot)
+                high_asc = high_price + slope_mag * b_high
+                low_desc = low_price  - slope_mag * b_low
+                rows.append({"Time": slot.strftime("%H:%M"),
+                             "High_Asc": round(high_asc, 2),
+                             "Low_Desc": round(low_desc, 2)})
+            proj_df = pd.DataFrame(rows)
 
             cA, cB = st.columns(2)
             with cA:
@@ -934,7 +932,7 @@ with tab2:
             st.dataframe(proj_df, use_container_width=True, hide_index=True)
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 3: SIGNALS & EMA                                                        ║
+# ║ TAB 4: SIGNALS & EMA                                                        ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab3:
     st.subheader("Signals: Fan Touch + Same-Bar EMA 8/21 Confirmation")
@@ -1027,26 +1025,28 @@ with tab3:
                 st.info("No touch+confirmation signals found for that day/interval.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 4: CONTRACT TOOL (standalone)                                           ║
+# ║ TAB 5: CONTRACT TOOL (standalone)                                           ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab4:
     st.subheader("Contract Tool (Point-to-Point or Δ+Θ)")
 
-    point_col1, point_col2 = st.columns(2)
-    with point_col1:
-        p1_date = st.date_input("Point 1 Date", value=today_ct - timedelta(days=1))
-        p1_time = st.time_input("Point 1 Time (CT)", value=time(20, 0))
-        p1_price = st.number_input("Point 1 Contract Price", value=10.00, min_value=0.01, step=0.01, format="%.2f")
-    with point_col2:
-        p2_date = st.date_input("Point 2 Date", value=today_ct)
-        p2_time = st.time_input("Point 2 Time (CT)", value=time(8, 0))
-        p2_price = st.number_input("Point 2 Contract Price", value=12.00, min_value=0.01, step=0.01, format="%.2f")
+    # Wrap in a FORM so typing values doesn’t kick off recompute mid-edit
+    with st.form("standalone_contract_form", clear_on_submit=False):
+        point_col1, point_col2 = st.columns(2)
+        with point_col1:
+            p1_date = st.date_input("Point 1 Date", value=today_ct - timedelta(days=1))
+            p1_time = st.time_input("Point 1 Time (CT)", value=time(20, 0))
+            p1_price = st.number_input("Point 1 Contract Price", value=10.00, min_value=0.01, step=0.01, format="%.2f")
+        with point_col2:
+            p2_date = st.date_input("Point 2 Date", value=today_ct)
+            p2_time = st.time_input("Point 2 Time (CT)", value=time(8, 0))
+            p2_price = st.number_input("Point 2 Contract Price", value=12.00, min_value=0.01, step=0.01, format="%.2f")
 
-    proj_day_ct = st.date_input("RTH Projection Day", value=p2_date)
-    mode_ct = st.selectbox("Mode", ["Two-Point Slope","Δ + Θ (model-aware)"], index=0)
-    run_ct = st.button("🧮 Analyze Contract Projections", type="primary")
+        proj_day_ct = st.date_input("RTH Projection Day", value=p2_date)
+        mode_ct = st.selectbox("Mode", ["Two-Point Slope","Δ + Θ (model-aware)"], index=0)
+        submit_ct = st.form_submit_button("🧮 Analyze Contract Projections")
 
-    if run_ct:
+    if submit_ct:
         def project_contract_two_point(p1_dt, p1_price, p2_dt, p2_price, proj_day):
             if p2_dt is not None and p2_price is not None and p2_dt > p1_dt:
                 blocks = count_effective_blocks(p1_dt, p2_dt)
@@ -1078,36 +1078,35 @@ with tab4:
         p2_dt = fmt_ct(datetime.combine(p2_date, p2_time))
         if p2_dt <= p1_dt and mode_ct == "Two-Point Slope":
             st.error("Point 2 must be after Point 1 for Two-Point mode.")
-            st.stop()
-
-        if mode_ct == "Two-Point Slope":
-            proj_df, slope_ct, blocks = project_contract_two_point(p1_dt, float(p1_price), p2_dt, float(p2_price), proj_day_ct)
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Time Span</p><div class='metric-value'>⏱ {(p2_dt-p1_dt).total_seconds()/3600:.1f}h</div></div>", unsafe_allow_html=True)
-            with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Δ Price</p><div class='metric-value'>↕ {p2_price - p1_price:+.2f}</div></div>", unsafe_allow_html=True)
-            with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks Counted</p><div class='metric-value'>🧩 {blocks:.1f}</div></div>", unsafe_allow_html=True)
-            with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_ct:+.3f}</div></div>", unsafe_allow_html=True)
-            proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
-            st.markdown("### 📊 RTH Projection")
-            st.dataframe(proj_df, use_container_width=True, hide_index=True)
-
         else:
-            colg1, colg2, colg3 = st.columns(3)
-            with colg1:
-                underlying_slope = st.number_input("Underlying slope / 30m (±)", value=0.10, step=0.01, format="%.2f",
-                                                   help="Approx expected SPX move per 30m (+ for up, − for down).")
-            with colg2:
-                delta = st.number_input("Δ (Delta)", value=0.35, step=0.01, format="%.2f")
-            with colg3:
-                theta_day = st.number_input("Θ per day (negative)", value=-20.00, step=0.5, format="%.2f")
-            proj_df, c_slope = project_contract_delta_theta(p1_dt, float(p1_price), float(underlying_slope), float(delta), float(theta_day), proj_day_ct)
-            mc1, mc2, mc3 = st.columns(3)
-            with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
-            with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contract Slope / 30m</p><div class='metric-value'>📐 {c_slope:+.3f}</div></div>", unsafe_allow_html=True)
-            with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Θ / 30m</p><div class='metric-value'>θ {theta_day/48.0:+.3f}</div></div>", unsafe_allow_html=True)
-            proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
-            st.markdown("### 📊 RTH Projection")
-            st.dataframe(proj_df, use_container_width=True, hide_index=True)
+            if mode_ct == "Two-Point Slope":
+                proj_df, slope_ct, blocks = project_contract_two_point(p1_dt, float(p1_price), p2_dt, float(p2_price), proj_day_ct)
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Time Span</p><div class='metric-value'>⏱ {(p2_dt-p1_dt).total_seconds()/3600:.1f}h</div></div>", unsafe_allow_html=True)
+                with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Δ Price</p><div class='metric-value'>↕ {p2_price - p1_price:+.2f}</div></div>", unsafe_allow_html=True)
+                with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks Counted</p><div class='metric-value'>🧩 {blocks:.1f}</div></div>", unsafe_allow_html=True)
+                with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_ct:+.3f}</div></div>", unsafe_allow_html=True)
+                proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+                st.markdown("### 📊 RTH Projection")
+                st.dataframe(proj_df, use_container_width=True, hide_index=True)
+            else:
+                # Simple Δ+Θ inputs for standalone tool
+                colg1, colg2, colg3 = st.columns(3)
+                with colg1:
+                    underlying_slope = st.number_input("Underlying slope / 30m (±)", value=0.10, step=0.01, format="%.2f",
+                                                       help="Approx expected SPX move per 30m (+ for up, − for down).")
+                with colg2:
+                    delta = st.number_input("Δ (Delta)", value=0.35, step=0.01, format="%.2f")
+                with colg3:
+                    theta_day = st.number_input("Θ per day (negative)", value=-20.00, step=0.5, format="%.2f")
+                proj_df, c_slope = project_contract_delta_theta(p1_dt, float(p1_price), float(underlying_slope), float(delta), float(theta_day), proj_day_ct)
+                mc1, mc2, mc3 = st.columns(3)
+                with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
+                with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contract Slope / 30m</p><div class='metric-value'>📐 {c_slope:+.3f}</div></div>", unsafe_allow_html=True)
+                with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Θ / 30m</p><div class='metric-value'>θ {theta_day/48.0:+.3f}</div></div>", unsafe_allow_html=True)
+                proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+                st.markdown("### 📊 RTH Projection")
+                st.dataframe(proj_df, use_container_width=True, hide_index=True)
 
 # ───────────────────────────────────────────────────────────────────────────────
 # FOOTER UTILITIES
@@ -1124,4 +1123,4 @@ with colA:
         else:
             st.error("Data fetch failed — try different dates later.")
 with colB:
-    st.caption("Times normalized to **CT**. Fan anchor uses **Prev Day 3:00 PM CT SPX close**. Overnight analysis is internally aligned to the SPX frame. 8:30 AM is highlighted in all tables.")
+    st.caption("Times normalized to **CT**. Fan anchor uses **Prev Day 3:00 PM CT SPX close**. Overnight analysis aligns ES → SPX via offset. 8:30 AM is highlighted in all tables.")
