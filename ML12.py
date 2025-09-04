@@ -1,12 +1,13 @@
 # app.py
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🔮 SPX PROPHET — Full App (SPX Anchors • Stock Anchors • Signals & EMA • Contract Tool)
-# - SPX: previous day's exact 3:00 PM CT close as anchor (manual override supported)
-# - Fan: Top=+slope per 30m, Bottom=−slope per 30m (default ±0.260), skip 4–5 PM CT + Fri 5 PM → Sun 5 PM
-# - Stocks: Mon/Tue swing high/low → two parallel anchor lines by your per-ticker slopes
-# - Signals: fan touch + same-bar EMA 8/21 confirmation (1m if recent; otherwise 5m/30m fallback)
-# - Contract Tool: two points (0–30 price) → slope → RTH projection
-# - Clean light UI, icons, and compact tables
+# 🔮 SPX PROPHET — Enterprise App
+# (SPX Fan Anchors • Probability Dashboard • Stock Anchors • Signals • Contract Tool)
+# - Anchor: exact 3:00 PM CT previous-day SPX close (manual override supported)
+# - SPX fan uses ASYMMETRIC slopes per 30m: Top +0.31, Bottom −0.25 (overrideable)
+# - Block counter skips 4–5 PM CT maintenance & Fri 5 PM → Sun 5 PM weekend gap
+# - Probability Dashboard uses overnight data (offset-aligned) to score edge tests
+# - Bias logic uses descending anchor (Bottom line) + within-fan proximity tolerance
+# - Contract projections integrated from Probability Dashboard touch rows
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import streamlit as st
@@ -24,316 +25,111 @@ CT_TZ = pytz.timezone("America/Chicago")
 RTH_START = "08:30"
 RTH_END   = "14:30"
 
-# Default slope per 30-minute block (Top +, Bottom −)
-SLOPE_PER_BLOCK_DEFAULT = 0.260
+# Default per-30m slopes (SPX fan)
+TOP_SLOPE_DEFAULT    = 0.31   # Top line +0.31 per 30m
+BOTTOM_SLOPE_DEFAULT = 0.25   # Bottom line −0.25 per 30m
 
-# Per-ticker slope magnitudes (your latest set)
+# Per-ticker slope magnitudes (for Stock Anchors tab)
 STOCK_SLOPES = {
     "TSLA": 0.0285, "NVDA": 0.0860, "AAPL": 0.0155, "MSFT": 0.0541,
     "AMZN": 0.0139, "GOOGL": 0.0122, "META": 0.0674, "NFLX": 0.0230,
 }
 
+# Probability weights (sum may reach 100)
+WEIGHTS = {
+    "ema": 20,          # EMA(8/21) on 1-min alignment with expected move
+    "volume": 25,       # Volume spike confirming rejection/break
+    "wick": 20,         # Wick/Body rejection geometry
+    "atr": 15,          # ATR context (low=hold, high=break)
+    "tod": 20,          # Time-of-day weighting (8:30, 10:00, 13:30)
+    "div": 0,           # Optional oscillator divergence (kept default 0; user can enable)
+}
+
+# Time-of-day anchor minutes for weighting (±window minutes)
+KEY_TOD = [(8,30), (10,0), (13,30)]
+KEY_TOD_WINDOW_MIN = 7
+
+# Wick sensitivity
+WICK_MIN_RATIO = 0.6  # wick length vs body length in "rejection" direction
+
+# ATR config
+ATR_LOOKBACK = 14     # periods (on 1-min)
+ATR_HIGH_PCTL = 70    # above this percentile → "high ATR"
+ATR_LOW_PCTL  = 30    # below this percentile → "low ATR"
+
+# RSI config for lightweight divergence
+RSI_LEN = 14
+RSI_WINDOW_MIN = 30  # lookback minutes for a prior swing
+
 # ───────────────────────────────────────────────────────────────────────────────
-# ENHANCED PAGE & THEME CONFIGURATION
+# PAGE & THEME (light, enterprise vibe with glassy cards)
 # ───────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="🔮 SPX Prophet Analytics",
+    page_title="🔮 SPX Prophet Analytics (Enterprise)",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Enhanced Enterprise-Grade CSS with Glassmorphism
 st.markdown(
     """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
 :root {
-  /* Enhanced Color Palette */
-  --primary: #3B82F6;           /* blue-500 */
-  --primary-dark: #1D4ED8;      /* blue-700 */
-  --primary-light: #DBEAFE;     /* blue-100 */
-  --secondary: #10B981;         /* emerald-500 */
-  --secondary-dark: #047857;    /* emerald-700 */
-  --secondary-light: #D1FAE5;   /* emerald-100 */
-  --accent: #8B5CF6;            /* violet-500 */
-  --accent-light: #EDE9FE;      /* violet-100 */
-  
-  /* Surface Colors */
-  --background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%);
-  --surface: rgba(255, 255, 255, 0.95);
-  --surface-elevated: rgba(255, 255, 255, 0.98);
-  --surface-hover: rgba(255, 255, 255, 0.85);
-  --glass: rgba(255, 255, 255, 0.25);
-  --glass-border: rgba(255, 255, 255, 0.18);
-  
-  /* Text Colors */
-  --text-primary: #0F172A;      /* slate-900 */
-  --text-secondary: #475569;    /* slate-600 */
-  --text-tertiary: #64748B;     /* slate-500 */
-  --text-muted: #94A3B8;        /* slate-400 */
-  
-  /* Border & Shadow */
-  --border: rgba(203, 213, 225, 0.4);  /* slate-300 with opacity */
-  --border-light: rgba(226, 232, 240, 0.6);
-  --shadow-sm: 0 2px 4px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.12);
-  --shadow-xl: 0 16px 48px rgba(15, 23, 42, 0.16);
-  --shadow-glass: 0 8px 32px rgba(15, 23, 42, 0.08);
-  
-  /* Status Colors */
-  --success: #10B981;
-  --success-bg: #ECFDF5;
-  --success-border: #A7F3D0;
-  --warning: #F59E0B;
-  --warning-bg: #FFFBEB;
-  --warning-border: #FDE68A;
-  --error: #EF4444;
-  --error-bg: #FEF2F2;
-  --error-border: #FECACA;
-  --info: #3B82F6;
-  --info-bg: #EFF6FF;
-  --info-border: #BFDBFE;
+  --brand: #2563eb;      /* blue-600 */
+  --brand-2: #10b981;    /* emerald-500 */
+  --surface: #ffffff;
+  --muted: #f8fafc;      /* slate-50 */
+  --text: #0f172a;       /* slate-900 */
+  --subtext: #475569;    /* slate-600 */
+  --border: #e2e8f0;     /* slate-200 */
+  --warn: #f59e0b;       /* amber-500 */
+  --danger: #ef4444;     /* red-500 */
 }
 
-/* Base Styles */
-* {
-  box-sizing: border-box;
-}
+html, body, [class*="css"]  { background: var(--muted); color: var(--text); }
+.block-container { padding-top: 1.1rem; }
+h1, h2, h3 { color: var(--text); }
 
-html, body, [class*="css"] {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: var(--background);
-  color: var(--text-primary);
-  line-height: 1.6;
-}
-
-/* Main Container */
-.block-container {
-  padding-top: 2rem;
-  padding-bottom: 2rem;
-  max-width: 1400px;
-}
-
-/* Typography Enhancements */
-h1, h2, h3, h4, h5, h6 {
-  color: var(--text-primary);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.25;
-}
-
-h1 { font-size: 2.5rem; margin-bottom: 1rem; }
-h2 { font-size: 2rem; margin-bottom: 0.875rem; }
-h3 { font-size: 1.5rem; margin-bottom: 0.75rem; }
-
-p, .stMarkdown p {
-  color: var(--text-secondary);
-  font-weight: 400;
-  line-height: 1.7;
-}
-
-/* Enhanced Card System */
 .card, .metric-card {
-  background: var(--surface);
-  border: 1px solid var(--glass-border);
-  border-radius: 20px;
-  padding: 1.5rem;
-  box-shadow: var(--shadow-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 32px rgba(2,6,23,0.07);
+  backdrop-filter: blur(8px);
 }
-
-.card::before, .metric-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
-  opacity: 0.6;
-}
-
-.card:hover, .metric-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-xl);
-  border-color: rgba(59, 130, 246, 0.3);
-}
-
-/* Enhanced Metric Cards */
-.metric-card {
-  text-align: center;
-  background: linear-gradient(135deg, var(--surface) 0%, rgba(255, 255, 255, 0.9) 100%);
-  border: 1px solid var(--border-light);
-}
-
-.metric-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  margin: 0 0 0.5rem 0;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.metric-value {
-  font-size: 2rem;
-  font-weight: 800;
-  margin: 0.5rem 0;
-  color: var(--text-primary);
-  line-height: 1.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.kicker {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  margin-top: 0.25rem;
-}
-
-/* Enhanced Badge System */
-.badge-open, .badge-closed {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.375rem 0.875rem;
-  border-radius: 50px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  letter-spacing: 0.025em;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease;
-}
+.metric-title { font-size: 0.9rem; color: var(--subtext); margin: 0; }
+.metric-value { font-size: 1.8rem; font-weight: 700; margin-top: 6px; }
+.kicker { font-size: 0.8rem; color: var(--subtext); }
 
 .badge-open {
-  color: var(--secondary-dark);
-  background: linear-gradient(135deg, var(--secondary-light) 0%, #A7F3D0 100%);
-  border: 1px solid var(--secondary);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  color: #065f46; background: #d1fae5; border: 1px solid #99f6e4;
+  padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
 }
-
 .badge-closed {
-  color: #92400E;
-  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-  border: 1px solid var(--warning);
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+  color: #7c2d12; background: #ffedd5; border: 1px solid #fed7aa;
+  padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
 }
 
-/* Override Tag Enhancement */
+hr { border-top: 1px solid var(--border); }
+.dataframe { background: var(--surface); border-radius: 12px; overflow: hidden; }
+.small-note { color: var(--subtext); font-size: 0.85rem; }
+
 .override-tag {
-  font-size: 0.75rem;
-  color: var(--accent);
-  background: linear-gradient(135deg, var(--accent-light) 0%, #DDD6FE 100%);
-  border: 1px solid var(--accent);
-  padding: 0.25rem 0.75rem;
-  border-radius: 50px;
-  display: inline-block;
-  margin-top: 0.5rem;
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
-  animation: pulse-subtle 2s infinite;
+  font-size: 0.75rem; color: #334155; background: #e2e8f0; border: 1px solid #cbd5e1;
+  padding: 2px 8px; border-radius: 999px; display:inline-block; margin-top:6px;
 }
-
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.8; }
-}
-
-/* Enhanced Dividers */
-hr {
-  border: none;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
-  margin: 2rem 0;
-}
-
-/* Enhanced Form Controls */
-.stSelectbox > div > div,
-.stNumberInput > div > div,
-.stDateInput > div > div,
-.stTimeInput > div > div,
-.stTextInput > div > div {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease;
-}
-
-.stSelectbox > div > div:focus-within,
-.stNumberInput > div > div:focus-within,
-.stDateInput > div > div:focus-within,
-.stTimeInput > div > div:focus-within,
-.stTextInput > div > div:focus-within {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-/* Enhanced Buttons */
-.stButton > button {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-  color: white;
-  border: none;
-  border-radius: 12px;
-  padding: 0.75rem 1.5rem;
-  font-weight: 600;
-  font-size: 0.875rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: var(--shadow-md);
-  position: relative;
-  overflow: hidden;
-}
-
-.stButton > button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s;
-}
-
-.stButton > button:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-
-.stButton > button:hover::before {
-  left: 100%;
-}
-
-/* Primary Button Enhancement */
-.stButton > button[data-baseweb="button"][kind="primary"] {
-  background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-dark) 100%);
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
-}
-
-.stButton > button[data-baseweb="button"][kind="primary"]:hover {
-  box-shadow: 0 12px 32px rgba(16, 185, 129, 0.4);
+.badge-slot {
+  color:#1f2937; background:#e2e8f0; border:1px solid #cbd5e1;
+  padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600;
 }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-
-
-
-
-
 # ───────────────────────────────────────────────────────────────────────────────
-# HELPER FUNCTIONS (Unchanged functionality)
+# HELPERS
 # ───────────────────────────────────────────────────────────────────────────────
 def fmt_ct(dt: datetime) -> datetime:
     """Ensure timezone-aware CT."""
@@ -359,24 +155,15 @@ def is_maintenance(dt: datetime) -> bool:
     return dt.hour == 16
 
 def in_weekend_gap(dt: datetime) -> bool:
-    """
-    True for Fri >= 17:00 → Sun < 17:00 CT (no overnight session counted).
-    """
+    """True for Fri >= 17:00 → Sun < 17:00 CT (no overnight session counted)."""
     wd = dt.weekday()  # Mon=0 ... Sun=6
-    if wd == 5:
-        return True           # Saturday
-    if wd == 6 and dt.hour < 17:
-        return True           # Sunday before 5pm CT
-    if wd == 4 and dt.hour >= 17:
-        return True           # Friday from 5pm CT onward
+    if wd == 5: return True                         # Saturday
+    if wd == 6 and dt.hour < 17: return True        # Sunday before 5pm CT
+    if wd == 4 and dt.hour >= 17: return True       # Friday from 5pm CT onward
     return False
 
 def count_effective_blocks(anchor_time: datetime, target_time: datetime) -> float:
-    """
-    Count 30-min blocks from anchor_time → target_time,
-    skipping maintenance (4–5 PM) and weekend gap.
-    Count a block if the *end* time of that block is not in forbidden windows.
-    """
+    """Count 30-min blocks from anchor_time → target_time skipping maintenance/weekend."""
     if target_time <= anchor_time:
         return 0.0
     t = anchor_time
@@ -405,6 +192,7 @@ def normalize_to_ct(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFram
     if df.empty:
         return df
     if df.index.tz is None:
+        # yfinance usually returns US/Eastern
         df.index = df.index.tz_localize("US/Eastern")
     df.index = df.index.tz_convert(CT_TZ)
     sdt = fmt_ct(datetime.combine(start_d, time(0, 0)))
@@ -413,10 +201,7 @@ def normalize_to_ct(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFram
 
 @st.cache_data(ttl=120)
 def fetch_intraday(symbol: str, start_d: date, end_d: date) -> pd.DataFrame:
-    """
-    Robust intraday fetch, 30m, CT index, auto_adjust=False for accurate closes.
-    Falls back to period-based fetch if start/end returns empty.
-    """
+    """Robust intraday fetch, 30m, CT index, pre/post ON; fall back to period-based."""
     try:
         t = yf.Ticker(symbol)
         df = t.history(
@@ -438,19 +223,13 @@ def fetch_intraday(symbol: str, start_d: date, end_d: date) -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def fetch_intraday_interval(symbol: str, start_d: date, end_d: date, interval: str) -> pd.DataFrame:
-    """
-    Interval-aware fetch. For 1m data, yfinance requires recent periods (<=7d).
-    We automatically choose a period window for 1m/5m; otherwise use start/end.
-    """
+    """Interval-aware fetch. 1m/5m need period windows per yfinance limits."""
     try:
         t = yf.Ticker(symbol)
         if interval in ["1m", "2m", "5m", "15m"]:
-            # choose a period window that safely covers [start_d, end_d]
             days = max(1, min(7, (end_d - start_d).days + 2))
             df = t.history(period=f"{days}d", interval=interval,
                            prepost=True, auto_adjust=False, back_adjust=False)
-            # trim to the exact date range after tz normalization
-            # pick a broad range for normalization
             df = normalize_to_ct(df, start_d - timedelta(days=1), end_d + timedelta(days=1))
             sdt = fmt_ct(datetime.combine(start_d, time(0, 0)))
             edt = fmt_ct(datetime.combine(end_d, time(23, 59)))
@@ -466,16 +245,13 @@ def fetch_intraday_interval(symbol: str, start_d: date, end_d: date, interval: s
     except Exception:
         return pd.DataFrame()
 
-def get_prev_day_3pm_close(spx_prev: pd.DataFrame, prev_day: date) -> Optional[float]:
-    """
-    Get the **3:00 PM CT exact bar close** for prev_day.
-    If exact 15:00 not present, use the last bar <= 15:00 within prev_day.
-    """
-    if spx_prev.empty:
+def get_prev_day_3pm_close(df_30m: pd.DataFrame, prev_day: date) -> Optional[float]:
+    """Get the 3:00 PM CT bar close for prev_day; else last bar ≤ 15:00."""
+    if df_30m.empty:
         return None
     day_start = fmt_ct(datetime.combine(prev_day, time(0, 0)))
     day_end   = fmt_ct(datetime.combine(prev_day, time(23, 59)))
-    d = spx_prev.loc[day_start:day_end].copy()
+    d = df_30m.loc[day_start:day_end].copy()
     if d.empty:
         return None
     target = fmt_ct(datetime.combine(prev_day, time(15, 0)))
@@ -486,294 +262,347 @@ def get_prev_day_3pm_close(spx_prev: pd.DataFrame, prev_day: date) -> Optional[f
         return float(prior.iloc[-1]["Close"])
     return None
 
-# ───── Slope state
-def current_slope() -> float:
-    return float(st.session_state.get("slope_per_block", SLOPE_PER_BLOCK_DEFAULT))
+# ───── Slopes state (SPX fan only; top and bottom may differ)
+def current_spx_slopes() -> Tuple[float, float]:
+    top = float(st.session_state.get("top_slope_per_block", TOP_SLOPE_DEFAULT))
+    bottom = float(st.session_state.get("bottom_slope_per_block", BOTTOM_SLOPE_DEFAULT))
+    return top, bottom
 
-# ───────────────────────────────────────────────────────────────────────────────
-# ENHANCED SIDEBAR DESIGN
-# ───────────────────────────────────────────────────────────────────────────────
-
-# Additional CSS for enhanced sidebar
-st.markdown("""
-<style>
-/* Enhanced Sidebar Styling */
-.css-1d391kg, .css-1lcbmhc {
-    background: linear-gradient(180deg, var(--surface-elevated) 0%, var(--surface) 100%);
-    border-right: 1px solid var(--border-light);
-    box-shadow: var(--shadow-lg);
-}
-
-/* Sidebar Headers */
-.css-1d391kg h1, .css-1lcbmhc h1,
-.css-1d391kg h2, .css-1lcbmhc h2,
-.css-1d391kg h3, .css-1lcbmhc h3 {
-    color: var(--text-primary);
-    font-weight: 700;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 2px solid var(--primary-light);
-}
-
-/* Sidebar Input Groups */
-.sidebar-group {
-    background: var(--surface);
-    border: 1px solid var(--border-light);
-    border-radius: 16px;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(8px);
-}
-
-.sidebar-group h4 {
-    color: var(--primary);
-    font-size: 0.95rem;
-    font-weight: 600;
-    margin: 0 0 1rem 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-/* Enhanced Dividers in Sidebar */
-.css-1d391kg hr, .css-1lcbmhc hr {
-    border: none;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--border), transparent);
-    margin: 1.5rem 0;
-}
-
-/* Sidebar Captions */
-.css-1d391kg .stCaption, .css-1lcbmhc .stCaption {
-    color: var(--text-tertiary);
-    font-size: 0.8rem;
-    font-style: italic;
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    background: var(--info-bg);
-    border-left: 3px solid var(--info);
-    border-radius: 0 8px 8px 0;
-}
-
-/* Enhanced Expander in Sidebar */
-.css-1d391kg .streamlit-expanderHeader, 
-.css-1lcbmhc .streamlit-expanderHeader {
-    background: var(--surface);
-    border: 1px solid var(--border-light);
-    border-radius: 12px;
-    padding: 0.75rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    box-shadow: var(--shadow-sm);
-    transition: all 0.2s ease;
-}
-
-.css-1d391kg .streamlit-expanderHeader:hover,
-.css-1lcbmhc .streamlit-expanderHeader:hover {
-    background: var(--surface-hover);
-    transform: translateY(-1px);
-}
-
-.css-1d391kg .streamlit-expanderContent,
-.css-1lcbmhc .streamlit-expanderContent {
-    background: var(--surface);
-    border: 1px solid var(--border-light);
-    border-top: none;
-    border-radius: 0 0 12px 12px;
-    padding: 1rem;
-    box-shadow: var(--shadow-sm);
-}
-
-/* Success/Error Messages in Sidebar */
-.css-1d391kg .stSuccess, .css-1lcbmhc .stSuccess {
-    background: var(--success-bg);
-    border: 1px solid var(--success-border);
-    border-radius: 12px;
-    padding: 0.75rem;
-    color: var(--success);
-}
-
-.css-1d391kg .stError, .css-1lcbmhc .stError {
-    background: var(--error-bg);
-    border: 1px solid var(--error-border);
-    border-radius: 12px;
-    padding: 0.75rem;
-    color: var(--error);
-}
-
-.css-1d391kg .stInfo, .css-1lcbmhc .stInfo {
-    background: var(--info-bg);
-    border: 1px solid var(--info-border);
-    border-radius: 12px;
-    padding: 0.75rem;
-    color: var(--info);
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Enhanced Sidebar with better organization
-with st.sidebar:
-    # Sidebar Header with icon and styling
-    st.markdown("""
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 style="color: var(--primary); font-size: 1.5rem; margin: 0;">
-            🔧 Control Center
-        </h1>
-        <p style="color: var(--text-tertiary); font-size: 0.9rem; margin: 0.5rem 0 0 0;">
-            Configure your analysis parameters
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Date Configuration Group
-    st.markdown('<div class="sidebar-group">', unsafe_allow_html=True)
-    st.markdown('<h4>📅 Date Configuration</h4>', unsafe_allow_html=True)
-    
-    today_ct = datetime.now(CT_TZ).date()
-    prev_day = st.date_input(
-        "Previous Trading Day", 
-        value=today_ct - timedelta(days=1),
-        help="The day from which to get the 3:00 PM CT anchor price"
-    )
-    proj_day = st.date_input(
-        "Projection Day", 
-        value=prev_day + timedelta(days=1),
-        help="The day for which to generate projections"
-    )
-    
-    st.caption("🎯 Anchor will be set at **3:00 PM CT** on the previous trading day.")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Manual Override Group
-    st.markdown('<div class="sidebar-group">', unsafe_allow_html=True)
-    st.markdown('<h4>✍️ Manual Override</h4>', unsafe_allow_html=True)
-    
-    use_manual_close = st.checkbox(
-        "Enter 3:00 PM CT Close Manually", 
-        value=False,
-        help="Override the fetched close price with a manual value"
-    )
-    manual_close_val = st.number_input(
-        "Manual 3:00 PM Close",
-        value=6400.00,
-        step=0.01,
-        format="%.2f",
-        disabled=not use_manual_close,
-        help="If enabled, this value overrides the fetched close for the SPX anchor."
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Advanced Settings Expander
-    with st.expander("⚙️ Advanced Settings", expanded=False):
-        st.markdown('<div class="sidebar-group" style="margin: 0; border: none; box-shadow: none; background: transparent;">', unsafe_allow_html=True)
-        st.caption("🔧 Adjust per-30m slope (applies to SPX and stock projections).")
-        
-        enable_slope = st.checkbox(
-            "Enable slope override", 
-            value=("slope_per_block" in st.session_state),
-            help="Override the default slope calculation"
-        )
-        slope_val = st.number_input(
-            "Slope per 30m (Top +, Bottom −)",
-            value=float(st.session_state.get("slope_per_block", SLOPE_PER_BLOCK_DEFAULT)),
-            step=0.001, 
-            format="%.3f",
-            help="Example: 0.260 means Top = anchor + 0.260 per 30 minutes."
-        )
-        
-        col_adv_a, col_adv_b = st.columns(2)
-        with col_adv_a:
-            if st.button("Apply slope", use_container_width=True, key="apply_slope"):
-                if enable_slope:
-                    st.session_state["slope_per_block"] = float(slope_val)
-                    st.success(f"Slope set to ±{slope_val:.3f}")
-                else:
-                    if "slope_per_block" in st.session_state:
-                        del st.session_state["slope_per_block"]
-                    st.info("Slope override disabled (using default).")
-        with col_adv_b:
-            if st.button("Reset slope", use_container_width=True, key="reset_slope"):
-                if "slope_per_block" in st.session_state:
-                    del st.session_state["slope_per_block"]
-                st.success(f"Reset slope to default ±{SLOPE_PER_BLOCK_DEFAULT:.3f}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Action Button
-    st.markdown('<div style="margin-top: 2rem;">', unsafe_allow_html=True)
-    go_spx = st.button("🔮 Generate SPX Fan & Strategy", type="primary", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-
-
-
-
-# ───────────────────────────────────────────────────────────────────────────────
-# ANALYSIS FUNCTIONS (Unchanged functionality)
-# ───────────────────────────────────────────────────────────────────────────────
-
-# ───── SPX Fan Projection
+# ───── SPX Fan Projection (asymmetric slopes)
 def project_fan_from_close(close_price: float, anchor_time: datetime, target_day: date) -> pd.DataFrame:
-    slope = current_slope()
+    top_slope, bottom_slope = current_spx_slopes()
     rows = []
     for slot in rth_slots_ct(target_day):
         blocks = count_effective_blocks(anchor_time, slot)
-        top = close_price + slope * blocks
-        bot = close_price - slope * blocks
-        rows.append({"Time": slot.strftime("%H:%M"),
-                     "Top": round(top, 2),
-                     "Bottom": round(bot, 2),
+        top = close_price + top_slope * blocks
+        bot = close_price - bottom_slope * blocks
+        rows.append({"TimeDT": slot, "Time": slot.strftime("%H:%M"),
+                     "Top": round(top, 2), "Bottom": round(bot, 2),
                      "Fan_Width": round(top - bot, 2)})
     return pd.DataFrame(rows)
 
-# ───── SPX Strategy
-def build_spx_strategy(rth_prices: pd.DataFrame, fan_df: pd.DataFrame, anchor_close: float) -> pd.DataFrame:
-    """
-    - Bias: "UP" if price ≥ anchor_close; else "DOWN".
-    - Within fan:
-        - Bias UP → BUY bottom → TP1/TP2 at top
-        - Bias DOWN → SELL top → TP1/TP2 at bottom
-    - Above fan: SELL at top, TP2 = top - width
-    - Below fan: SELL at bottom, TP2 = bottom - width
-    """
-    if rth_prices.empty or fan_df.empty:
+# ───── EMA / RSI utils
+def ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
+
+def compute_ema_cross_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "Close" not in df:
         return pd.DataFrame()
+    out = df.copy()
+    out["EMA8"] = ema(out["Close"], 8)
+    out["EMA21"] = ema(out["Close"], 21)
+    out["Crossover"] = np.where(out["EMA8"] > out["EMA21"], "Bullish",
+                         np.where(out["EMA8"] < out["EMA21"], "Bearish", "None"))
+    return out
 
-    price_lu = {dt.strftime("%H:%M"): float(rth_prices.loc[dt, "Close"]) for dt in rth_prices.index}
+def rsi(series: pd.Series, length: int = 14) -> pd.Series:
+    delta = series.diff()
+    up = np.where(delta > 0, delta, 0.0)
+    down = np.where(delta < 0, -delta, 0.0)
+    roll_up = pd.Series(up, index=series.index).ewm(alpha=1/length, adjust=False).mean()
+    roll_down = pd.Series(down, index=series.index).ewm(alpha=1/length, adjust=False).mean()
+    rs = roll_up / (roll_down + 1e-12)
+    return 100 - (100 / (1 + rs))
+
+def true_range(df: pd.DataFrame) -> pd.Series:
+    prev_close = df["Close"].shift(1)
+    tr1 = df["High"] - df["Low"]
+    tr2 = (df["High"] - prev_close).abs()
+    tr3 = (df["Low"] - prev_close).abs()
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+# ───────────────────────────────────────────────────────────────────────────────
+# BIAS / EDGE LOGIC
+# ───────────────────────────────────────────────────────────────────────────────
+def compute_bias(price: float, top: float, bottom: float, tol_frac: float) -> str:
+    """
+    Dynamic bias:
+    - If inside fan:
+        - Nearer Bottom (descending anchor) → UP
+        - Nearer Top (ascending anchor) → DOWN
+        - Within center band (±tol_frac*width) → NO BIAS
+    - If outside fan → no bias here (edge logic decides action)
+    """
+    if bottom <= price <= top:
+        width = top - bottom
+        center = (top + bottom) / 2.0
+        band = tol_frac * width
+        if price >= center - band and price <= center + band:
+            return "NO BIAS"
+        dist_top = abs(top - price)
+        dist_bottom = abs(price - bottom)
+        return "UP" if dist_bottom < dist_top else "DOWN"
+    return "NO BIAS"
+
+def candle_class(open_, close_) -> str:
+    if close_ > open_: return "Bullish"
+    if close_ < open_: return "Bearish"
+    return "Doji"
+
+def touched_line(low, high, line) -> bool:
+    return (low <= line <= high)
+
+def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[Dict]:
+    """
+    Return dict when bar touches an edge; else None.
+    Implements the user's decision tree:
+    - TOP:
+        a) Bearish candle touches Top and closes bearish inside → expect breakdown to Bottom (then buy from Bottom)
+        b) Bearish candle touches Top but closes above fan → Top holds as support → buy higher from Top
+    - BOTTOM:
+        c) Bullish candle touches Bottom and closes bullish inside → expect breakout to Top (then sell from Top)
+        d) Bullish candle touches Bottom but closes below fan → Bottom fails → sell further down
+    """
+    o = float(bar.get("Open", np.nan))
+    h = float(bar.get("High", np.nan))
+    l = float(bar.get("Low", np.nan))
+    c = float(bar.get("Close", np.nan))
+    cls = candle_class(o, c)
+
+    inside = (bottom <= c <= top)
+    above  = (c > top)
+    below  = (c < bottom)
+
+    # Touch Top?
+    if touched_line(l, h, top) and cls == "Bearish":
+        if inside:
+            return {"edge":"Top","case":"TopTouch_BearishClose_Inside",
+                    "expected":"Breakdown to Bottom → plan to BUY from Bottom",
+                    "direction_hint":"DownToBottomThenBuy"}
+        if above:
+            return {"edge":"Top","case":"TopTouch_BearishClose_Above",
+                    "expected":"Top holds as support → market buys higher",
+                    "direction_hint":"BuyHigherFromTop"}
+
+    # Touch Bottom?
+    if touched_line(l, h, bottom) and cls == "Bullish":
+        if inside:
+            return {"edge":"Bottom","case":"BottomTouch_BullishClose_Inside",
+                    "expected":"Breakout to Top → plan to SELL from Top",
+                    "direction_hint":"UpToTopThenSell"}
+        if below:
+            return {"edge":"Bottom","case":"BottomTouch_BullishClose_Below",
+                    "expected":"Bottom fails → market drops further",
+                    "direction_hint":"SellFurtherDown"}
+
+    return None
+
+# ───────────────────────────────────────────────────────────────────────────────
+# PROBABILITY BOOSTERS
+# ───────────────────────────────────────────────────────────────────────────────
+def compute_boosters_score(df_1m: pd.DataFrame,
+                           idx: pd.Timestamp,
+                           expected_hint: str,
+                           weights: Dict[str,int]) -> Tuple[int, Dict[str,int]]:
+    """
+    Evaluate booster signals at 'idx' (bar index) and return (score, components).
+    - EMA(8/21): alignment with expected move
+    - Volume spike: volume > rolling mean (x%)
+    - Wick/Body rejection: long wick in expected direction
+    - ATR context: low ATR → hold; high ATR → break
+    - Time-of-day: within window of key times
+    - Divergence (lightweight): optional (0 weight default)
+    """
+    comps = {k:0 for k in ["ema","volume","wick","atr","tod","div"]}
+
+    if idx not in df_1m.index:  # safety
+        return 0, comps
+
+    # Slice up to idx for rolling stats
+    upto = df_1m.loc[:idx].copy()
+    if upto.shape[0] < 20:
+        return 0, comps
+
+    # EMA
+    ema8 = ema(upto["Close"], 8)
+    ema21 = ema(upto["Close"], 21)
+    ema_state = "Bullish" if ema8.iloc[-1] > ema21.iloc[-1] else ("Bearish" if ema8.iloc[-1] < ema21.iloc[-1] else "None")
+    # Map expected direction hint to needed EMA
+    # Hints: DownToBottomThenBuy (near-term down), BuyHigherFromTop (up), UpToTopThenSell (up), SellFurtherDown (down)
+    expected_near_term = "Up" if expected_hint in ("BuyHigherFromTop","UpToTopThenSell") else "Down"
+    if (expected_near_term == "Up" and ema_state == "Bullish") or (expected_near_term == "Down" and ema_state == "Bearish"):
+        comps["ema"] = weights.get("ema",0)
+
+    # Volume spike vs rolling mean(20)
+    vol = upto["Volume"]
+    if vol.notna().all() and vol.iloc[-1] > vol.rolling(20).mean().iloc[-1] * 1.15:
+        comps["volume"] = weights.get("volume",0)
+
+    # Wick/Body rejection
+    bar = upto.iloc[-1]
+    o,h,l,c = float(bar["Open"]), float(bar["High"]), float(bar["Low"]), float(bar["Close"])
+    body = abs(c - o) + 1e-9
+    upper_wick = max(0.0, h - max(o,c))
+    lower_wick = max(0.0, min(o,c) - l)
+    if expected_near_term == "Up":
+        if lower_wick / body >= WICK_MIN_RATIO:
+            comps["wick"] = weights.get("wick",0)
+    else:  # Down
+        if upper_wick / body >= WICK_MIN_RATIO:
+            comps["wick"] = weights.get("wick",0)
+
+    # ATR context
+    tr = true_range(upto)
+    atr = tr.rolling(ATR_LOOKBACK).mean()
+    if atr.notna().sum() >= ATR_LOOKBACK:
+        last_atr = float(atr.iloc[-1])
+        pct = (atr.rank(pct=True).iloc[-1]) * 100.0
+        # Interpret: low ATR → edges hold; high ATR → breaks succeed
+        if expected_hint in ("BuyHigherFromTop","UpToTopThenSell"):  # "hold then move" flavor
+            if pct <= ATR_LOW_PCTL:
+                comps["atr"] = weights.get("atr",0)
+        elif expected_hint in ("SellFurtherDown","DownToBottomThenBuy"):
+            # If near-term is down or break lower, high ATR helps continuation
+            if pct >= ATR_HIGH_PCTL:
+                comps["atr"] = weights.get("atr",0)
+
+    # Time-of-day
+    ts = fmt_ct(idx.to_pydatetime())
+    if any(abs((ts.hour*60 + ts.minute) - (hh*60+mm)) <= KEY_TOD_WINDOW_MIN for (hh,mm) in KEY_TOD):
+        comps["tod"] = weights.get("tod",0)
+
+    # Oscillator divergence (lightweight proxy)
+    if weights.get("div",0) > 0:
+        r = rsi(upto["Close"], RSI_LEN)
+        if r.notna().sum() >= RSI_LEN + 2:
+            # compare to approx prior swing in last RSI_WINDOW_MIN
+            window_bars = max(5, RSI_WINDOW_MIN)  # on 1m
+            prior = upto.iloc[-window_bars:-1] if upto.shape[0] > window_bars else upto.iloc[:-1]
+            if prior.shape[0] > 5:
+                prior_low = prior["Close"].idxmin()
+                prior_high = prior["Close"].idxmax()
+                if expected_near_term == "Up":
+                    # bullish divergence: price <= prior low but RSI higher
+                    if upto["Close"].iloc[-1] <= prior["Close"].min() and r.iloc[-1] > r.loc[prior_low]:
+                        comps["div"] = weights.get("div",0)
+                else:
+                    # bearish divergence: price >= prior high but RSI lower
+                    if upto["Close"].iloc[-1] >= prior["Close"].max() and r.iloc[-1] < r.loc[prior_high]:
+                        comps["div"] = weights.get("div",0)
+
+    score = sum(comps.values())
+    score = int(min(100, max(0, score)))
+    return score, comps
+
+# ───────────────────────────────────────────────────────────────────────────────
+# PROBABILITY DASHBOARD (overnight analysis)
+# ───────────────────────────────────────────────────────────────────────────────
+def es_spx_offset_at_3pm(prev_day: date, spx_30m: pd.DataFrame) -> Optional[float]:
+    """
+    Compute ES–SPX offset at 3:00 PM CT (same timestamp),
+    using ES=F 1m around 3 PM to find a close.
+    """
+    # SPX 3 PM
+    spx_close = get_prev_day_3pm_close(spx_30m, prev_day)
+    if spx_close is None:
+        return None
+    # ES around 3 PM (1m)
+    es_1m = fetch_intraday_interval("ES=F", prev_day, prev_day, "1m")
+    if es_1m.empty:
+        return None
+    t3 = fmt_ct(datetime.combine(prev_day, time(15,0)))
+    if t3 in es_1m.index:
+        es_close = float(es_1m.loc[t3, "Close"])
+    else:
+        # nearest <= 3:00
+        es_close = float(es_1m.loc[:t3]["Close"].iloc[-1])
+    return float(es_close - spx_close)
+
+def fetch_overnight_1m(prev_day: date, proj_day: date) -> pd.DataFrame:
+    """
+    1-minute data covering the overnight window (roughly 17:00 prev → 08:30 proj).
+    """
+    es_1m = fetch_intraday_interval("ES=F", prev_day, proj_day, "1m")
+    if es_1m.empty:
+        return pd.DataFrame()
+    # Overnight window (skip weekend/maintenance implicitly by yfinance trading hours)
+    start = fmt_ct(datetime.combine(prev_day, time(17, 0)))
+    end   = fmt_ct(datetime.combine(proj_day, time(8, 30)))
+    return es_1m.loc[start:end].copy()
+
+def adjust_to_spx_frame(es_df: pd.DataFrame, offset: float) -> pd.DataFrame:
+    """
+    Adjust ES prices by subtracting the 3 PM offset so they can be compared to SPX fan.
+    We keep the label generic (no UI mention), just using adjusted prices internally.
+    """
+    df = es_df.copy()
+    for col in ["Open","High","Low","Close"]:
+        if col in df:
+            df[col] = df[col] - offset
+    return df
+
+def build_probability_dashboard(prev_day: date,
+                                proj_day: date,
+                                anchor_close: float,
+                                anchor_time: datetime,
+                                tol_frac: float,
+                                weights: Dict[str,int]) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
+    """
+    Returns:
+      touches_df: detailed per-touch scoring rows
+      fan_df:     SPX fan for proj day (for 8:30 highlight and reference)
+      offset:     ES–SPX offset used
+    """
+    # Fan for proj day (RTH)
+    fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
+
+    # Build offset from prev day 3 PM
+    spx_prev_30m = fetch_intraday("^GSPC", prev_day, prev_day)
+    if spx_prev_30m.empty:
+        spx_prev_30m = fetch_intraday("SPY", prev_day, prev_day)
+    off = es_spx_offset_at_3pm(prev_day, spx_prev_30m)
+    if off is None:
+        return pd.DataFrame(), fan_df, 0.0
+
+    # Overnight 1m (adjusted to SPX frame)
+    on_1m = fetch_overnight_1m(prev_day, proj_day)
+    if on_1m.empty:
+        return pd.DataFrame(), fan_df, off
+    on_adj = adjust_to_spx_frame(on_1m, off)
+
+    # For each 1m bar, compute matching fan lines based on blocks since anchor
+    # Note: anchor_time is prev_day 15:00 CT exact
+    top_slope, bottom_slope = current_spx_slopes()
     rows = []
-    for _, row in fan_df.iterrows():
-        t = row["Time"]
-        if t not in price_lu:
-            continue
-        p = price_lu[t]
-        top, bot, width = row["Top"], row["Bottom"], row["Fan_Width"]
-        bias = "UP" if p >= anchor_close else "DOWN"
+    # Precompute rolling for boosters
+    on_adj_booster = on_adj.copy()
 
-        if bot <= p <= top:
-            if bias == "UP":
-                direction = "BUY"; entry = bot; tp1 = top; tp2 = top; note = "Within fan; bias UP"
-            else:
-                direction = "SELL"; entry = top; tp1 = bot; tp2 = bot; note = "Within fan; bias DOWN"
-        elif p > top:
-            direction = "SELL"; entry = top; tp1 = np.nan; tp2 = top - width; note = "Above fan"
-        else:  # p < bottom
-            direction = "SELL"; entry = bot; tp1 = np.nan; tp2 = bot - width; note = "Below fan"
+    for ts, bar in on_adj.iterrows():
+        blocks = count_effective_blocks(anchor_time, ts)
+        top = anchor_close + top_slope * blocks
+        bottom = anchor_close - bottom_slope * blocks
+
+        # Edge touch classification per our tree
+        touch = classify_edge_touch(bar, top, bottom)
+        if touch is None:
+            continue
+
+        # Probability boosters & score
+        score, comps = compute_boosters_score(on_adj_booster, ts, touch["direction_hint"], weights)
+
+        # Bias at that minute (within-fan rule using tolerance)
+        price = float(bar["Close"])
+        bias = compute_bias(price, top, bottom, tol_frac)
 
         rows.append({
-            "Time": t, "Price": round(p, 2), "Bias": bias, "EntrySide": direction,
-            "Entry": round(entry, 2), "TP1": (round(tp1, 2) if not pd.isna(tp1) else np.nan),
-            "TP2": (round(tp2, 2) if not pd.isna(tp2) else np.nan),
-            "Top": round(top, 2), "Bottom": round(bot, 2)
+            "TimeDT": ts, "Time": ts.strftime("%H:%M"),
+            "Price": round(price,2), "Top": round(top,2), "Bottom": round(bottom,2),
+            "Edge": touch["edge"], "Case": touch["case"],
+            "Expectation": touch["expected"],
+            "DirectionHint": touch["direction_hint"],
+            "Bias": bias,
+            "Score": score,
+            "EMA_w": comps["ema"], "Vol_w": comps["volume"], "Wick_w": comps["wick"],
+            "ATR_w": comps["atr"], "ToD_w": comps["tod"], "Div_w": comps["div"],
         })
-    return pd.DataFrame(rows)
 
-# ───── Stocks: swings & two-line projection
+    touches_df = pd.DataFrame(rows).sort_values("TimeDT").reset_index(drop=True)
+    return touches_df, fan_df, off
+
+# ───────────────────────────────────────────────────────────────────────────────
+# STOCK ANCHORS (existing)
+# ───────────────────────────────────────────────────────────────────────────────
 def detect_absolute_swings(df: pd.DataFrame) -> Tuple[Optional[Tuple[float, datetime]], Optional[Tuple[float, datetime]]]:
-    """Return (highest_high, its_time), (lowest_low, its_time)"""
     if df.empty:
         return None, None
     hi = df['High'].idxmax() if 'High' in df else None
@@ -785,7 +614,6 @@ def detect_absolute_swings(df: pd.DataFrame) -> Tuple[Optional[Tuple[float, date
 def project_two_stock_lines(high_price: float, high_time: datetime,
                             low_price: float, low_time: datetime,
                             slope_mag: float, target_day: date) -> pd.DataFrame:
-    """Ascending from swing high (+slope_mag) and descending from swing low (−slope_mag)."""
     rows = []
     for slot in rth_slots_ct(target_day):
         b_high = count_effective_blocks(high_time, slot)
@@ -797,617 +625,162 @@ def project_two_stock_lines(high_price: float, high_time: datetime,
                      "Low_Desc": round(low_desc, 2)})
     return pd.DataFrame(rows)
 
-# ───── EMA utils
-def ema(series: pd.Series, span: int) -> pd.Series:
-    return series.ewm(span=span, adjust=False).mean()
+# ───────────────────────────────────────────────────────────────────────────────
+# CONTRACT PROJECTIONS (Two-Point and Δ+Θ)
+# ───────────────────────────────────────────────────────────────────────────────
+def project_contract_two_point(p1_dt: datetime, p1_price: float,
+                               p2_dt: Optional[datetime], p2_price: Optional[float],
+                               proj_day: date) -> Tuple[pd.DataFrame, float, float]:
+    """
+    Two-point slope (fallback to single point → flat if no p2).
+    """
+    if p2_dt is not None and p2_price is not None and p2_dt > p1_dt:
+        blocks = count_effective_blocks(p1_dt, p2_dt)
+        slope = (p2_price - p1_price) / blocks if blocks > 0 else 0.0
+    else:
+        slope = 0.0
+    rows = []
+    for slot in rth_slots_ct(proj_day):
+        b = count_effective_blocks(p1_dt, slot)
+        price = p1_price + slope * b
+        rows.append({"Time": slot.strftime("%H:%M"),
+                     "Contract_Price": round(price, 2),
+                     "Blocks": round(b, 1)})
+    return pd.DataFrame(rows), slope, float(count_effective_blocks(p1_dt, fmt_ct(datetime.combine(proj_day, time(8,30)))))
 
-def compute_ema_cross_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Return df with EMA8/EMA21 and crossover label for same-bar check."""
-    if df.empty or 'Close' not in df:
-        return pd.DataFrame()
-    out = df.copy()
-    out['EMA8'] = ema(out['Close'], 8)
-    out['EMA21'] = ema(out['Close'], 21)
-    # same-bar "state"
-    out['Crossover'] = np.where(out['EMA8'] > out['EMA21'], 'Bullish', np.where(out['EMA8'] < out['EMA21'], 'Bearish', 'None'))
-    return out
+def project_contract_delta_theta(p1_dt: datetime, p1_price: float,
+                                 underlying_slope_per_30m: float,
+                                 delta: float, theta_per_day: float,
+                                 proj_day: date) -> Tuple[pd.DataFrame, float]:
+    """
+    Δ+Θ model:
+    Contract slope per 30m ≈ Δ * underlying_slope_per_30m + Θ_per_30m
+    Θ_per_30m ≈ theta_per_day / ( (6 hours RTH = 12 blocks) or 48 blocks/day ) → we’ll use 48 blocks/day for simplicity.
+    """
+    theta_per_30m = theta_per_day / 48.0
+    contract_slope = delta * underlying_slope_per_30m + theta_per_30m
+    rows = []
+    for slot in rth_slots_ct(proj_day):
+        b = count_effective_blocks(p1_dt, slot)
+        price = p1_price + contract_slope * b
+        rows.append({"Time": slot.strftime("%H:%M"),
+                     "Contract_Price": round(price, 2),
+                     "Blocks": round(b, 1)})
+    return pd.DataFrame(rows), contract_slope
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ENHANCED HEADER METRICS SECTION
+# SIDEBAR — Global controls (SPX panel)
 # ───────────────────────────────────────────────────────────────────────────────
+st.sidebar.title("🔧 Controls")
 
-# Additional CSS for enhanced metrics display
-st.markdown("""
-<style>
-/* Enhanced Header Section */
-.header-section {
-    background: linear-gradient(135deg, var(--surface) 0%, rgba(255, 255, 255, 0.8) 100%);
-    border: 1px solid var(--border-light);
-    border-radius: 24px;
-    padding: 2rem;
-    margin: 2rem 0;
-    box-shadow: var(--shadow-glass);
-    backdrop-filter: blur(20px);
-    position: relative;
-    overflow: hidden;
-}
+today_ct = datetime.now(CT_TZ).date()
+prev_day = st.sidebar.date_input("Previous Trading Day", value=today_ct - timedelta(days=1))
+proj_day = st.sidebar.date_input("Projection Day", value=prev_day + timedelta(days=1))
+st.sidebar.caption("Anchor at **3:00 PM CT** on the previous trading day.")
 
-.header-section::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, 
-        rgba(59, 130, 246, 0.02) 0%, 
-        rgba(16, 185, 129, 0.02) 50%, 
-        rgba(139, 92, 246, 0.02) 100%);
-    pointer-events: none;
-}
+st.sidebar.markdown("---")
+st.sidebar.subheader("✍️ Manual Close (optional)")
+use_manual_close = st.sidebar.checkbox("Enter 3:00 PM CT Close Manually", value=False)
+manual_close_val = st.sidebar.number_input(
+    "Manual 3:00 PM Close",
+    value=6400.00,
+    step=0.01,
+    format="%.2f",
+    disabled=not use_manual_close,
+    help="If enabled, this overrides the fetched SPX anchor close."
+)
 
-/* Enhanced Metric Cards with Animation */
-.metric-card-enhanced {
-    background: linear-gradient(135deg, var(--surface-elevated) 0%, var(--surface) 100%);
-    border: 1px solid var(--border-light);
-    border-radius: 20px;
-    padding: 2rem 1.5rem;
-    box-shadow: var(--shadow-md);
-    backdrop-filter: blur(12px);
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-    text-align: center;
-    height: 160px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
+st.sidebar.markdown("---")
+with st.sidebar.expander("⚙️ Advanced (optional)", expanded=False):
+    st.caption("Adjust **asymmetric** per-30m slopes and proximity tolerance for bias within fan.")
+    enable_slope = st.checkbox("Enable slope override", value=("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state))
+    top_slope_val = st.number_input("Top slope (+ per 30m)", value=float(st.session_state.get("top_slope_per_block", TOP_SLOPE_DEFAULT)), step=0.001, format="%.3f")
+    bottom_slope_val = st.number_input("Bottom slope (− per 30m)", value=float(st.session_state.get("bottom_slope_per_block", BOTTOM_SLOPE_DEFAULT)), step=0.001, format="%.3f")
+    tol_frac = st.slider("Within-fan neutrality band (% of fan width)", min_value=0, max_value=40, value=20, step=1) / 100.0
 
-.metric-card-enhanced::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
-    opacity: 0.6;
-    transition: opacity 0.3s ease;
-}
+    col_adv_a, col_adv_b = st.columns(2)
+    with col_adv_a:
+        if st.button("Apply slopes", use_container_width=True, key="apply_slope"):
+            if enable_slope:
+                st.session_state["top_slope_per_block"] = float(top_slope_val)
+                st.session_state["bottom_slope_per_block"] = float(bottom_slope_val)
+                st.success(f"Top=+{top_slope_val:.3f}  •  Bottom=−{bottom_slope_val:.3f}")
+            else:
+                for k in ("top_slope_per_block", "bottom_slope_per_block"):
+                    if k in st.session_state: del st.session_state[k]
+                st.info("Slope override disabled (using defaults).")
+    with col_adv_b:
+        if st.button("Reset slopes", use_container_width=True, key="reset_slope"):
+            for k in ("top_slope_per_block", "bottom_slope_per_block"):
+                if k in st.session_state: del st.session_state[k]
+            st.success(f"Reset to defaults: Top=+{TOP_SLOPE_DEFAULT:.3f} • Bottom=−{BOTTOM_SLOPE_DEFAULT:.3f}")
 
-.metric-card-enhanced:hover::before {
-    opacity: 1;
-}
+st.sidebar.markdown("---")
+go_spx = st.sidebar.button("🔮 Generate SPX Fan & Strategy", type="primary", use_container_width=True)
 
-.metric-card-enhanced:hover {
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: var(--shadow-xl);
-    border-color: rgba(59, 130, 246, 0.3);
-}
-
-/* Time-specific styling */
-.time-card {
-    border-color: var(--primary-light);
-    background: linear-gradient(135deg, var(--primary-light) 0%, var(--surface-elevated) 100%);
-}
-
-.time-card .metric-value {
-    color: var(--primary);
-}
-
-/* Status-specific styling */
-.status-card {
-    border-color: var(--secondary-light);
-    background: linear-gradient(135deg, var(--secondary-light) 0%, var(--surface-elevated) 100%);
-}
-
-.status-card.open {
-    border-color: var(--success-border);
-    background: linear-gradient(135deg, var(--success-bg) 0%, var(--surface-elevated) 100%);
-}
-
-.status-card.closed {
-    border-color: var(--warning-border);
-    background: linear-gradient(135deg, var(--warning-bg) 0%, var(--surface-elevated) 100%);
-}
-
-/* Slope-specific styling */
-.slope-card {
-    border-color: var(--accent-light);
-    background: linear-gradient(135deg, var(--accent-light) 0%, var(--surface-elevated) 100%);
-}
-
-.slope-card .metric-value {
-    color: var(--accent);
-}
-
-/* Enhanced metric text */
-.metric-title-enhanced {
-    font-size: 0.875rem;
-    font-weight: 700;
-    color: var(--text-tertiary);
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-}
-
-.metric-value-enhanced {
-    font-size: 2.25rem;
-    font-weight: 800;
-    margin: 1rem 0;
-    color: var(--text-primary);
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    flex: 1;
-}
-
-.metric-subtitle {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    font-weight: 500;
-    margin: 0;
-    line-height: 1.4;
-}
-
-/* Live time animation */
-@keyframes pulse-glow {
-    0%, 100% { 
-        box-shadow: var(--shadow-md);
-    }
-    50% { 
-        box-shadow: var(--shadow-lg), 0 0 20px rgba(59, 130, 246, 0.1);
-    }
-}
-
-.time-card {
-    animation: pulse-glow 3s ease-in-out infinite;
-}
-
-/* Market status badge enhancements */
-.status-badge-enhanced {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    border-radius: 50px;
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: 0.025em;
-    box-shadow: var(--shadow-sm);
-    transition: all 0.2s ease;
-    border: 2px solid;
-}
-
-.status-open {
-    color: var(--secondary-dark);
-    background: linear-gradient(135deg, var(--secondary-light) 0%, #A7F3D0 100%);
-    border-color: var(--secondary);
-    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
-}
-
-.status-closed {
-    color: #92400E;
-    background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-    border-color: var(--warning);
-    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3);
-}
-
-/* Icon styling */
-.metric-icon {
-    font-size: 1.5rem;
-    opacity: 0.8;
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-    .metric-card-enhanced {
-        height: 140px;
-        padding: 1.5rem 1rem;
-    }
-    
-    .metric-value-enhanced {
-        font-size: 1.8rem;
-    }
-    
-    .header-section {
-        padding: 1.5rem;
-        margin: 1rem 0;
-    }
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Enhanced Header Metrics Display
-st.markdown('<div class="header-section">', unsafe_allow_html=True)
-st.markdown("""
-<div style="text-align: center; margin-bottom: 2rem; position: relative; z-index: 1;">
-    <h1 style="color: var(--text-primary); font-size: 2.5rem; margin: 0; font-weight: 800;">
-        📈 SPX Prophet Analytics
-    </h1>
-    <p style="color: var(--text-secondary); font-size: 1.1rem; margin: 0.5rem 0 0 0; font-weight: 500;">
-        Real-time market analysis with advanced projections
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-# Enhanced metrics in a responsive grid
-c1, c2, c3 = st.columns(3, gap="large")
+# ───────────────────────────────────────────────────────────────────────────────
+# HEADER METRICS
+# ───────────────────────────────────────────────────────────────────────────────
+c1, c2, c3 = st.columns(3)
 now = datetime.now(CT_TZ)
-
 with c1:
     st.markdown(
         f"""
-<div class="metric-card-enhanced time-card">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">🕐</span>
-        Current Time (CT)
-    </div>
-    <div class="metric-value-enhanced">
-        {now.strftime("%H:%M:%S")}
-    </div>
-    <div class="metric-subtitle">
-        {now.strftime("%A, %B %d, %Y")}
-    </div>
+<div class="metric-card">
+  <p class="metric-title">Current Time (CT)</p>
+  <div class="metric-value">🕒 {now.strftime("%H:%M:%S")}</div>
+  <div class="kicker">{now.strftime("%A, %B %d, %Y")}</div>
 </div>
 """,
         unsafe_allow_html=True,
     )
-
 with c2:
     is_wkday = now.weekday() < 5
     open_dt = now.replace(hour=8, minute=30, second=0, microsecond=0)
     close_dt = now.replace(hour=14, minute=30, second=0, microsecond=0)
     is_open = is_wkday and (open_dt <= now <= close_dt)
-    
-    status_class = "status-open" if is_open else "status-closed"
-    card_class = "open" if is_open else "closed"
-    status_text = "MARKET OPEN" if is_open else "MARKET CLOSED"
-    status_icon = "🟢" if is_open else "🔴"
-    
+    badge = "badge-open" if is_open else "badge-closed"
+    text = "Market Open" if is_open else "Closed"
     st.markdown(
         f"""
-<div class="metric-card-enhanced status-card {card_class}">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">📊</span>
-        Market Status
-    </div>
-    <div class="metric-value-enhanced">
-        <span class="status-badge-enhanced {status_class}">
-            {status_icon} {status_text}
-        </span>
-    </div>
-    <div class="metric-subtitle">
-        RTH: 08:30–14:30 CT • Mon–Fri
-    </div>
+<div class="metric-card">
+  <p class="metric-title">Market Status</p>
+  <div class="metric-value">📊 <span class="{badge}">{text}</span></div>
+  <div class="kicker">RTH: 08:30–14:30 CT • Mon–Fri</div>
 </div>
 """,
         unsafe_allow_html=True,
     )
-
 with c3:
-    slope_disp = current_slope()
-    override_indicator = "🔧 OVERRIDE ACTIVE" if "slope_per_block" in st.session_state else "DEFAULT"
-    override_class = "override-tag" if "slope_per_block" in st.session_state else "metric-subtitle"
-    
+    ts, bs = current_spx_slopes()
     st.markdown(
         f"""
-<div class="metric-card-enhanced slope-card">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">📐</span>
-        Slope per 30min
-    </div>
-    <div class="metric-value-enhanced">
-        ±{slope_disp:.3f}
-    </div>
-    <div class="{override_class}">
-        {override_indicator if "slope_per_block" in st.session_state else "Top = +slope • Bottom = −slope"}
-    </div>
+<div class="metric-card">
+  <p class="metric-title">SPX Slopes / 30m</p>
+  <div class="metric-value">📐 Top=+{ts:.3f} • Bottom=−{bs:.3f}</div>
+  <div class="kicker">Asymmetric fan</div>
+  {"<div class='override-tag'>Override active</div>" if ("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state) else ""}
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Enhanced divider
-st.markdown("""
-<div style="margin: 3rem 0;">
-    <hr style="border: none; height: 2px; background: linear-gradient(90deg, transparent, var(--primary) 20%, var(--secondary) 50%, var(--accent) 80%, transparent); opacity: 0.6;">
-</div>
-""", unsafe_allow_html=True)
-
-
-
+st.markdown("---")
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ENHANCED TABS SYSTEM WITH BEAUTIFUL STYLING
+# TABS
 # ───────────────────────────────────────────────────────────────────────────────
-
-# Additional CSS for enhanced tabs and content areas
-st.markdown("""
-<style>
-/* Enhanced Tab System */
-.stTabs [data-baseweb="tab-list"] {
-    background: var(--surface);
-    border: 1px solid var(--border-light);
-    border-radius: 16px;
-    padding: 0.5rem;
-    box-shadow: var(--shadow-md);
-    backdrop-filter: blur(12px);
-    margin-bottom: 2rem;
-}
-
-.stTabs [data-baseweb="tab"] {
-    background: transparent;
-    border: none;
-    border-radius: 12px;
-    padding: 1rem 2rem;
-    font-weight: 600;
-    font-size: 1rem;
-    color: var(--text-secondary);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-}
-
-.stTabs [data-baseweb="tab"]:hover {
-    background: var(--surface-hover);
-    color: var(--primary);
-    transform: translateY(-1px);
-}
-
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    color: white;
-    box-shadow: var(--shadow-md);
-}
-
-.stTabs [data-baseweb="tab"][aria-selected="true"]::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-}
-
-.stTabs [data-baseweb="tab"][aria-selected="true"]:hover::before {
-    left: 100%;
-}
-
-/* Enhanced Tab Content */
-.stTabs [data-baseweb="tab-panel"] {
-    background: var(--surface);
-    border: 1px solid var(--border-light);
-    border-radius: 20px;
-    padding: 2rem;
-    box-shadow: var(--shadow-glass);
-    backdrop-filter: blur(16px);
-    position: relative;
-    overflow: hidden;
-}
-
-.stTabs [data-baseweb="tab-panel"]::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, 
-        rgba(59, 130, 246, 0.01) 0%, 
-        rgba(16, 185, 129, 0.01) 50%, 
-        rgba(139, 92, 246, 0.01) 100%);
-    pointer-events: none;
-}
-
-/* Section Headers in Tabs */
-.tab-section-header {
-    color: var(--text-primary);
-    font-size: 1.75rem;
-    font-weight: 700;
-    margin: 0 0 1rem 0;
-    padding-bottom: 0.75rem;
-    border-bottom: 3px solid;
-    border-image: linear-gradient(90deg, var(--primary), var(--secondary)) 1;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.tab-subsection-header {
-    color: var(--primary);
-    font-size: 1.375rem;
-    font-weight: 600;
-    margin: 2rem 0 1rem 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1rem;
-    background: linear-gradient(135deg, var(--primary-light) 0%, rgba(59, 130, 246, 0.05) 100%);
-    border: 1px solid var(--primary-light);
-    border-radius: 12px;
-}
-
-/* Enhanced Form Controls in Tabs */
-.tab-controls {
-    background: var(--surface-elevated);
-    border: 1px solid var(--border-light);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin: 1.5rem 0;
-    box-shadow: var(--shadow-sm);
-}
-
-.control-group {
-    margin-bottom: 1rem;
-}
-
-.control-group:last-child {
-    margin-bottom: 0;
-}
-
-/* Enhanced Info Messages */
-.info-card {
-    background: linear-gradient(135deg, var(--info-bg) 0%, rgba(59, 130, 246, 0.05) 100%);
-    border: 1px solid var(--info-border);
-    border-left: 4px solid var(--info);
-    border-radius: 12px;
-    padding: 1.5rem;
-    color: var(--info);
-    font-weight: 500;
-    margin: 1.5rem 0;
-    box-shadow: var(--shadow-sm);
-}
-
-.success-card {
-    background: linear-gradient(135deg, var(--success-bg) 0%, rgba(16, 185, 129, 0.05) 100%);
-    border: 1px solid var(--success-border);
-    border-left: 4px solid var(--success);
-    border-radius: 12px;
-    padding: 1.5rem;
-    color: var(--success);
-    font-weight: 600;
-    margin: 1.5rem 0;
-    box-shadow: var(--shadow-sm);
-}
-
-.error-card {
-    background: linear-gradient(135deg, var(--error-bg) 0%, rgba(239, 68, 68, 0.05) 100%);
-    border: 1px solid var(--error-border);
-    border-left: 4px solid var(--error);
-    border-radius: 12px;
-    padding: 1.5rem;
-    color: var(--error);
-    font-weight: 600;
-    margin: 1.5rem 0;
-    box-shadow: var(--shadow-sm);
-}
-
-/* Enhanced Data Tables */
-.dataframe {
-    background: var(--surface-elevated) !important;
-    border: 1px solid var(--border-light) !important;
-    border-radius: 12px !important;
-    overflow: hidden !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-
-.dataframe table {
-    border-collapse: collapse !important;
-}
-
-.dataframe th {
-    background: linear-gradient(135deg, var(--primary-light) 0%, rgba(59, 130, 246, 0.1) 100%) !important;
-    color: var(--primary) !important;
-    font-weight: 700 !important;
-    padding: 1rem !important;
-    border-bottom: 2px solid var(--primary-light) !important;
-    text-align: center !important;
-}
-
-.dataframe td {
-    padding: 0.875rem !important;
-    border-bottom: 1px solid var(--border-light) !important;
-    text-align: center !important;
-    color: var(--text-primary) !important;
-}
-
-.dataframe tr:hover {
-    background: var(--surface-hover) !important;
-}
-
-/* Loading Spinner Enhancement */
-.stSpinner > div {
-    border-color: var(--primary) !important;
-}
-
-/* Caption Styling */
-.stCaption {
-    background: var(--surface-elevated);
-    border: 1px solid var(--border-light);
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    color: var(--text-secondary);
-    font-style: italic;
-    margin: 1rem 0;
-    box-shadow: var(--shadow-sm);
-}
-
-/* Two-column layout for stock swing info */
-.swing-info {
-    background: var(--surface-elevated);
-    border: 1px solid var(--border-light);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin: 1rem 0;
-    box-shadow: var(--shadow-sm);
-    position: relative;
-}
-
-.swing-info::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--secondary), var(--primary));
-    border-radius: 16px 16px 0 0;
-}
-
-.swing-high {
-    border-left: 4px solid var(--secondary);
-    padding-left: 1rem;
-}
-
-.swing-low {
-    border-left: 4px solid var(--error);
-    padding-left: 1rem;
-}
-
-.swing-price {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin: 0.5rem 0;
-}
-
-.swing-time {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    font-family: 'Monaco', 'Menlo', monospace;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Enhanced Tabs System
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🎯 SPX Anchors", 
-    "📈 Stock Anchors", 
-    "🔄 Signals & EMA", 
-    "🧮 Contract Tool"
-])
+tab1, tabProb, tab2, tab3, tab4 = st.tabs(["SPX Anchors", "Probability Dashboard", "Stock Anchors", "Signals & EMA", "Contract Tool"])
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 1: ENHANCED SPX ANCHORS                                                 ║
+# ║ TAB 1: SPX ANCHORS                                                          ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab1:
-    st.markdown('<h2 class="tab-section-header">🎯 SPX Close-Anchor Fan (3:00 PM CT)</h2>', unsafe_allow_html=True)
-    
+    st.subheader("SPX Close-Anchor Fan (3:00 PM CT) — with 8:30 AM Highlight & Correct Bias")
+
     if go_spx:
-        with st.spinner("🔄 Building SPX fan & strategy analysis..."):
-            # Fetch prev/proj for ^GSPC (fallback to SPY if ^GSPC empty)
+        with st.spinner("Building SPX fan & strategy…"):
+            # Fetch prev/proj for ^GSPC (fallback to SPY if empty)
             spx_prev = fetch_intraday("^GSPC", prev_day, prev_day)
             if spx_prev.empty:
                 spx_prev = fetch_intraday("SPY", prev_day, prev_day)
@@ -1417,150 +790,247 @@ with tab1:
                 spx_proj = fetch_intraday("SPY", proj_day, proj_day)
 
             if spx_prev.empty or spx_proj.empty:
-                st.markdown(
-                    '<div class="error-card">❌ <strong>Market Data Error:</strong> Unable to fetch market data for the selected dates. Please try different dates or check your connection.</div>',
-                    unsafe_allow_html=True
-                )
+                st.error("❌ Market data connection failed for the selected dates.")
             else:
                 # Anchor close
                 if use_manual_close:
                     anchor_close = float(manual_close_val)
                     anchor_time  = fmt_ct(datetime.combine(prev_day, time(15, 0)))
-                    st.markdown(
-                        f'<div class="success-card">✅ <strong>Manual Override Active:</strong> Using manual 3:00 PM CT close: <strong>{anchor_close:.2f}</strong></div>',
-                        unsafe_allow_html=True
-                    )
+                    st.success(f"Using manual 3:00 PM CT close: **{anchor_close:.2f}**")
                 else:
                     prev_3pm_close = get_prev_day_3pm_close(spx_prev, prev_day)
                     if prev_3pm_close is None:
-                        st.markdown(
-                            '<div class="error-card">❌ <strong>Data Error:</strong> Could not find a 3:00 PM CT close for the previous day. Try using manual override.</div>',
-                            unsafe_allow_html=True
-                        )
+                        st.error("Could not find a 3:00 PM CT close for the previous day.")
                         st.stop()
                     anchor_close = float(prev_3pm_close)
                     anchor_time  = fmt_ct(datetime.combine(prev_day, time(15, 0)))
-                    st.markdown(
-                        f'<div class="success-card">🎯 <strong>Anchor Established:</strong> Previous day 3:00 PM CT close: <strong>{anchor_close:.2f}</strong></div>',
-                        unsafe_allow_html=True
-                    )
+                    st.success(f"Anchor (Prev Day 3:00 PM CT) Close: **{anchor_close:.2f}**")
 
                 # Fan
                 fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
 
-                # Strategy
+                # Strategy table with corrected bias definition
                 spx_proj_rth = between_time(spx_proj, RTH_START, RTH_END)
                 if spx_proj_rth.empty:
-                    st.markdown(
-                        '<div class="error-card">❌ <strong>RTH Data Missing:</strong> No regular trading hours data available for the projection day.</div>',
-                        unsafe_allow_html=True
-                    )
+                    st.error("No RTH data available for the projection day.")
                 else:
-                    strat_df = build_spx_strategy(spx_proj_rth, fan_df, anchor_close)
+                    # Build per-slot strategy view
+                    top_slope, bottom_slope = current_spx_slopes()
+                    rows = []
+                    for dt, bar in spx_proj_rth.iterrows():
+                        blocks = count_effective_blocks(anchor_time, dt)
+                        top = anchor_close + top_slope * blocks
+                        bottom = anchor_close - bottom_slope * blocks
+                        price = float(bar["Close"])
 
-                    # Enhanced Fan Table Section
-                    st.markdown('<h3 class="tab-subsection-header">🎯 Fan Lines (Top / Bottom @ 30-min intervals)</h3>', unsafe_allow_html=True)
-                    st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
-                    st.dataframe(fan_df, use_container_width=True, hide_index=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+                        bias = compute_bias(price, top, bottom, tol_frac)
 
-                    # Enhanced Strategy Table Section
-                    st.markdown('<h3 class="tab-subsection-header">📋 Trading Strategy Analysis</h3>', unsafe_allow_html=True)
-                    st.markdown(
-                        '<div class="info-card">📊 <strong>Bias Logic:</strong> <strong>UP</strong> bias when current price ≥ 3:00 PM anchor close | <strong>DOWN</strong> bias when current price < anchor close</div>',
-                        unsafe_allow_html=True
-                    )
-                    st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
+                        # Decision notes (position only; full path logic is in Probability tab)
+                        if bottom <= price <= top:
+                            note = "Within fan"
+                        elif price > top:
+                            note = "Above fan"
+                        else:
+                            note = "Below fan"
+
+                        rows.append({
+                            "Time": dt.strftime("%H:%M"),
+                            "Price": round(price,2),
+                            "Bias": bias,
+                            "Top": round(top,2),
+                            "Bottom": round(bottom,2),
+                            "Fan_Width": round(top-bottom,2),
+                            "Slot": "⭐ 8:30" if dt.strftime("%H:%M")=="08:30" else "",
+                            "Note": note
+                        })
+                    strat_df = pd.DataFrame(rows)
+
+                    st.markdown("### 🎯 Fan Lines (Top / Bottom @ 30-min)")
+                    st.dataframe(fan_df[["Time","Top","Bottom","Fan_Width"]], use_container_width=True, hide_index=True)
+
+                    st.markdown("### 📋 Strategy Table (Corrected Bias)")
+                    st.caption("Bias uses **descending anchor line** & within-fan proximity tolerance. 8:30 AM row is marked with ⭐.")
                     st.dataframe(
-                        strat_df[["Time","Price","Bias","EntrySide","Entry","TP1","TP2","Top","Bottom"]],
+                        strat_df[["Slot","Time","Price","Bias","Top","Bottom","Fan_Width","Note"]],
                         use_container_width=True, hide_index=True
                     )
-                    st.markdown('</div>', unsafe_allow_html=True)
     else:
-        st.markdown(
-            '''
-<div class="info-card">
-    <strong>🚀 Ready to Generate SPX Analysis</strong><br>
-    Use the <strong>Control Center</strong> in the sidebar to:
-    <ul style="margin: 1rem 0 0 1.5rem; color: var(--text-secondary);">
-        <li>Select your previous trading day and projection day</li>
-        <li>Optionally set a manual 3:00 PM CT close price</li>
-        <li>Adjust slope parameters if needed</li>
-        <li>Click <strong>"🔮 Generate SPX Fan & Strategy"</strong></li>
-    </ul>
-</div>
-            ''',
-            unsafe_allow_html=True
-        )
+        st.info("Use the **sidebar** to pick dates (and optional manual close), then click **Generate SPX Fan & Strategy**.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 2: ENHANCED STOCK ANCHORS                                               ║
+# ║ TAB PROB: PROBABILITY DASHBOARD                                             ║
+# ╚═════════════════════════════════════════════════════════════════════════════╝
+with tabProb:
+    st.subheader("Probability Dashboard (Overnight Edge Interactions → RTH Readiness)")
+    st.caption("Overnight analysis is aligned to the SPX fan frame and scored with EMA/Volume/Wick/ATR/Time-of-Day (+ optional Divergence).")
+
+    colp1, colp2 = st.columns([1,1])
+    with colp1:
+        enable_div = st.checkbox("Enable Oscillator Divergence (lightweight)", value=False)
+    with colp2:
+        w_ema  = st.slider("Weight: EMA 8/21 (1-min)", 0, 40, WEIGHTS["ema"], 5)
+        w_vol  = st.slider("Weight: Volume Confirmation", 0, 40, WEIGHTS["volume"], 5)
+        w_wick = st.slider("Weight: Wick/Body Rejection", 0, 40, WEIGHTS["wick"], 5)
+        w_atr  = st.slider("Weight: ATR Context", 0, 40, WEIGHTS["atr"], 5)
+        w_tod  = st.slider("Weight: Time-of-Day", 0, 40, WEIGHTS["tod"], 5)
+        w_div  = st.slider("Weight: Divergence (if enabled)", 0, 40, 10 if enable_div else 0, 5, disabled=not enable_div)
+
+    custom_weights = {"ema":w_ema,"volume":w_vol,"wick":w_wick,"atr":w_atr,"tod":w_tod,"div":(w_div if enable_div else 0)}
+
+    run_prob = st.button("🧠 Analyze Overnight & Build Probability Scores", type="primary")
+
+    if run_prob:
+        with st.spinner("Scoring overnight edge interactions…"):
+            # Build anchor (as in Tab 1)
+            spx_prev = fetch_intraday("^GSPC", prev_day, prev_day)
+            if spx_prev.empty:
+                spx_prev = fetch_intraday("SPY", prev_day, prev_day)
+            if spx_prev.empty:
+                st.error("Could not fetch previous day SPX data.")
+                st.stop()
+
+            if use_manual_close:
+                anchor_close = float(manual_close_val)
+            else:
+                prev_3pm_close = get_prev_day_3pm_close(spx_prev, prev_day)
+                if prev_3pm_close is None:
+                    st.error("Could not find a 3:00 PM CT close for the previous day.")
+                    st.stop()
+                anchor_close = float(prev_3pm_close)
+            anchor_time  = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+
+            touches_df, fan_df, offset_used = build_probability_dashboard(
+                prev_day, proj_day, anchor_close, anchor_time, tol_frac, custom_weights
+            )
+
+            if touches_df.empty:
+                st.info("No qualifying overnight edge touches detected for the window.")
+            else:
+                cA, cB, cC = st.columns(3)
+                with cA:
+                    st.markdown(f"<div class='metric-card'><p class='metric-title'>Anchor Close (Prev 3:00 PM CT)</p><div class='metric-value'>💠 {anchor_close:.2f}</div></div>", unsafe_allow_html=True)
+                with cB:
+                    st.markdown(f"<div class='metric-card'><p class='metric-title'>Overnight Touches Scored</p><div class='metric-value'>🧩 {len(touches_df)}</div></div>", unsafe_allow_html=True)
+                with cC:
+                    st.markdown(f"<div class='metric-card'><p class='metric-title'>Overnight Readiness</p><div class='metric-value'>⭐ Focus 08:30</div><div class='kicker'>First RTH decision point</div></div>", unsafe_allow_html=True)
+
+                st.markdown("### 📡 Overnight Edge Interactions (Scored)")
+                view_cols = ["Time","Price","Top","Bottom","Bias","Edge","Case","Expectation","Score","EMA_w","Vol_w","Wick_w","ATR_w","ToD_w","Div_w"]
+                st.dataframe(touches_df[view_cols], use_container_width=True, hide_index=True)
+
+                # ── Contract projection launcher
+                st.markdown("### 🧮 Contract Projection from a Selected Touch")
+                if not touches_df.empty:
+                    # select a touch time
+                    all_times = [f"{i} — {row['Time']} • {row['Edge']} • Score {row['Score']}" for i,row in touches_df.iterrows()]
+                    sel = st.selectbox("Pick an overnight touch to seed the contract projection:", options=all_times, index=len(all_times)-1)
+                    idx = int(sel.split(" — ")[0])
+                    touch_row = touches_df.iloc[idx]
+                    touch_dt = touch_row["TimeDT"]
+
+                    # Enter contract inputs
+                    st.caption("Enter contract price at the selected touch time. Optionally provide a second pre-open quote for a two-point slope.")
+                    colc1, colc2, colc3 = st.columns([1,1,1])
+                    with colc1:
+                        p1_price = st.number_input("Contract Price @ Touch (P1)", min_value=0.01, value=10.00, step=0.01, format="%.2f")
+                    with colc2:
+                        provide_p2 = st.checkbox("Add a second price (P2) to refine slope", value=False)
+                        if provide_p2:
+                            p2_time = st.time_input("P2 Time (CT, pre-open OK)", value=time(8, 0))
+                            p2_price = st.number_input("Contract Price @ P2", min_value=0.01, value=12.00, step=0.01, format="%.2f")
+                        else:
+                            p2_time = None; p2_price = None
+                    with colc3:
+                        mode = st.selectbox("Projection Mode", ["Two-Point Slope","Δ + Θ (model-aware)"], index=0)
+
+                    # Underlying slope estimate for Δ+Θ
+                    # Use sign based on expected near-term direction:
+                    top_slope, bottom_slope = current_spx_slopes()
+                    expected_hint = touch_row["DirectionHint"]
+                    near_term_up = expected_hint in ("BuyHigherFromTop","UpToTopThenSell")
+                    underlying_slope = (top_slope if near_term_up else -bottom_slope)
+
+                    if st.button("📤 Project 8:30 → 14:30", type="secondary"):
+                        with st.spinner("Projecting contract path across RTH…"):
+                            p1_dt = fmt_ct(touch_dt.to_pydatetime())
+
+                            if mode == "Two-Point Slope":
+                                p2_dt = (fmt_ct(datetime.combine(proj_day, p2_time)) if provide_p2 and p2_time else None)
+                                proj_df, slope_used, blocks_to_open = project_contract_two_point(p1_dt, float(p1_price), p2_dt, (float(p2_price) if provide_p2 else None), proj_day)
+                                st.markdown("#### Projection (Two-Point Slope)")
+                                mc1, mc2, mc3, mc4 = st.columns(4)
+                                with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
+                                with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks to 8:30</p><div class='metric-value'>🧩 {blocks_to_open:.1f}</div></div>", unsafe_allow_html=True)
+                                with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_used:+.3f}</div></div>", unsafe_allow_html=True)
+                                with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Touch Score</p><div class='metric-value'>⭐ {int(touch_row['Score'])}</div></div>", unsafe_allow_html=True)
+                                # Mark 8:30 row
+                                proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+                                st.dataframe(proj_df, use_container_width=True, hide_index=True)
+
+                            else:
+                                # Δ + Θ path
+                                colg1, colg2 = st.columns(2)
+                                with colg1:
+                                    delta = st.number_input("Δ (Delta, e.g., 0.35)", value=0.35, step=0.01, format="%.2f")
+                                with colg2:
+                                    theta_day = st.number_input("Θ per day (negative, e.g., -20.00)", value=-20.00, step=0.5, format="%.2f")
+                                proj_df, c_slope = project_contract_delta_theta(p1_dt, float(p1_price), float(underlying_slope), float(delta), float(theta_day), proj_day)
+                                st.markdown("#### Projection (Δ + Θ Model)")
+                                mc1, mc2, mc3, mc4 = st.columns(4)
+                                with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
+                                with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Δ</p><div class='metric-value'>Δ {delta:.2f}</div></div>", unsafe_allow_html=True)
+                                with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Θ / 30m</p><div class='metric-value'>θ {theta_day/48.0:+.3f}</div></div>", unsafe_allow_html=True)
+                                with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contract Slope / 30m</p><div class='metric-value'>📐 {c_slope:+.3f}</div></div>", unsafe_allow_html=True)
+                                proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+                                st.dataframe(proj_df, use_container_width=True, hide_index=True)
+
+# ╔═════════════════════════════════════════════════════════════════════════════╗
+# ║ TAB 2: STOCK ANCHORS                                                        ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab2:
-    st.markdown('<h2 class="tab-section-header">📈 Stock Anchor Lines (Mon/Tue swings → dual projections)</h2>', unsafe_allow_html=True)
-    
-    st.markdown(
-        '<div class="info-card">📊 <strong>Analysis Method:</strong> We identify the highest swing high and lowest swing low from Monday + Tuesday combined data, then project an ascending line from the high and a descending line from the low using your per-ticker slope magnitude.</div>',
-        unsafe_allow_html=True
-    )
+    st.subheader("Stock Anchor Lines (Mon/Tue swings → two lines)")
+    st.caption("Projects an ascending line from the highest swing high and a descending line from the lowest swing low (Mon+Tue combined), using your per-ticker slope.")
 
-    # Enhanced Controls Section
-    st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
-    
+    # Controls
     core = list(STOCK_SLOPES.keys())
-    cc1, cc2, cc3 = st.columns([1.4, 1, 1], gap="medium")
-    
+    cc1, cc2, cc3 = st.columns([1.4,1,1])
     with cc1:
-        st.markdown('<div class="control-group">', unsafe_allow_html=True)
-        ticker = st.selectbox("📊 Select Ticker", core + ["Custom…"], index=0, key="stk_ticker", help="Choose from pre-configured tickers or enter a custom symbol")
+        ticker = st.selectbox("Ticker", core + ["Custom…"], index=0, key="stk_ticker")
         custom_ticker = ""
         if ticker == "Custom…":
-            custom_ticker = st.text_input("Custom Symbol", value="", placeholder="e.g., AMD", help="Enter any valid ticker symbol")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+            custom_ticker = st.text_input("Custom Symbol", value="", placeholder="e.g., AMD")
     with cc2:
-        st.markdown('<div class="control-group">', unsafe_allow_html=True)
-        monday_date = st.date_input("📅 Monday Date", value=today_ct - timedelta(days=max(1, (today_ct.weekday()+6)%7 + 1)), help="The Monday for swing analysis")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        # Monday default: "most recent Monday"
+        monday_default = today_ct - timedelta(days=((today_ct.weekday() - 0) % 7 or 7))
+        monday_date = st.date_input("Monday Date", value=monday_default)
     with cc3:
-        st.markdown('<div class="control-group">', unsafe_allow_html=True)
-        tuesday_date = st.date_input("📅 Tuesday Date", value=monday_date + timedelta(days=1), help="The Tuesday for swing analysis")
-        st.markdown('</div>', unsafe_allow_html=True)
+        tuesday_date = st.date_input("Tuesday Date", value=monday_date + timedelta(days=1))
 
-    # Slope and projection controls
-    cc4, cc5 = st.columns([1.5, 1], gap="medium")
-    
-    with cc4:
-        slope_mag_default = STOCK_SLOPES.get(ticker, 0.0150) if ticker != "Custom…" else 0.0150
-        slope_mag = st.number_input("📐 Slope Magnitude (per 30min)", value=float(slope_mag_default), step=0.0001, format="%.4f", help=f"Default for {ticker}: {slope_mag_default:.4f}")
-    
-    with cc5:
-        proj_day_stock = st.date_input("🎯 Projection Day", value=tuesday_date + timedelta(days=1), help="Day to project the anchor lines")
+    # Slope picker
+    slope_mag_default = STOCK_SLOPES.get(ticker, 0.0150) if ticker != "Custom…" else 0.0150
+    slope_mag = st.number_input("Slope Magnitude (per 30m)", value=float(slope_mag_default), step=0.0001, format="%.4f")
 
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Enhanced Action Button
-    run_stock = st.button("📈 Analyze Stock Anchors", type="primary", use_container_width=True)
+    proj_day_stock = st.date_input("Projection Day", value=tuesday_date + timedelta(days=1))
+    run_stock = st.button("📈 Analyze Stock Anchors", type="primary")
 
     if run_stock:
-        with st.spinner("🔄 Fetching data and computing projections..."):
+        with st.spinner("Fetching and projecting…"):
             sym = custom_ticker.upper() if ticker == "Custom…" and custom_ticker else (ticker if ticker != "Custom…" else None)
             if not sym:
-                st.markdown('<div class="error-card">❌ <strong>Input Error:</strong> Please enter a custom symbol.</div>', unsafe_allow_html=True)
+                st.error("Please enter a custom symbol.")
                 st.stop()
 
             mon = fetch_intraday(sym, monday_date, monday_date)
             tue = fetch_intraday(sym, tuesday_date, tuesday_date)
             if mon.empty and tue.empty:
-                st.markdown(f'<div class="error-card">❌ <strong>Data Error:</strong> No data available for <strong>{sym}</strong> on the selected dates.</div>', unsafe_allow_html=True)
+                st.error("No data for selected dates.")
                 st.stop()
 
             combined = mon if tue.empty else (tue if mon.empty else pd.concat([mon, tue]).sort_index())
 
             hi, lo = detect_absolute_swings(combined)
             if not hi or not lo:
-                st.markdown('<div class="error-card">❌ <strong>Analysis Error:</strong> Could not detect swing highs and lows in the data.</div>', unsafe_allow_html=True)
+                st.error("Could not detect swings.")
                 st.stop()
 
             (high_price, high_time) = hi
@@ -1569,171 +1039,66 @@ with tab2:
 
             proj_df = project_two_stock_lines(high_price, high_time, low_price, low_time, slope_mag, proj_day_stock)
 
-            # Enhanced Results Display
-            st.markdown('<h3 class="tab-subsection-header">📊 Swing Analysis Results</h3>', unsafe_allow_html=True)
-            
-            cA, cB = st.columns(2, gap="large")
+            cA, cB = st.columns(2)
             with cA:
-                st.markdown(
-                    f'''
-<div class="swing-info swing-high">
-    <h4 style="color: var(--secondary); margin: 0 0 0.75rem 0; display: flex; align-items: center; gap: 0.5rem;">
-        📈 Swing High (Mon/Tue)
-    </h4>
-    <div class="swing-price">
-        {sym} — High: <strong>{high_price:.2f}</strong>
-    </div>
-    <div class="swing-time">
-        {high_time.strftime('%Y-%m-%d %H:%M CT')}
-    </div>
-</div>
-                    ''',
-                    unsafe_allow_html=True
-                )
+                st.markdown("**Swing High (Mon/Tue):**")
+                st.write(f"📈 {sym} — High: **{high_price:.2f}** at {high_time.strftime('%Y-%m-%d %H:%M CT')}")
             with cB:
-                st.markdown(
-                    f'''
-<div class="swing-info swing-low">
-    <h4 style="color: var(--error); margin: 0 0 0.75rem 0; display: flex; align-items: center; gap: 0.5rem;">
-        📉 Swing Low (Mon/Tue)
-    </h4>
-    <div class="swing-price">
-        {sym} — Low: <strong>{low_price:.2f}</strong>
-    </div>
-    <div class="swing-time">
-        {low_time.strftime('%Y-%m-%d %H:%M CT')}
-    </div>
-</div>
-                    ''',
-                    unsafe_allow_html=True
-                )
+                st.markdown("**Swing Low (Mon/Tue):**")
+                st.write(f"📉 {sym} — Low: **{low_price:.2f}** at {low_time.strftime('%Y-%m-%d %H:%M CT')}")
 
-            st.markdown('<h3 class="tab-subsection-header">🔧 RTH Projection Lines</h3>', unsafe_allow_html=True)
-            st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
+            st.markdown("### 🔧 Projection (RTH)")
             st.dataframe(proj_df, use_container_width=True, hide_index=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-
-
-
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 3: ENHANCED SIGNALS & EMA                                               ║
+# ║ TAB 3: SIGNALS & EMA                                                        ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab3:
-    st.markdown('<h2 class="tab-section-header">🔄 Signals: Fan Touch + Same-Bar EMA 8/21 Confirmation</h2>', unsafe_allow_html=True)
-    
-    st.markdown(
-        '''
-<div class="info-card">
-    <strong>🎯 Signal Detection Logic:</strong><br>
-    We identify moments when price touches the fan lines (top or bottom) and simultaneously check for EMA 8/21 crossover confirmation within the same bar. This provides high-probability entry signals with technical confirmation.
-</div>
-        ''',
-        unsafe_allow_html=True
-    )
+    st.subheader("Signals: Fan Touch + Same-Bar EMA 8/21 Confirmation")
 
-    # Enhanced Controls Section
-    st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
-    
-    colS1, colS2, colS3 = st.columns([1.2, 1, 1], gap="medium")
-    
+    colS1, colS2, colS3 = st.columns([1.2,1,1])
     with colS1:
-        st.markdown('<div class="control-group">', unsafe_allow_html=True)
-        sig_symbol = st.selectbox(
-            "📊 Analysis Symbol", 
-            ["^GSPC", "SPY", "ES=F"], 
-            index=0,
-            help="Choose the symbol for signal analysis"
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        sig_symbol = st.selectbox("Symbol", ["^GSPC", "SPY", "ES=F"], index=0)
     with colS2:
-        st.markdown('<div class="control-group">', unsafe_allow_html=True)
-        sig_day = st.date_input(
-            "📅 Analysis Day", 
-            value=today_ct,
-            help="Day to analyze for touch signals"
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        sig_day = st.date_input("Analysis Day", value=today_ct)
     with colS3:
-        st.markdown('<div class="control-group">', unsafe_allow_html=True)
-        interval_pref = st.selectbox(
-            "⏱️ Time Interval", 
-            ["1m", "5m", "30m"], 
-            index=0, 
-            help="1m requires recent dates (≤7 days). Falls back to 5m/30m if unavailable."
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+        interval_pref = st.selectbox("Interval preference", ["1m", "5m", "30m"], index=0, help="1m requires recent dates (≤7 days)")
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Enhanced Action Button
-    run_sig = st.button("🔎 Analyze Touch Signals", type="primary", use_container_width=True)
+    run_sig = st.button("🔎 Analyze Signals", type="primary")
 
     if run_sig:
-        with st.spinner("🔄 Computing fan lines and analyzing signals..."):
-            # Build fan for the day (needs previous day close at 3:00 PM CT)
+        with st.spinner("Computing signals…"):
             prev_day_sig = sig_day - timedelta(days=1)
             spx_prev = fetch_intraday("^GSPC", prev_day_sig, prev_day_sig)
             if spx_prev.empty and sig_symbol in ["^GSPC", "SPY"]:
                 spx_prev = fetch_intraday("SPY", prev_day_sig, prev_day_sig)
 
             if spx_prev.empty:
-                st.markdown(
-                    '<div class="error-card">❌ <strong>Fan Generation Error:</strong> Could not build fan lines due to missing previous day data. Try a different date.</div>',
-                    unsafe_allow_html=True
-                )
+                st.error("Could not build fan (prev day data missing).")
                 st.stop()
 
             prev_3pm_close = get_prev_day_3pm_close(spx_prev, prev_day_sig)
             if prev_3pm_close is None:
-                st.markdown(
-                    '<div class="error-card">❌ <strong>Anchor Error:</strong> Previous day 3:00 PM CT close not found. Fan lines cannot be generated.</div>',
-                    unsafe_allow_html=True
-                )
+                st.error("Prev day 3:00 PM close not found.")
                 st.stop()
 
             anchor_close = float(prev_3pm_close)
             anchor_time  = fmt_ct(datetime.combine(prev_day_sig, time(15, 0)))
             fan_df = project_fan_from_close(anchor_close, anchor_time, sig_day)
 
-            # Display fan anchor info
-            st.markdown(
-                f'<div class="success-card">🎯 <strong>Fan Anchor:</strong> {prev_3pm_close:.2f} from {prev_day_sig.strftime("%Y-%m-%d")} 3:00 PM CT</div>',
-                unsafe_allow_html=True
-            )
-
-            # Intraday data for signals: try requested interval, fallback gracefully
             intraday = fetch_intraday_interval(sig_symbol, sig_day, sig_day, interval_pref)
-            fallback_interval = interval_pref
-            
             if intraday.empty and interval_pref != "5m":
                 intraday = fetch_intraday_interval(sig_symbol, sig_day, sig_day, "5m")
-                fallback_interval = "5m"
             if intraday.empty and interval_pref != "30m":
                 intraday = fetch_intraday_interval(sig_symbol, sig_day, sig_day, "30m")
-                fallback_interval = "30m"
 
             if intraday.empty:
-                st.markdown(
-                    '<div class="error-card">❌ <strong>Data Error:</strong> No intraday data available for the analysis day. Try a different date or symbol.</div>',
-                    unsafe_allow_html=True
-                )
+                st.error("No intraday data available for the analysis day.")
                 st.stop()
 
-            if fallback_interval != interval_pref:
-                st.markdown(
-                    f'<div class="info-card">ℹ️ <strong>Interval Fallback:</strong> Requested {interval_pref} not available, using {fallback_interval} interval instead.</div>',
-                    unsafe_allow_html=True
-                )
-
-            # Map fan prices to nearest matching times by "HH:MM"
             fan_lu_top = {r['Time']: r['Top'] for _, r in fan_df.iterrows()}
             fan_lu_bot = {r['Time']: r['Bottom'] for _, r in fan_df.iterrows()}
 
-            # Prepare EMA cross dataframe on same intraday interval
             ema_df = compute_ema_cross_df(intraday)
 
             signals = []
@@ -1746,7 +1111,6 @@ with tab3:
 
                 touched_bottom = (not pd.isna(low) and not pd.isna(high) and (low <= bot <= high))
                 touched_top    = (not pd.isna(low) and not pd.isna(high) and (low <= top <= high))
-
                 confirmation = bar['Crossover']  # 'Bullish' / 'Bearish' / 'None'
                 action = ""
                 rationale = ""
@@ -1777,296 +1141,81 @@ with tab3:
                         "Note": rationale if rationale else "Confirmation not aligned"
                     })
 
-            st.markdown('<h3 class="tab-subsection-header">📡 Fan Touch + EMA Confirmation Analysis</h3>', unsafe_allow_html=True)
-            
+            st.markdown("### 📡 Fan Touch + EMA Confirmation")
             if signals:
-                st.markdown(
-                    f'<div class="success-card">✅ <strong>Found {len(signals)} touch event(s)</strong> on {sig_day.strftime("%Y-%m-%d")} using {fallback_interval} interval</div>',
-                    unsafe_allow_html=True
-                )
-                st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
-                signals_df = pd.DataFrame(signals)
-                st.dataframe(signals_df, use_container_width=True, hide_index=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.dataframe(pd.DataFrame(signals), use_container_width=True, hide_index=True)
             else:
-                st.markdown(
-                    f'<div class="info-card">📊 <strong>No signals detected</strong> on {sig_day.strftime("%Y-%m-%d")} using {fallback_interval} interval. This could indicate a trending day with no fan touches or insufficient EMA confirmation moments.</div>',
-                    unsafe_allow_html=True
-                )
+                st.info("No touch+confirmation signals found for that day/interval.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 4: ENHANCED CONTRACT TOOL                                               ║
+# ║ TAB 4: CONTRACT TOOL (standalone)                                           ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tab4:
-    st.markdown('<h2 class="tab-section-header">🧮 Contract Tool (Overnight → RTH Projection)</h2>', unsafe_allow_html=True)
-    
-    st.markdown(
-        '''
-<div class="info-card">
-    <strong>📈 Contract Projection Method:</strong><br>
-    Define two price points in time to establish a trend slope, then project that slope across Regular Trading Hours (RTH). Perfect for analyzing overnight contract movements and projecting into the trading session.
-</div>
-        ''',
-        unsafe_allow_html=True
-    )
+    st.subheader("Contract Tool (Point-to-Point or Δ+Θ)")
 
-    # Enhanced Two-Point Input Section
-    st.markdown('<h3 class="tab-subsection-header">📍 Define Two Reference Points</h3>', unsafe_allow_html=True)
-    
-    st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
-    point_col1, point_col2 = st.columns(2, gap="large")
-    
+    point_col1, point_col2 = st.columns(2)
     with point_col1:
-        st.markdown('<div style="background: var(--primary-light); border: 1px solid var(--primary); border-radius: 12px; padding: 1.5rem;">', unsafe_allow_html=True)
-        st.markdown('<h4 style="color: var(--primary); margin: 0 0 1rem 0;">📍 Point 1 (Start)</h4>', unsafe_allow_html=True)
-        
-        p1_date = st.date_input("Date", value=today_ct - timedelta(days=1), key="p1_date", help="Starting reference date")
-        p1_time = st.time_input("Time (CT)", value=time(20, 0), key="p1_time", help="Starting reference time in CT")
-        p1_price = st.number_input(
-            "Contract Price", 
-            value=10.00, 
-            min_value=0.01, 
-            step=0.01, 
-            format="%.2f", 
-            key="p1_price",
-            help="Contract price at this point"
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        p1_date = st.date_input("Point 1 Date", value=today_ct - timedelta(days=1))
+        p1_time = st.time_input("Point 1 Time (CT)", value=time(20, 0))
+        p1_price = st.number_input("Point 1 Contract Price", value=10.00, min_value=0.01, step=0.01, format="%.2f")
     with point_col2:
-        st.markdown('<div style="background: var(--secondary-light); border: 1px solid var(--secondary); border-radius: 12px; padding: 1.5rem;">', unsafe_allow_html=True)
-        st.markdown('<h4 style="color: var(--secondary); margin: 0 0 1rem 0;">📍 Point 2 (End)</h4>', unsafe_allow_html=True)
-        
-        p2_date = st.date_input("Date", value=today_ct, key="p2_date", help="Ending reference date")
-        p2_time = st.time_input("Time (CT)", value=time(8, 0), key="p2_time", help="Ending reference time in CT")
-        p2_price = st.number_input(
-            "Contract Price", 
-            value=12.00, 
-            min_value=0.01, 
-            step=0.01, 
-            format="%.2f", 
-            key="p2_price",
-            help="Contract price at this point"
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        p2_date = st.date_input("Point 2 Date", value=today_ct)
+        p2_time = st.time_input("Point 2 Time (CT)", value=time(8, 0))
+        p2_price = st.number_input("Point 2 Contract Price", value=12.00, min_value=0.01, step=0.01, format="%.2f")
 
-    # Projection Day Selection
-    st.markdown('<div class="control-group" style="margin: 1.5rem 0;">', unsafe_allow_html=True)
-    proj_day_ct = st.date_input(
-        "🎯 RTH Projection Day", 
-        value=p2_date,
-        help="Day for which to generate RTH projections"
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Enhanced Action Button
-    run_ct = st.button("🧮 Generate Contract Projections", type="primary", use_container_width=True)
+    proj_day_ct = st.date_input("RTH Projection Day", value=p2_date)
+    mode_ct = st.selectbox("Mode", ["Two-Point Slope","Δ + Θ (model-aware)"], index=0)
+    run_ct = st.button("🧮 Analyze Contract Projections", type="primary")
 
     if run_ct:
-        with st.spinner("🔄 Computing contract slope and RTH projections..."):
-            p1_dt = fmt_ct(datetime.combine(p1_date, p1_time))
-            p2_dt = fmt_ct(datetime.combine(p2_date, p2_time))
-            
-            if p2_dt <= p1_dt:
-                st.markdown(
-                    '<div class="error-card">❌ <strong>Time Error:</strong> Point 2 must be chronologically after Point 1. Please adjust your dates and times.</div>',
-                    unsafe_allow_html=True
-                )
-                st.stop()
+        p1_dt = fmt_ct(datetime.combine(p1_date, p1_time))
+        p2_dt = fmt_ct(datetime.combine(p2_date, p2_time))
+        if p2_dt <= p1_dt and mode_ct == "Two-Point Slope":
+            st.error("Point 2 must be after Point 1 for Two-Point mode.")
+            st.stop()
 
-            # slope per 30m blocks (skip maintenance & weekend)
-            blocks = count_effective_blocks(p1_dt, p2_dt)
-            slope_ct = (p2_price - p1_price) / blocks if blocks > 0 else 0.0
-
-            # project across RTH
-            rows = []
-            for slot in rth_slots_ct(proj_day_ct):
-                b = count_effective_blocks(p1_dt, slot)
-                price = p1_price + slope_ct * b
-                rows.append({
-                    "Time": slot.strftime("%H:%M"),
-                    "Contract_Price": round(price, 2),
-                    "Blocks": round(b, 1)
-                })
-            proj_df = pd.DataFrame(rows)
-
-            # Enhanced Analysis Summary
-            st.markdown('<h3 class="tab-subsection-header">📊 Contract Analysis Summary</h3>', unsafe_allow_html=True)
-            
-            mc1, mc2, mc3, mc4 = st.columns(4, gap="medium")
-            
-            with mc1:
-                st.markdown(
-                    f'''
-<div class="metric-card-enhanced">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">⏱️</span>
-        Time Span
-    </div>
-    <div class="metric-value-enhanced">
-        {(p2_dt-p1_dt).total_seconds()/3600:.1f}h
-    </div>
-    <div class="metric-subtitle">
-        Total Duration
-    </div>
-</div>
-                    ''',
-                    unsafe_allow_html=True
-                )
-            
-            with mc2:
-                price_change = p2_price - p1_price
-                change_color = "var(--secondary)" if price_change >= 0 else "var(--error)"
-                change_icon = "📈" if price_change >= 0 else "📉"
-                st.markdown(
-                    f'''
-<div class="metric-card-enhanced">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">{change_icon}</span>
-        Price Change
-    </div>
-    <div class="metric-value-enhanced" style="color: {change_color};">
-        {price_change:+.2f}
-    </div>
-    <div class="metric-subtitle">
-        Point 1 → Point 2
-    </div>
-</div>
-                    ''',
-                    unsafe_allow_html=True
-                )
-            
-            with mc3:
-                st.markdown(
-                    f'''
-<div class="metric-card-enhanced">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">🧩</span>
-        Effective Blocks
-    </div>
-    <div class="metric-value-enhanced">
-        {blocks:.1f}
-    </div>
-    <div class="metric-subtitle">
-        30-min periods
-    </div>
-</div>
-                    ''',
-                    unsafe_allow_html=True
-                )
-            
-            with mc4:
-                slope_color = "var(--secondary)" if slope_ct >= 0 else "var(--error)"
-                slope_icon = "📐"
-                st.markdown(
-                    f'''
-<div class="metric-card-enhanced">
-    <div class="metric-title-enhanced">
-        <span class="metric-icon">{slope_icon}</span>
-        Slope / 30min
-    </div>
-    <div class="metric-value-enhanced" style="color: {slope_color};">
-        {slope_ct:+.3f}
-    </div>
-    <div class="metric-subtitle">
-        Rate of change
-    </div>
-</div>
-                    ''',
-                    unsafe_allow_html=True
-                )
-
-            # Enhanced RTH Projection Table
-            st.markdown('<h3 class="tab-subsection-header">📊 RTH Contract Projections</h3>', unsafe_allow_html=True)
-            
-            st.markdown(
-                f'''
-<div class="success-card">
-    📈 <strong>Projection Based On:</strong> {p1_dt.strftime("%Y-%m-%d %H:%M CT")} @ {p1_price:.2f} → {p2_dt.strftime("%Y-%m-%d %H:%M CT")} @ {p2_price:.2f}
-</div>
-                ''',
-                unsafe_allow_html=True
-            )
-            
-            st.markdown('<div class="tab-controls">', unsafe_allow_html=True)
+        if mode_ct == "Two-Point Slope":
+            proj_df, slope_ct, blocks = project_contract_two_point(p1_dt, float(p1_price), p2_dt, float(p2_price), proj_day_ct)
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Time Span</p><div class='metric-value'>⏱ {(p2_dt-p1_dt).total_seconds()/3600:.1f}h</div></div>", unsafe_allow_html=True)
+            with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Δ Price</p><div class='metric-value'>↕ {p2_price - p1_price:+.2f}</div></div>", unsafe_allow_html=True)
+            with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks Counted</p><div class='metric-value'>🧩 {blocks:.1f}</div></div>", unsafe_allow_html=True)
+            with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_ct:+.3f}</div></div>", unsafe_allow_html=True)
+            proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+            st.markdown("### 📊 RTH Projection")
             st.dataframe(proj_df, use_container_width=True, hide_index=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+
+        else:
+            colg1, colg2, colg3 = st.columns(3)
+            with colg1:
+                underlying_slope = st.number_input("Underlying slope / 30m (±)", value=0.10, step=0.01, format="%.2f",
+                                                   help="Approx expected SPX move per 30m (+ for up, − for down).")
+            with colg2:
+                delta = st.number_input("Δ (Delta)", value=0.35, step=0.01, format="%.2f")
+            with colg3:
+                theta_day = st.number_input("Θ per day (negative)", value=-20.00, step=0.5, format="%.2f")
+            proj_df, c_slope = project_contract_delta_theta(p1_dt, float(p1_price), float(underlying_slope), float(delta), float(theta_day), proj_day_ct)
+            mc1, mc2, mc3 = st.columns(3)
+            with mc1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Seed Time</p><div class='metric-value'>⏱ {p1_dt.strftime('%Y-%m-%d %H:%M')}</div></div>", unsafe_allow_html=True)
+            with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contract Slope / 30m</p><div class='metric-value'>📐 {c_slope:+.3f}</div></div>", unsafe_allow_html=True)
+            with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Θ / 30m</p><div class='metric-value'>θ {theta_day/48.0:+.3f}</div></div>", unsafe_allow_html=True)
+            proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+            st.markdown("### 📊 RTH Projection")
+            st.dataframe(proj_df, use_container_width=True, hide_index=True)
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ENHANCED FOOTER UTILITIES
+# FOOTER UTILITIES
 # ───────────────────────────────────────────────────────────────────────────────
-
-# Enhanced Footer Section
-st.markdown("""
-<div style="margin: 4rem 0 2rem 0;">
-    <hr style="border: none; height: 2px; background: linear-gradient(90deg, transparent, var(--primary) 20%, var(--secondary) 50%, var(--accent) 80%, transparent); opacity: 0.4;">
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="header-section" style="margin: 2rem 0;">', unsafe_allow_html=True)
-
-st.markdown(
-    '''
-<div style="text-align: center; margin-bottom: 2rem; position: relative; z-index: 1;">
-    <h3 style="color: var(--text-primary); margin: 0; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.75rem;">
-        🔧 System Utilities
-    </h3>
-    <p style="color: var(--text-secondary); margin: 0.5rem 0 0 0; font-size: 1rem;">
-        Test connections and verify system status
-    </p>
-</div>
-    ''',
-    unsafe_allow_html=True
-)
-
-colA, colB = st.columns([1, 2], gap="large")
-
+st.markdown("---")
+colA, colB = st.columns([1, 2])
 with colA:
-    st.markdown('<div class="tab-controls" style="text-align: center;">', unsafe_allow_html=True)
-    if st.button("🔌 Test Data Connection", type="secondary", use_container_width=True):
-        with st.spinner("🔄 Testing market data connection..."):
-            td = fetch_intraday("^GSPC", today_ct - timedelta(days=3), today_ct)
-            if td.empty:
-                td = fetch_intraday("SPY", today_ct - timedelta(days=3), today_ct)
-            if not td.empty:
-                st.markdown(
-                    f'<div class="success-card">✅ <strong>Connection Successful!</strong><br>Received {len(td)} data bars from the last 3 days.</div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    '<div class="error-card">❌ <strong>Connection Failed</strong><br>Unable to fetch market data. Please try different dates or check your internet connection.</div>',
-                    unsafe_allow_html=True
-                )
-    st.markdown('</div>', unsafe_allow_html=True)
-
+    if st.button("🔌 Test Data Connection"):
+        td = fetch_intraday("^GSPC", today_ct - timedelta(days=3), today_ct)
+        if td.empty:
+            td = fetch_intraday("SPY", today_ct - timedelta(days=3), today_ct)
+        if not td.empty:
+            st.success(f"OK — received {len(td)} bars.")
+        else:
+            st.error("Data fetch failed — try different dates later.")
 with colB:
-    st.markdown(
-        '''
-<div class="info-card" style="margin: 0;">
-    <strong>📋 System Information:</strong><br>
-    <ul style="margin: 0.75rem 0 0 1.5rem; color: var(--text-secondary); line-height: 1.6;">
-        <li><strong>Timezone:</strong> All times normalized to Central Time (CT)</li>
-        <li><strong>SPX Anchor:</strong> Uses exact 3:00 PM CT close from previous day</li>
-        <li><strong>Slope Application:</strong> Consistent slope methodology across all projections</li>
-        <li><strong>Manual Override:</strong> Available for SPX close via sidebar controls</li>
-        <li><strong>Data Source:</strong> Yahoo Finance via yfinance library</li>
-    </ul>
-</div>
-        ''',
-        unsafe_allow_html=True
-    )
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Final Enhanced Footer
-st.markdown("""
-<div style="text-align: center; margin: 3rem 0 2rem 0; padding: 2rem; background: var(--surface); border: 1px solid var(--border-light); border-radius: 20px; box-shadow: var(--shadow-sm);">
-    <p style="color: var(--text-tertiary); font-size: 0.9rem; margin: 0; font-weight: 500;">
-        🔮 <strong>SPX Prophet Analytics</strong> — Professional Market Analysis Platform<br>
-        <span style="color: var(--text-muted); font-size: 0.8rem;">Built with precision • Designed for traders • Powered by advanced algorithms</span>
-    </p>
-</div>
-""", unsafe_allow_html=True)
+    st.caption("Times normalized to **CT**. Fan anchor uses **Prev Day 3:00 PM CT SPX close**. Overnight analysis is internally aligned to the SPX frame. 8:30 AM is highlighted in all tables.")
