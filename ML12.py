@@ -3,7 +3,7 @@
 # 🔮 SPX PROPHET — Enterprise App
 # (SPX Fan Anchors • Probability Dashboard • Stock Anchors • Signals • Contract Tool)
 # - Anchor: exact 3:00 PM CT previous-day SPX close (manual override supported)
-# - SPX fan uses ASYMMETRIC slopes per 30m: Top +0.31, Bottom −0.25 (overrideable)
+# - SPX fan uses ASYMMETRIC slopes per 30m: Top +0.312, Bottom −0.25 (overrideable)
 # - Block counter skips 4–5 PM CT maintenance & Fri 5 PM → Sun 5 PM weekend gap
 # - Probability Dashboard uses overnight data (offset-aligned) to score edge tests
 # - Bias logic uses descending anchor (Bottom line) + within-fan proximity tolerance
@@ -26,7 +26,7 @@ RTH_START = "08:30"
 RTH_END   = "14:30"
 
 # Default per-30m slopes (SPX fan)
-TOP_SLOPE_DEFAULT    = 0.31   # Top line +0.31 per 30m
+TOP_SLOPE_DEFAULT    = 0.312  # Top line +0.312 per 30m
 BOTTOM_SLOPE_DEFAULT = 0.25   # Bottom line −0.25 per 30m
 
 # Per-ticker slope magnitudes (for Stock Anchors tab)
@@ -327,7 +327,7 @@ def compute_bias(price: float, top: float, bottom: float, tol_frac: float) -> st
         width = top - bottom
         center = (top + bottom) / 2.0
         band = tol_frac * width
-        if price >= center - band and price <= center + band:
+        if center - band <= price <= center + band:
             return "NO BIAS"
         dist_top = abs(top - price)
         dist_bottom = abs(price - bottom)
@@ -452,7 +452,6 @@ def compute_boosters_score(df_1m: pd.DataFrame,
             if pct <= ATR_LOW_PCTL:
                 comps["atr"] = weights.get("atr",0)
         elif expected_hint in ("SellFurtherDown","DownToBottomThenBuy"):
-            # If near-term is down or break lower, high ATR helps continuation
             if pct >= ATR_HIGH_PCTL:
                 comps["atr"] = weights.get("atr",0)
 
@@ -465,18 +464,15 @@ def compute_boosters_score(df_1m: pd.DataFrame,
     if weights.get("div",0) > 0:
         r = rsi(upto["Close"], RSI_LEN)
         if r.notna().sum() >= RSI_LEN + 2:
-            # compare to approx prior swing in last RSI_WINDOW_MIN
             window_bars = max(5, RSI_WINDOW_MIN)  # on 1m
             prior = upto.iloc[-window_bars:-1] if upto.shape[0] > window_bars else upto.iloc[:-1]
             if prior.shape[0] > 5:
                 prior_low = prior["Close"].idxmin()
                 prior_high = prior["Close"].idxmax()
                 if expected_near_term == "Up":
-                    # bullish divergence: price <= prior low but RSI higher
                     if upto["Close"].iloc[-1] <= prior["Close"].min() and r.iloc[-1] > r.loc[prior_low]:
                         comps["div"] = weights.get("div",0)
                 else:
-                    # bearish divergence: price >= prior high but RSI lower
                     if upto["Close"].iloc[-1] >= prior["Close"].max() and r.iloc[-1] < r.loc[prior_high]:
                         comps["div"] = weights.get("div",0)
 
@@ -504,27 +500,20 @@ def es_spx_offset_at_3pm(prev_day: date, spx_30m: pd.DataFrame) -> Optional[floa
     if t3 in es_1m.index:
         es_close = float(es_1m.loc[t3, "Close"])
     else:
-        # nearest <= 3:00
         es_close = float(es_1m.loc[:t3]["Close"].iloc[-1])
     return float(es_close - spx_close)
 
 def fetch_overnight_1m(prev_day: date, proj_day: date) -> pd.DataFrame:
-    """
-    1-minute data covering the overnight window (roughly 17:00 prev → 08:30 proj).
-    """
+    """1-minute data covering the overnight window (roughly 17:00 prev → 08:30 proj)."""
     es_1m = fetch_intraday_interval("ES=F", prev_day, proj_day, "1m")
     if es_1m.empty:
         return pd.DataFrame()
-    # Overnight window (skip weekend/maintenance implicitly by yfinance trading hours)
     start = fmt_ct(datetime.combine(prev_day, time(17, 0)))
     end   = fmt_ct(datetime.combine(proj_day, time(8, 30)))
     return es_1m.loc[start:end].copy()
 
 def adjust_to_spx_frame(es_df: pd.DataFrame, offset: float) -> pd.DataFrame:
-    """
-    Adjust ES prices by subtracting the 3 PM offset so they can be compared to SPX fan.
-    We keep the label generic (no UI mention), just using adjusted prices internally.
-    """
+    """Adjust ES prices by subtracting the 3 PM offset so they can be compared to SPX fan."""
     df = es_df.copy()
     for col in ["Open","High","Low","Close"]:
         if col in df:
@@ -561,10 +550,8 @@ def build_probability_dashboard(prev_day: date,
     on_adj = adjust_to_spx_frame(on_1m, off)
 
     # For each 1m bar, compute matching fan lines based on blocks since anchor
-    # Note: anchor_time is prev_day 15:00 CT exact
     top_slope, bottom_slope = current_spx_slopes()
     rows = []
-    # Precompute rolling for boosters
     on_adj_booster = on_adj.copy()
 
     for ts, bar in on_adj.iterrows():
@@ -572,15 +559,12 @@ def build_probability_dashboard(prev_day: date,
         top = anchor_close + top_slope * blocks
         bottom = anchor_close - bottom_slope * blocks
 
-        # Edge touch classification per our tree
         touch = classify_edge_touch(bar, top, bottom)
         if touch is None:
             continue
 
-        # Probability boosters & score
         score, comps = compute_boosters_score(on_adj_booster, ts, touch["direction_hint"], weights)
 
-        # Bias at that minute (within-fan rule using tolerance)
         price = float(bar["Close"])
         bias = compute_bias(price, top, bottom, tol_frac)
 
@@ -655,7 +639,7 @@ def project_contract_delta_theta(p1_dt: datetime, p1_price: float,
     """
     Δ+Θ model:
     Contract slope per 30m ≈ Δ * underlying_slope_per_30m + Θ_per_30m
-    Θ_per_30m ≈ theta_per_day / ( (6 hours RTH = 12 blocks) or 48 blocks/day ) → we’ll use 48 blocks/day for simplicity.
+    Θ_per_30m ≈ theta_per_day / 48 blocks/day (rough split of 30m intervals per 24h).
     """
     theta_per_30m = theta_per_day / 48.0
     contract_slope = delta * underlying_slope_per_30m + theta_per_30m
@@ -846,7 +830,7 @@ with tab1:
                     strat_df = pd.DataFrame(rows)
 
                     st.markdown("### 🎯 Fan Lines (Top / Bottom @ 30-min)")
-                    st.dataframe(fan_df[["Time","Top","Bottom","Fan_Width"]], use_container_width=True, hide_index=True)
+                    st.dataframe(fan_df[{"Time","Top","Bottom","Fan_Width"}], use_container_width=True, hide_index=True)
 
                     st.markdown("### 📋 Strategy Table (Corrected Bias)")
                     st.caption("Bias uses **descending anchor line** & within-fan proximity tolerance. 8:30 AM row is marked with ⭐.")
@@ -921,14 +905,12 @@ with tabProb:
                 # ── Contract projection launcher
                 st.markdown("### 🧮 Contract Projection from a Selected Touch")
                 if not touches_df.empty:
-                    # select a touch time
                     all_times = [f"{i} — {row['Time']} • {row['Edge']} • Score {row['Score']}" for i,row in touches_df.iterrows()]
                     sel = st.selectbox("Pick an overnight touch to seed the contract projection:", options=all_times, index=len(all_times)-1)
                     idx = int(sel.split(" — ")[0])
                     touch_row = touches_df.iloc[idx]
                     touch_dt = touch_row["TimeDT"]
 
-                    # Enter contract inputs
                     st.caption("Enter contract price at the selected touch time. Optionally provide a second pre-open quote for a two-point slope.")
                     colc1, colc2, colc3 = st.columns([1,1,1])
                     with colc1:
@@ -944,7 +926,6 @@ with tabProb:
                         mode = st.selectbox("Projection Mode", ["Two-Point Slope","Δ + Θ (model-aware)"], index=0)
 
                     # Underlying slope estimate for Δ+Θ
-                    # Use sign based on expected near-term direction:
                     top_slope, bottom_slope = current_spx_slopes()
                     expected_hint = touch_row["DirectionHint"]
                     near_term_up = expected_hint in ("BuyHigherFromTop","UpToTopThenSell")
@@ -963,12 +944,10 @@ with tabProb:
                                 with mc2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Blocks to 8:30</p><div class='metric-value'>🧩 {blocks_to_open:.1f}</div></div>", unsafe_allow_html=True)
                                 with mc3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Slope / 30m</p><div class='metric-value'>📐 {slope_used:+.3f}</div></div>", unsafe_allow_html=True)
                                 with mc4: st.markdown(f"<div class='metric-card'><p class='metric-title'>Touch Score</p><div class='metric-value'>⭐ {int(touch_row['Score'])}</div></div>", unsafe_allow_html=True)
-                                # Mark 8:30 row
                                 proj_df.insert(0, "Slot", proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
                                 st.dataframe(proj_df, use_container_width=True, hide_index=True)
 
                             else:
-                                # Δ + Θ path
                                 colg1, colg2 = st.columns(2)
                                 with colg1:
                                     delta = st.number_input("Δ (Delta, e.g., 0.35)", value=0.35, step=0.01, format="%.2f")
@@ -991,7 +970,6 @@ with tab2:
     st.subheader("Stock Anchor Lines (Mon/Tue swings → two lines)")
     st.caption("Projects an ascending line from the highest swing high and a descending line from the lowest swing low (Mon+Tue combined), using your per-ticker slope.")
 
-    # Controls
     core = list(STOCK_SLOPES.keys())
     cc1, cc2, cc3 = st.columns([1.4,1,1])
     with cc1:
@@ -1000,13 +978,11 @@ with tab2:
         if ticker == "Custom…":
             custom_ticker = st.text_input("Custom Symbol", value="", placeholder="e.g., AMD")
     with cc2:
-        # Monday default: "most recent Monday"
         monday_default = today_ct - timedelta(days=((today_ct.weekday() - 0) % 7 or 7))
         monday_date = st.date_input("Monday Date", value=monday_default)
     with cc3:
         tuesday_date = st.date_input("Tuesday Date", value=monday_date + timedelta(days=1))
 
-    # Slope picker
     slope_mag_default = STOCK_SLOPES.get(ticker, 0.0150) if ticker != "Custom…" else 0.0150
     slope_mag = st.number_input("Slope Magnitude (per 30m)", value=float(slope_mag_default), step=0.0001, format="%.4f")
 
