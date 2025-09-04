@@ -129,9 +129,10 @@ def ensure_ohlc_cols(df: pd.DataFrame) -> pd.DataFrame:
         return df
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[0] if isinstance(c, tuple) else str(c) for c in df.columns]
-    req = ["Open","High","Low","Close","Volume"]
-    if any(c not in df.columns for c in req):
-        return pd.DataFrame()
+    req = ["Open","High","Low","Close"]
+    for c in req:
+        if c not in df.columns:
+            return pd.DataFrame()
     return df
 
 def normalize_to_ct(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
@@ -176,14 +177,17 @@ def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str) -> pd
         return pd.DataFrame()
 
 def resample_to_30m_ct(min_df: pd.DataFrame) -> pd.DataFrame:
-    """Resample minute-level (or 5m/30m) CT-indexed data to 30m bars with exact :00/:30 ends."""
-    if min_df.empty:
-        return min_df
-    agg = {
-        "Open":"first","High":"max","Low":"min","Close":"last",
-        "Volume":("Volume" if "Volume" in min_df.columns else (lambda s: np.nan))
-    }
-    out = min_df.resample("30T", label="right", closed="right").agg(agg)
+    """
+    Resample minute/5m/30m CT-indexed data to **30m bars** with exact :00/:30 ends.
+    Only aggregate columns that actually exist (avoids pandas agg errors).
+    """
+    if min_df.empty or not isinstance(min_df.index, pd.DatetimeIndex):
+        return pd.DataFrame()
+    df = min_df.sort_index()
+    agg = {"Open":"first","High":"max","Low":"min","Close":"last"}
+    if "Volume" in df.columns:
+        agg["Volume"] = "sum"
+    out = df.resample("30T", label="right", closed="right").agg(agg)
     out = out.dropna(subset=["Open","High","Low","Close"], how="any")
     return out
 
@@ -333,12 +337,11 @@ def compute_boosters_score_30m(df_30m: pd.DataFrame, idx_30m: pd.Timestamp,
     if (expected_near_term == "Up" and ema_state == "Bullish") or (expected_near_term == "Down" and ema_state == "Bearish"):
         comps["ema"] = weights.get("ema",0)
 
-    # Volume >115% of 20-bar average
+    # Volume >115% of 20-bar average (only if Volume exists)
     if "Volume" in upto.columns and upto["Volume"].notna().any():
         vma = upto["Volume"].rolling(20).mean()
-        if vma.notna().any():
-            if upto["Volume"].iloc[-1] > (vma.iloc[-1] or 0) * 1.15:
-                comps["volume"] = weights.get("volume",0)
+        if vma.notna().any() and vma.iloc[-1] and upto["Volume"].iloc[-1] > vma.iloc[-1] * 1.15:
+            comps["volume"] = weights.get("volume",0)
 
     # Wick/Body rejection on last 30m bar
     bar = upto.iloc[-1]
@@ -419,27 +422,23 @@ def es_spx_offset_at_anchor(prev_day: date, spx_30m: pd.DataFrame) -> Optional[f
         if not window.empty:
             es_close = float(window["Close"].iloc[-1])
             return es_close - spx_anchor_close
-        # fallback: nearest ≤ anchor (for misaligned cuts)
         idx = _nearest_le_index(df.index, spx_anchor_time)
         if idx is None:
             return None
         es_close = float(df.loc[idx, "Close"])
         return es_close - spx_anchor_close
 
-    # 1) ES 1m, 2) ES 5m
     for interval in ["1m","5m"]:
         off = try_sym_interval("ES=F", interval)
         if off is not None:
             return float(off)
 
-    # 3) ES 30m bar ≤ anchor
     es_30m = fetch_intraday("ES=F", prev_day, prev_day, "30m")
     if not es_30m.empty and "Close" in es_30m.columns:
         idx30 = _nearest_le_index(es_30m.index, spx_anchor_time)
         if idx30 is not None:
             return float(es_30m.loc[idx30, "Close"] - spx_anchor_close)
 
-    # 4) Median of last 5 sessions (ES 5m around each day's anchor)
     med_vals = []
     for i in range(1, 6):
         d = prev_day - timedelta(days=i)
@@ -473,15 +472,12 @@ def fetch_overnight_minute(prev_day: date, proj_day: date) -> Tuple[pd.DataFrame
     """
     start = fmt_ct(datetime.combine(prev_day, time(17,0)))
     end   = fmt_ct(datetime.combine(proj_day, time(8,30)))
-    # 1m
     es_1m = fetch_intraday("ES=F", prev_day, proj_day, "1m")
     if not es_1m.empty:
         return es_1m.loc[start:end].copy(), "1m"
-    # 5m
     es_5m = fetch_intraday("ES=F", prev_day, proj_day, "5m")
     if not es_5m.empty:
         return es_5m.loc[start:end].copy(), "5m"
-    # 30m (historical last resort)
     es_30m = fetch_intraday("ES=F", prev_day, proj_day, "30m")
     if not es_30m.empty:
         return es_30m.loc[start:end].copy(), "30m"
@@ -519,28 +515,20 @@ def build_probability_dashboard(prev_day: date, proj_day: date,
 
     off = es_spx_offset_at_anchor(prev_day, spx_prev_30m)
     if off is None:
-        # return empty touches but still allow fan display
         return pd.DataFrame(), fan_df, 0.0, "none"
 
-    # Overnight ES data with fallback
     on_bars, used_interval = fetch_overnight_minute(prev_day, proj_day)
     if on_bars.empty:
         return pd.DataFrame(), fan_df, off, "none"
 
-    # Adjust ES → SPX frame with the offset
     on_adj = adjust_to_spx_frame(on_bars, off)
-
-    # For boosters, always use a **30m resample** of on_adj
     on_adj_30m = resample_to_30m_ct(on_adj)
 
-    # Edge detection:
-    #  - Prefer 1m; else 5m; last-resort 30m (keeps history usable)
     detect_df = on_adj if used_interval in ("1m","5m") else on_adj_30m
 
     top_slope, bottom_slope = current_spx_slopes()
     rows = []
     for ts, bar in detect_df.iterrows():
-        # Fan at this timestamp
         blocks = count_effective_blocks(anchor_time, ts)
         top = anchor_close + top_slope * blocks
         bottom = anchor_close - bottom_slope * blocks
@@ -549,7 +537,6 @@ def build_probability_dashboard(prev_day: date, proj_day: date,
         if touch is None:
             continue
 
-        # Map ts to a 30m end bar for booster scoring
         idx_30m = nearest_30m_index(on_adj_30m.index, ts)
         if idx_30m is None:
             score, comps = 0, {k:0 for k in ["ema","volume","wick","atr","tod","div"]}
