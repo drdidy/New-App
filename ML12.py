@@ -195,12 +195,12 @@ html, body, [class*="css"] {
     background: var(--bg-primary);
     border: 2px solid var(--border-light);
     border-radius: 16px;
-    padding: 24px;
+    padding: 16px;
     box-shadow: var(--shadow-md);
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
-    height: 140px;
+    min-height: 120px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -215,22 +215,23 @@ html, body, [class*="css"] {
 .metric-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
 .metric-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 600;
     background: var(--gradient-primary);
     color: white;
     box-shadow: var(--shadow-md);
+    flex-shrink: 0;
 }
 
 .metric-icon.success {
@@ -250,28 +251,30 @@ html, body, [class*="css"] {
 }
 
 .metric-title {
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.05em;
     margin: 0;
+    line-height: 1.2;
 }
 
 .metric-value {
-    font-size: 2.25rem;
-    font-weight: 800;
+    font-size: 1.5rem;
+    font-weight: 700;
     color: var(--text-primary);
-    margin: 8px 0 4px 0;
-    line-height: 1;
+    margin: 4px 0;
+    line-height: 1.1;
     font-family: 'JetBrains Mono', monospace;
 }
 
 .metric-subtext {
-    font-size: 0.75rem;
+    font-size: 0.65rem;
     color: var(--text-tertiary);
     font-weight: 500;
-    line-height: 1.4;
+    line-height: 1.3;
+    margin-top: auto;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -811,6 +814,11 @@ def create_header_section(title: str, subtitle: str = "") -> str:
         {f'<p class="header-subtitle">{subtitle}</p>' if subtitle else ''}
     </div>
     """
+
+
+
+
+
 
 
 
