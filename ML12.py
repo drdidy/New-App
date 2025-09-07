@@ -1,4 +1,4 @@
-# app.py - Part 1/4 (REDESIGNED)
+# app.py - Part 1/4 (COMPLETE WITH FIX)
 # SPX Prophet - Enterprise Trading Analytics Platform
 # Complete UI overhaul with premium card layout, icons, and light theme
 
@@ -459,7 +459,7 @@ html, body, [class*="css"] {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   TAB SYSTEM
+   TAB SYSTEM (FIXED)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .stTabs [data-baseweb="tab-list"] {
@@ -467,6 +467,7 @@ html, body, [class*="css"] {
     border: 2px solid var(--border-light) !important;
     border-radius: 16px !important;
     padding: 8px !important;
+    margin-top: 40px !important;
     margin-bottom: 32px !important;
     box-shadow: var(--shadow-md) !important;
 }
@@ -810,6 +811,7 @@ def create_header_section(title: str, subtitle: str = "") -> str:
         {f'<p class="header-subtitle">{subtitle}</p>' if subtitle else ''}
     </div>
     """
+
 
 
 # Part 2/4: Trading Logic, Fan Calculations, and New Scoring Features
