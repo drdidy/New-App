@@ -47,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Complete Enterprise UI System
+# Complete Enterprise UI System - Fixed Typography
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -75,6 +75,7 @@ st.markdown("""
     --border-light: #e2e8f0;
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
     --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     --gradient-success: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
     --gradient-danger: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
@@ -89,19 +90,21 @@ html, body, [class*="css"] {
 }
 
 .main .block-container {
-    padding: 2rem 2rem 3rem 2rem !important;
+    padding: 1.5rem 1.5rem 2rem 1.5rem !important;
     max-width: 100% !important;
 }
 
+/* Enterprise Card System - Fixed Heights */
 .enterprise-card {
     background: var(--bg-primary);
     border: 2px solid var(--border-light);
-    border-radius: 20px;
-    padding: 28px;
+    border-radius: 16px;
+    padding: 20px;
     box-shadow: var(--shadow-lg);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    margin-bottom: 1.5rem;
 }
 
 .enterprise-card::before {
@@ -110,33 +113,35 @@ html, body, [class*="css"] {
     top: 0;
     left: 0;
     right: 0;
-    height: 4px;
+    height: 3px;
     background: var(--gradient-primary);
 }
 
 .enterprise-card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-2px);
     box-shadow: var(--shadow-xl);
     border-color: var(--primary-500);
 }
 
+/* Fixed Metric Card Heights and Typography */
 .metric-card {
     background: var(--bg-primary);
     border: 2px solid var(--border-light);
-    border-radius: 16px;
-    padding: 24px;
+    border-radius: 12px;
+    padding: 16px;
     box-shadow: var(--shadow-md);
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
-    height: 140px;
+    height: auto;
+    min-height: 120px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
 }
 
 .metric-card:hover {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     box-shadow: var(--shadow-lg);
     border-color: var(--primary-500);
 }
@@ -144,22 +149,24 @@ html, body, [class*="css"] {
 .metric-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
+/* Fixed Icon Sizing */
 .metric-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 16px;
     font-weight: 600;
     background: var(--gradient-primary);
     color: white;
     box-shadow: var(--shadow-md);
+    flex-shrink: 0;
 }
 
 .metric-icon.success { background: var(--gradient-success); }
@@ -167,42 +174,47 @@ html, body, [class*="css"] {
 .metric-icon.warning { background: var(--gradient-warning); }
 .metric-icon.neutral { background: var(--gradient-neutral); }
 
+/* Fixed Typography Sizes */
 .metric-title {
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.05em;
     margin: 0;
+    line-height: 1.2;
 }
 
 .metric-value {
-    font-size: 2.25rem;
-    font-weight: 800;
+    font-size: 1.5rem;
+    font-weight: 700;
     color: var(--text-primary);
-    margin: 8px 0 4px 0;
-    line-height: 1;
+    margin: 4px 0 2px 0;
+    line-height: 1.1;
     font-family: 'JetBrains Mono', monospace;
+    word-break: break-word;
 }
 
 .metric-subtext {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-tertiary);
     font-weight: 500;
-    line-height: 1.4;
+    line-height: 1.3;
+    margin-top: auto;
 }
 
+/* Status Badge System */
 .status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border-radius: 24px;
-    font-size: 0.875rem;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border: 2px solid;
+    letter-spacing: 0.03em;
+    border: 1px solid;
     transition: all 0.3s ease;
 }
 
@@ -239,12 +251,13 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 
+/* Main Header - Fixed Typography */
 .main-header {
     background: var(--bg-primary);
     border: 2px solid var(--border-light);
-    border-radius: 20px;
-    padding: 24px 32px;
-    margin-bottom: 32px;
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
     box-shadow: var(--shadow-lg);
     position: relative;
     overflow: hidden;
@@ -256,65 +269,69 @@ html, body, [class*="css"] {
     top: 0;
     left: 0;
     right: 0;
-    height: 4px;
+    height: 3px;
     background: var(--gradient-primary);
 }
 
 .header-title {
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: 800;
     color: var(--text-primary);
     margin: 0;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
+    line-height: 1.2;
 }
 
 .header-subtitle {
-    font-size: 1.125rem;
+    font-size: 0.95rem;
     color: var(--text-secondary);
-    margin: 8px 0 0 0;
+    margin: 6px 0 0 0;
     font-weight: 500;
+    line-height: 1.4;
 }
 
+/* Button Styling */
 .stButton > button {
     background: var(--gradient-primary) !important;
     border: none !important;
-    border-radius: 16px !important;
+    border-radius: 12px !important;
     color: white !important;
-    font-weight: 700 !important;
-    font-size: 0.875rem !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    padding: 12px 24px !important;
+    letter-spacing: 0.03em !important;
+    padding: 10px 16px !important;
     transition: all 0.3s ease !important;
     box-shadow: var(--shadow-md) !important;
-    height: 48px !important;
+    height: 40px !important;
 }
 
 .stButton > button:hover {
-    transform: translateY(-2px) !important;
+    transform: translateY(-1px) !important;
     box-shadow: var(--shadow-lg) !important;
 }
 
+/* Tab System */
 .stTabs [data-baseweb="tab-list"] {
     background: var(--gray-100) !important;
     border: 2px solid var(--border-light) !important;
-    border-radius: 16px !important;
-    padding: 8px !important;
-    margin-bottom: 32px !important;
+    border-radius: 12px !important;
+    padding: 6px !important;
+    margin-bottom: 24px !important;
     box-shadow: var(--shadow-md) !important;
 }
 
 .stTabs [data-baseweb="tab"] {
     background: transparent !important;
-    border-radius: 12px !important;
+    border-radius: 8px !important;
     color: var(--text-secondary) !important;
     font-weight: 600 !important;
-    font-size: 0.875rem !important;
+    font-size: 0.8rem !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    padding: 12px 24px !important;
+    letter-spacing: 0.03em !important;
+    padding: 8px 16px !important;
     transition: all 0.3s ease !important;
 }
 
@@ -324,15 +341,83 @@ html, body, [class*="css"] {
     box-shadow: var(--shadow-md) !important;
 }
 
-.star-highlight {
-    color: var(--warning-500) !important;
-    font-weight: 800 !important;
+/* Form Controls */
+.stSelectbox > div > div {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: 8px !important;
+    font-size: 0.85rem !important;
 }
 
+.stNumberInput > div > div > input {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: 8px !important;
+    color: var(--text-primary) !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+}
+
+.stTextInput > div > div > input {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: 8px !important;
+    color: var(--text-primary) !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+}
+
+/* Dataframe Styling */
+.stDataFrame {
+    border: 2px solid var(--border-light) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    font-size: 0.8rem !important;
+}
+
+.stDataFrame table {
+    font-size: 0.8rem !important;
+}
+
+.stDataFrame th {
+    background: var(--gray-100) !important;
+    color: var(--text-secondary) !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.03em !important;
+}
+
+/* Sidebar Styling */
+.css-1d391kg {
+    background: var(--gray-50) !important;
+    border-right: 2px solid var(--border-light) !important;
+}
+
+.sidebar-section {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+    margin-bottom: 16px !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+/* Utility Classes */
+.star-highlight {
+    color: var(--warning-500) !important;
+    font-weight: 700 !important;
+}
+
+.text-success { color: var(--success-600) !important; }
+.text-danger { color: var(--danger-500) !important; }
+.text-warning { color: var(--warning-500) !important; }
+
+/* Animations */
 @keyframes slideInUp {
     from {
         opacity: 0;
-        transform: translateY(30px);
+        transform: translateY(20px);
     }
     to {
         opacity: 1;
@@ -341,7 +426,41 @@ html, body, [class*="css"] {
 }
 
 .animate-slide-in {
-    animation: slideInUp 0.6s ease-out;
+    animation: slideInUp 0.4s ease-out;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding: 1rem !important;
+    }
+    
+    .metric-card {
+        min-height: 100px;
+        padding: 12px;
+    }
+    
+    .header-title {
+        font-size: 1.5rem;
+    }
+    
+    .metric-value {
+        font-size: 1.25rem;
+    }
+    
+    .enterprise-card {
+        padding: 16px;
+    }
+}
+
+/* Ensure text doesn't overflow */
+* {
+    box-sizing: border-box;
+}
+
+.metric-card * {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -701,7 +820,7 @@ def render_main_header():
     
     with col1:
         time_str = current_time.strftime("%H:%M:%S")
-        date_str = current_time.strftime("%A, %B %d")
+        date_str = current_time.strftime("%a, %b %d")
         st.markdown(create_metric_card(
             "Current Time (CT)", 
             time_str,
@@ -718,7 +837,7 @@ def render_main_header():
         
         status_text = "OPEN" if is_open else "CLOSED"
         status_type = "success" if is_open else "danger"
-        status_subtext = "RTH: 08:30-14:30 CT" if is_open else "Next: Mon 08:30 CT"
+        status_subtext = "RTH: 08:30-14:30 CT"
         
         st.markdown(create_metric_card(
             "Market Status",
@@ -730,10 +849,10 @@ def render_main_header():
     
     with col3:
         top_slope, bottom_slope = get_current_slopes()
-        slope_text = f"+{top_slope:.3f} / -{bottom_slope:.3f}"
+        slope_text = f"+{top_slope:.3f}"
         override_active = ("top_slope_per_block" in st.session_state or 
                           "bottom_slope_per_block" in st.session_state)
-        slope_subtext = "Custom slopes active" if override_active else "Default asymmetric"
+        slope_subtext = f"Bot: -{bottom_slope:.3f}"
         slope_type = "warning" if override_active else "neutral"
         
         st.markdown(create_metric_card(
@@ -750,7 +869,7 @@ def render_main_header():
                                      current_time.date(), "30m")
             connectivity = "CONNECTED" if not test_data.empty else "LIMITED"
             conn_type = "success" if not test_data.empty else "warning"
-            conn_subtext = f"{len(test_data)} bars available" if not test_data.empty else "Check data source"
+            conn_subtext = f"{len(test_data)} bars" if not test_data.empty else "Check source"
         except:
             connectivity = "ERROR"
             conn_type = "danger"
@@ -872,7 +991,7 @@ def render_spx_anchors_tab(controls: Dict):
             st.markdown(create_metric_card(
                 "Anchor Close",
                 f"{data['anchor_close']:.2f}",
-                f"Previous day ≤ 3:00 PM{data['anchor_label']}",
+                f"Prev day ≤3PM{data['anchor_label']}",
                 "⚓",
                 "warning" if data['estimated'] else "primary"
             ), unsafe_allow_html=True)
@@ -1137,7 +1256,7 @@ def render_bc_forecast_tab(controls: Dict):
             st.markdown(create_metric_card(
                 f"{results['ca_symbol']} Entry",
                 f"{results['ca_entry_slope']:+.3f}",
-                f"Exit: {results['ca_exit_slope']:+.3f} per 30m",
+                f"Exit: {results['ca_exit_slope']:+.3f}",
                 "📊",
                 "success"
             ), unsafe_allow_html=True)
@@ -1204,7 +1323,7 @@ def render_plan_card_tab():
         st.markdown(create_metric_card(
             "Anchor Close",
             f"{anchors['anchor_close']:.2f}",
-            f"Previous day{anchors['anchor_label']}",
+            f"Prev day{anchors['anchor_label']}",
             "⚓",
             "primary"
         ), unsafe_allow_html=True)
@@ -1325,7 +1444,7 @@ def main():
         # Footer
         st.markdown("---")
         st.markdown("""
-        <div style="text-align: center; color: var(--text-tertiary); font-size: 0.875rem; padding: 20px;">
+        <div style="text-align: center; color: var(--text-tertiary); font-size: 0.8rem; padding: 16px;">
             <p><strong>SPX Prophet</strong> - Professional Trading Analytics Platform</p>
             <p>⚠️ <strong>Risk Disclaimer:</strong> This software is for educational purposes only. 
             Trading involves substantial risk of loss. Always consult with qualified financial professionals.</p>
