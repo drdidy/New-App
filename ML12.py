@@ -1629,7 +1629,17 @@ def build_enhanced_probability_board(prev_day: date, proj_day: date,
     if not interactions_df.empty:
         interactions_df = interactions_df.sort_values("TimeDT").reset_index(drop=True)
     
-    return interactions_df, fan_projection, float(es_offset)
+    # Calculate summary statistics (for Part 4 compatibility)
+    summary_stats = {
+        "total_interactions": len(qualified_interactions),
+        "avg_score": interactions_df["Score"].mean() if not interactions_df.empty else 0,
+        "max_score": interactions_df["Score"].max() if not interactions_df.empty else 0,
+        "asia_touches": len(asia_touches),
+        "london_touches": len(london_touches),
+        "volume_quality": 5.0 if not interactions_df.empty else 0.0  # Simple quality metric
+    }
+    
+    return interactions_df, fan_projection, float(es_offset), summary_stats
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # BC FORECAST SYSTEM (unchanged from working code)
@@ -1682,8 +1692,6 @@ def calculate_expected_exit_timing(b1_dt: datetime, h1_dt: datetime,
             return rth_slot.strftime("%H:%M")
     
     return "n/a"
-
-
 
 
 
