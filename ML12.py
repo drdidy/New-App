@@ -1292,413 +1292,288 @@ def analyze_weekend_gap_behavior(prev_day: date, touches_df: pd.DataFrame) -> Di
 
 
 
-# Part 3/4: Dashboard Builders & Probability Board (CORRECTED)
-# Simplified approach following working code pattern with volume & time enhancements
+# Part 3/4: Dashboard Builders & Probability Board (WORKING VERSION)
+# Based on your working code pattern with simple enhancements
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ENHANCED SCORING COMPONENTS (Simplified)
+# ENHANCED SCORING COMPONENTS (Simple additions to your working code)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def in_liquidity_window(ts: datetime, window: List[Tuple[int, int]]) -> bool:
-    """Check if timestamp falls within liquidity window."""
-    minute_of_day = ts.hour * 60 + ts.minute
-    start_minute = window[0][0] * 60 + window[0][1]
-    end_minute = window[1][0] * 60 + window[1][1]
-    return start_minute <= minute_of_day <= end_minute
-
-def calculate_liquidity_bonus(ts: datetime) -> int:
-    """Calculate liquidity bonus based on session overlap."""
-    if in_liquidity_window(ts, SYD_TOK):
-        return W_SYD_TOK
-    if in_liquidity_window(ts, TOK_LON):
-        return W_TOK_LON
-    if in_liquidity_window(ts, PRE_NY):
-        return W_PRE_NY
-    return 0
-
-def calculate_atr_percentile(df_30m: pd.DataFrame, idx: pd.Timestamp) -> float:
-    """Calculate ATR percentile for volatility regime analysis."""
-    subset = df_30m.loc[:idx]
-    tr_series = true_range(subset)
-    atr_series = tr_series.rolling(ATR_LOOKBACK, min_periods=ATR_LOOKBACK//2).mean()
-    
-    if atr_series.notna().sum() < ATR_LOOKBACK//2:
-        return 50.0
-    
-    percentile = (atr_series.rank(pct=True).iloc[-1]) * 100.0
-    return float(percentile)
-
-def detect_range_compression(df_30m: pd.DataFrame, idx: pd.Timestamp) -> bool:
-    """Detect if current range is compressed vs recent average."""
-    subset = df_30m.loc[:idx]
-    if len(subset) < RANGE_WIN:
-        return False
-    
-    current_range = subset["High"].iloc[-1] - subset["Low"].iloc[-1]
-    rolling_avg_range = (subset["High"] - subset["Low"]).rolling(RANGE_WIN).mean().iloc[-1]
-    
-    return current_range <= rolling_avg_range * 0.85
-
-def analyze_gap_context(df_30m: pd.DataFrame, idx: pd.Timestamp, expected_dir: str) -> int:
-    """Analyze gap context relative to expected direction."""
-    if idx not in df_30m.index:
-        return 0
-    
-    idx_pos = df_30m.index.get_loc(idx)
-    if idx_pos == 0:
-        return 0
-    
-    prev_close = float(df_30m["Close"].iloc[idx_pos - 1])
-    current_open = float(df_30m["Open"].iloc[idx_pos])
-    gap_size = current_open - prev_close
-    
-    # Positive gap favors upward moves, negative gap favors downward moves
-    if expected_dir == "Up":
-        return 5 if gap_size >= 0 else 0
-    else:
-        return 5 if gap_size <= 0 else 0
-
-def assess_wick_quality(bar: pd.Series, expected_dir: str) -> bool:
-    """Assess wick rejection quality relative to expected direction."""
-    o, h, l, c = float(bar["Open"]), float(bar["High"]), float(bar["Low"]), float(bar["Close"])
-    
-    body_size = max(1e-9, abs(c - o))
-    upper_wick = max(0.0, h - max(o, c))
-    lower_wick = max(0.0, min(o, c) - l)
-    
-    if expected_dir == "Up":
-        # Lower wick rejection supports upward move
-        return (lower_wick / body_size) >= WICK_MIN_RATIO
-    else:
-        # Upper wick rejection supports downward move
-        return (upper_wick / body_size) >= WICK_MIN_RATIO
-
-def detect_touch_clustering(touch_history: List[pd.Timestamp], current_ts: pd.Timestamp) -> bool:
-    """Detect if similar qualified touches occurred recently."""
-    if not touch_history:
-        return False
-    
-    # Simple approach - check if any touch in last 3 hours
-    cutoff_seconds = TOUCH_CLUSTER_WINDOW * 1800  # 6 * 30min * 60sec
-    recent_touches = []
-    
-    for touch_ts in touch_history:
-        time_diff = (current_ts - touch_ts).total_seconds()
-        if 0 < time_diff <= cutoff_seconds:
-            recent_touches.append(touch_ts)
-    
-    return len(recent_touches) > 0
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# VOLUME CONTEXT ANALYSIS (Simplified)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def analyze_volume_context_simple(df_30m: pd.DataFrame, ts: pd.Timestamp) -> Dict[str, int]:
-    """Simplified volume analysis that won't cause errors."""
-    volume_scores = {"volume_spike": 0, "session_volume": 0}
-    
+def analyze_volume_context_simple(df_30m: pd.DataFrame, ts: pd.Timestamp) -> int:
+    """Simple volume analysis that adds to existing volume scoring."""
     if "Volume" not in df_30m.columns or df_30m["Volume"].notna().sum() < 5:
-        return volume_scores
+        return 0
     
     if ts not in df_30m.index or pd.isna(df_30m.loc[ts, "Volume"]):
-        return volume_scores
+        return 0
     
     current_volume = df_30m.loc[ts, "Volume"]
+    recent_volumes = df_30m["Volume"].loc[:ts].tail(15)
     
-    # Volume spike detection
-    recent_volumes = df_30m["Volume"].loc[:ts].tail(20)
     if len(recent_volumes) >= 10:
         avg_volume = recent_volumes.mean()
         if current_volume > avg_volume * 1.5:
-            volume_scores["volume_spike"] = 8
+            return 5  # Volume spike bonus
         elif current_volume > avg_volume * 1.25:
-            volume_scores["volume_spike"] = 5
+            return 3  # Moderate volume increase
     
-    # Session volume context
-    ts_hour = fmt_ct(ts.to_pydatetime()).hour
-    if ts_hour in [21, 22, 2, 3, 7, 8]:  # Key session transition hours
-        volume_scores["session_volume"] = 3
-    
-    return volume_scores
+    return 0
 
-def calculate_time_significance(ts: pd.Timestamp) -> int:
-    """Calculate time-based significance score."""
+def calculate_time_bonus(ts: pd.Timestamp) -> int:
+    """Simple time-based bonus for key session hours."""
     ts_ct = fmt_ct(ts.to_pydatetime())
     hour = ts_ct.hour
     
-    # Time-of-day significance scores
-    if hour == 8:  # Pre-NY open
-        return 10
+    # Key session transition times get bonuses
+    if hour == 8:  # Pre-NY open (most important)
+        return 8
     elif hour == 21:  # Asia open
-        return 6
+        return 4
     elif hour == 2:  # London open
-        return 7
-    elif hour in [7, 22, 3]:  # Transition hours
         return 5
+    elif hour in [7, 22, 3]:  # Other transition hours
+        return 3
     else:
-        return 2
+        return 0
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SIMPLIFIED SCORING ENGINE
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def compute_enhanced_score_components(df_30m: pd.DataFrame, ts: pd.Timestamp,
-                                     expected_dir: str, touch_history: List[pd.Timestamp],
-                                     asia_hit: bool, london_hit: bool) -> Tuple[int, Dict[str, int], int]:
-    """
-    Enhanced scoring that follows the working pattern but adds volume/time features.
-    """
-    # Base liquidity bonus
-    ts_ct = fmt_ct(ts.to_pydatetime())
-    liquidity_bonus = calculate_liquidity_bonus(ts_ct)
+def enhanced_compute_score_components(df_30m: pd.DataFrame, ts: pd.Timestamp,
+                             expected_dir: str, touches_recent: List[pd.Timestamp],
+                             asia_hit: bool, london_hit: bool) -> Tuple[int, Dict[str,int], int]:
+    """Enhanced version of your working compute_score_components function."""
     
-    # Traditional scoring components (from working code)
-    score_components = {}
+    # Your original liquidity bump logic
+    lb = liquidity_bump(fmt_ct(ts.to_pydatetime()))
     
-    # 1. Confluence (cross-session alignment)
-    if asia_hit and london_hit:
-        score_components["confluence"] = WEIGHTS["confluence"]
-    elif asia_hit or london_hit:
-        score_components["confluence"] = WEIGHTS["confluence"] // 2
-    else:
-        score_components["confluence"] = 0
-    
-    # 2. Structure (edge interaction qualification)
-    score_components["structure"] = WEIGHTS["structure"]
-    
-    # 3. Wick quality
-    score_components["wick"] = WEIGHTS["wick"] if assess_wick_quality(df_30m.loc[ts], expected_dir) else 0
-    
-    # 4. ATR regime analysis
-    atr_percentile = calculate_atr_percentile(df_30m, ts)
+    # Your original scoring logic
+    conf = WEIGHTS["confluence"] if (asia_hit and london_hit) else (WEIGHTS["confluence"]//2 if (asia_hit or london_hit) else 0)
+    struct = WEIGHTS["structure"]
+    wick = WEIGHTS["wick"] if wick_quality(df_30m.loc[ts], expected_dir) else 0
+    atr_pct = atr_percentile(df_30m, ts)
     if expected_dir == "Up":
-        score_components["atr"] = WEIGHTS["atr"] if atr_percentile <= 40 else 0
+        atr = WEIGHTS["atr"] if atr_pct <= 40 else 0
     else:
-        score_components["atr"] = WEIGHTS["atr"] if atr_percentile >= 60 else 0
+        atr = WEIGHTS["atr"] if atr_pct >= 60 else 0
+    comp = WEIGHTS["compression"] if range_compression(df_30m, ts) else 0
+    gap = gap_context(df_30m, ts, expected_dir)
+    cluster = WEIGHTS["cluster"] if touch_clustering(touches_recent, ts) else 0
     
-    # 5. Range compression
-    score_components["compression"] = WEIGHTS["compression"] if detect_range_compression(df_30m, ts) else 0
-    
-    # 6. Gap context
-    score_components["gap"] = analyze_gap_context(df_30m, ts, expected_dir)
-    
-    # 7. Touch clustering
-    score_components["cluster"] = WEIGHTS["cluster"] if detect_touch_clustering(touch_history, ts) else 0
-    
-    # 8. Basic volume
+    # Your original volume logic
+    vol = 0
     if "Volume" in df_30m.columns and df_30m["Volume"].notna().any():
-        if ts in df_30m.index and pd.notna(df_30m.loc[ts, "Volume"]):
-            recent_vol = df_30m["Volume"].loc[:ts].tail(20).mean()
-            if df_30m.loc[ts, "Volume"] > recent_vol * 1.15:
-                score_components["volume"] = WEIGHTS["volume"]
-            else:
-                score_components["volume"] = 0
-        else:
-            score_components["volume"] = 0
-    else:
-        score_components["volume"] = 0
-    
-    # NEW: Enhanced volume context
-    volume_analysis = analyze_volume_context_simple(df_30m, ts)
-    score_components["volume_spike"] = volume_analysis["volume_spike"]
-    score_components["session_volume"] = volume_analysis["session_volume"]
-    
-    # NEW: Time significance
-    score_components["time_significance"] = calculate_time_significance(ts)
-    
-    # Calculate total score
-    base_score = sum(score_components.values())
-    final_score = min(100, max(0, base_score + liquidity_bonus))
-    
-    return final_score, score_components, liquidity_bonus
+        vma = df_30m["Volume"].rolling(20).mean()
+        if vma.notna().any() and pd.notna(vma.loc[ts]) and df_30m["Volume"].loc[ts] > vma.loc[ts]*1.15:
+            vol = WEIGHTS["volume"]
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN PROBABILITY BOARD BUILDER (Following working pattern)
-# ═══════════════════════════════════════════════════════════════════════════════
+    # NEW: Simple enhancements
+    volume_bonus = analyze_volume_context_simple(df_30m, ts)
+    time_bonus = calculate_time_bonus(ts)
 
-def build_enhanced_probability_board(prev_day: date, proj_day: date,
-                                   anchor_close: float, anchor_time: datetime,
-                                   tolerance_fraction: float) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
-    """
-    Enhanced probability board following the working code pattern.
-    """
-    # Generate RTH fan projection
-    fan_projection = project_fan_from_close(anchor_close, anchor_time, proj_day)
-    
-    # Calculate ES→SPX offset
-    es_offset = es_spx_offset_at_anchor(prev_day)
-    if es_offset is None:
-        return pd.DataFrame(), fan_projection, 0.0
-    
-    # Fetch overnight ES data
-    overnight_es = fetch_overnight(prev_day, proj_day)
-    if overnight_es.empty:
-        return pd.DataFrame(), fan_projection, float(es_offset)
-    
-    # Convert to SPX frame
-    overnight_spx = adjust_to_spx_frame(overnight_es, es_offset)
-    
-    # Generate fan levels for each overnight timestamp (following working pattern)
-    fan_timeline = []
-    for ts, bar in overnight_spx.iterrows():
-        blocks_from_anchor = count_effective_blocks(anchor_time, ts)
-        top_slope, bottom_slope = current_spx_slopes()
-        
-        top_level = anchor_close + top_slope * blocks_from_anchor
-        bottom_level = anchor_close - bottom_slope * blocks_from_anchor
-        
-        fan_timeline.append((ts, bar, top_level, bottom_level))
-    
-    # Detect qualified edge interactions (following working pattern)
-    qualified_interactions = []
-    touch_history = []
-    asia_touches = set()
-    london_touches = set()
-    
-    for i in range(1, len(fan_timeline)):
-        prev_ts, prev_bar, prev_top, prev_bottom = fan_timeline[i-1]
-        current_ts, current_bar, current_top, current_bottom = fan_timeline[i]
-        
-        # Check for qualified interaction
-        prev_close = float(prev_bar["Close"])
-        interaction = classify_interaction_30m(prev_close, prev_top, prev_bottom, 
-                                             current_bar, current_top, current_bottom)
-        
-        if interaction is None:
-            continue
-        
-        # Track session hits
-        ts_ct = fmt_ct(current_ts.to_pydatetime())
-        is_asia_overlap = in_liquidity_window(ts_ct, SYD_TOK)
-        is_london_overlap = in_liquidity_window(ts_ct, TOK_LON)
-        
-        if is_asia_overlap:
-            asia_touches.add(current_ts)
-        if is_london_overlap:
-            london_touches.add(current_ts)
-        
-        # Calculate enhanced score
-        expected_direction = interaction["direction"]
-        final_score, score_breakdown, liquidity_bonus = compute_enhanced_score_components(
-            overnight_spx, current_ts, expected_direction, touch_history[-5:],  # Last 5 touches
-            is_asia_overlap, is_london_overlap
-        )
-        
-        # Update touch history
-        touch_history.append(current_ts)
-        
-        # Calculate current bias
-        current_price = float(current_bar["Close"])
-        current_bias = compute_bias(current_price, current_top, current_bottom, tolerance_fraction)
-        
-        # Store interaction record (following working pattern but with enhancements)
-        interaction_record = {
-            "TimeDT": current_ts,
-            "Time": current_ts.strftime("%H:%M"),
-            "Price": round(current_price, 2),
-            "Top": round(current_top, 2),
-            "Bottom": round(current_bottom, 2),
-            "Bias": current_bias,
-            "Edge": interaction["edge"],
-            "Case": interaction["case"],
-            "Expectation": interaction["expected"],
-            "ExpectedDir": expected_direction,
-            "Score": final_score,
-            "LiquidityBonus": liquidity_bonus,
-            
-            # Traditional components (matching working code)
-            "Confluence_w": score_breakdown["confluence"],
-            "Structure_w": score_breakdown["structure"], 
-            "Wick_w": score_breakdown["wick"],
-            "ATR_w": score_breakdown["atr"],
-            "Compression_w": score_breakdown["compression"],
-            "Gap_w": score_breakdown["gap"],
-            "Cluster_w": score_breakdown["cluster"],
-            "Volume_w": score_breakdown["volume"],
-            
-            # NEW: Enhanced components
-            "VolumeSpike_w": score_breakdown.get("volume_spike", 0),
-            "SessionVolume_w": score_breakdown.get("session_volume", 0),
-            "TimeSignificance_w": score_breakdown.get("time_significance", 0)
-        }
-        
-        qualified_interactions.append(interaction_record)
-    
-    # Convert to DataFrame
-    interactions_df = pd.DataFrame(qualified_interactions)
-    if not interactions_df.empty:
-        interactions_df = interactions_df.sort_values("TimeDT").reset_index(drop=True)
-    
-    # Calculate summary statistics (for Part 4 compatibility)
-    summary_stats = {
-        "total_interactions": len(qualified_interactions),
-        "avg_score": interactions_df["Score"].mean() if not interactions_df.empty else 0,
-        "max_score": interactions_df["Score"].max() if not interactions_df.empty else 0,
-        "asia_touches": len(asia_touches),
-        "london_touches": len(london_touches),
-        "volume_quality": 5.0 if not interactions_df.empty else 0.0  # Simple quality metric
+    parts = {
+        "Confluence": conf, "Structure": struct, "Wick": wick, "ATR": atr,
+        "Compression": comp, "Gap": gap, "Cluster": cluster, "Volume": vol,
+        "VolumeBonus": volume_bonus, "TimeBonus": time_bonus
     }
     
-    return interactions_df, fan_projection, float(es_offset), summary_stats
+    score = min(100, max(0, lb + sum(parts.values())))
+    return score, parts, lb
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BC FORECAST SYSTEM (unchanged from working code)
+# MAIN PROBABILITY BOARD (Your working function with enhancements)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def project_contract_line(bounce1_dt: datetime, bounce1_price: float,
-                         bounce2_dt: datetime, bounce2_price: float,
-                         projection_day: date, contract_label: str) -> Tuple[pd.DataFrame, float]:
-    """Project contract price line from two bounce points."""
-    effective_blocks = count_effective_blocks(bounce1_dt, bounce2_dt)
-    slope_per_block = (bounce2_price - bounce1_price) / effective_blocks if effective_blocks > 0 else 0.0
+def build_comprehensive_probability_board(prev_day: date, proj_day: date,
+                            anchor_close: float, anchor_time: datetime,
+                            tol_frac: float) -> Tuple[pd.DataFrame, pd.DataFrame, float, Dict]:
+    """Your working build_probability_board function with simple enhancements and 4 return values."""
     
-    projection_rows = []
-    for time_slot in rth_slots_ct(projection_day):
-        blocks_from_b1 = count_effective_blocks(bounce1_dt, time_slot)
-        projected_price = bounce1_price + slope_per_block * blocks_from_b1
-        
-        projection_rows.append({
-            "Time": time_slot.strftime("%H:%M"),
-            contract_label: round(projected_price, 2)
+    fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
+
+    offset = es_spx_offset_at_anchor(prev_day)
+    if offset is None:
+        return pd.DataFrame(), fan_df, 0.0, {}
+
+    es_on = fetch_overnight(prev_day, proj_day)
+    if es_on.empty:
+        return pd.DataFrame(), fan_df, float(offset), {}
+
+    on_30 = adjust_to_spx_frame(es_on, offset)
+
+    rows = []
+    for ts, bar in on_30.iterrows():
+        blocks = count_effective_blocks(anchor_time, ts)
+        tslope, bslope = current_spx_slopes()
+        top = anchor_close + tslope * blocks
+        bot = anchor_close - bslope * blocks
+        rows.append((ts, bar, top, bot))
+
+    touches_rows = []
+    qualified_timestamps = []
+
+    for i in range(1, len(rows)):
+        prev_ts, prev_bar, prev_top, prev_bot = rows[i-1][0], rows[i-1][1], rows[i-1][2], rows[i-1][3]
+        ts, bar, top, bot = rows[i][0], rows[i][1], rows[i][2], rows[i][3]
+
+        prev_close = float(prev_bar["Close"])
+        interaction = classify_interaction_30m(prev_close, prev_top, prev_bot, bar, top, bot)
+        if interaction is None:
+            continue
+
+        expected_dir = interaction["direction"]
+        touches_recent = qualified_timestamps[-5:]
+        ts_ct = fmt_ct(ts.to_pydatetime())
+        is_asia_overlap = in_window(ts_ct, SYD_TOK)
+        is_toklon_overlap = in_window(ts_ct, TOK_LON)
+
+        # Use enhanced scoring instead of original
+        score, parts, lb = enhanced_compute_score_components(on_30, ts, expected_dir, touches_recent,
+                                                    asia_hit=is_asia_overlap, london_hit=is_toklon_overlap)
+
+        qualified_timestamps.append(ts)
+
+        price = float(bar["Close"])
+        bias = compute_bias(price, top, bot, tol_frac)
+
+        touches_rows.append({
+            "TimeDT": ts, "Time": ts.strftime("%H:%M"),
+            "Price": round(price,2), "Top": round(top,2), "Bottom": round(bot,2),
+            "Bias": bias, "Edge": interaction["edge"], "Case": interaction["case"],
+            "Expectation": interaction["expected"], "ExpectedDir": expected_dir,
+            "Score": score, "LiquidityBonus": lb,
+            "Confluence_w": parts["Confluence"], "Structure_w": parts["Structure"], "Wick_w": parts["Wick"],
+            "ATR_w": parts["ATR"], "Compression_w": parts["Compression"], "Gap_w": parts["Gap"],
+            "Cluster_w": parts["Cluster"], "Volume_w": parts["Volume"],
+            # NEW: Enhanced components
+            "VolumeBonus_w": parts["VolumeBonus"], "TimeBonus_w": parts["TimeBonus"]
         })
-    
-    return pd.DataFrame(projection_rows), slope_per_block
 
-def calculate_expected_exit_timing(b1_dt: datetime, h1_dt: datetime,
-                                 b2_dt: datetime, h2_dt: datetime,
-                                 projection_day: date) -> str:
-    """Calculate expected exit timing based on historical bounce→high durations."""
-    duration1 = count_effective_blocks(b1_dt, h1_dt)
-    duration2 = count_effective_blocks(b2_dt, h2_dt)
+    touches_df = pd.DataFrame(touches_rows).sort_values("TimeDT").reset_index(drop=True)
     
-    durations = [d for d in [duration1, duration2] if d > 0]
+    # Summary stats for Part 4 compatibility
+    asia_count = len([ts for ts in qualified_timestamps if in_window(fmt_ct(ts.to_pydatetime()), SYD_TOK)])
+    london_count = len([ts for ts in qualified_timestamps if in_window(fmt_ct(ts.to_pydatetime()), TOK_LON)])
+    
+    summary_stats = {
+        "total_interactions": len(touches_rows),
+        "avg_score": touches_df["Score"].mean() if not touches_df.empty else 0,
+        "max_score": touches_df["Score"].max() if not touches_df.empty else 0,
+        "asia_touches": asia_count,
+        "london_touches": london_count,
+        "volume_quality": 4.0 if not touches_df.empty else 0.0
+    }
+    
+    return touches_df, fan_df, float(offset), summary_stats
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BC FORECAST FUNCTIONS (Unchanged from your working code)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def project_line(p1_dt, p1_price, p2_dt, p2_price, proj_day, label_proj: str):
+    blocks = count_effective_blocks(p1_dt, p2_dt)
+    slope = (p2_price - p1_price) / blocks if blocks > 0 else 0.0
+    rows = []
+    for slot in rth_slots_ct(proj_day):
+        b = count_effective_blocks(p1_dt, slot)
+        price = p1_price + slope * b
+        rows.append({"Time": slot.strftime("%H:%M"), label_proj: round(price,2)})
+    return pd.DataFrame(rows), slope
+
+def expected_exit_time(b1_dt, h1_dt, b2_dt, h2_dt, proj_day):
+    d1 = count_effective_blocks(b1_dt, h1_dt)
+    d2 = count_effective_blocks(b2_dt, h2_dt)
+    durations = [d for d in [d1, d2] if d > 0]
     if not durations:
         return "n/a"
-    
-    median_duration = int(round(np.median(durations)))
-    
-    # Project from second bounce
-    exit_candidate = b2_dt
-    blocks_walked = 0
-    
-    while blocks_walked < median_duration:
-        exit_candidate += timedelta(minutes=30)
-        if not is_maintenance(exit_candidate) and not in_weekend_gap(exit_candidate):
-            blocks_walked += 1
-    
-    # Find corresponding RTH slot
-    for rth_slot in rth_slots_ct(projection_day):
-        if rth_slot >= exit_candidate:
-            return rth_slot.strftime("%H:%M")
-    
+    med_blocks = int(round(np.median(durations)))
+    candidate = b2_dt
+    step = 0
+    while step < med_blocks:
+        candidate += timedelta(minutes=30)
+        if not is_maintenance(candidate) and not in_weekend_gap(candidate):
+            step += 1
+    for slot in rth_slots_ct(proj_day):
+        if slot >= candidate:
+            return slot.strftime("%H:%M")
     return "n/a"
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# READINESS & RECOMMENDATIONS (For Plan Card)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def calculate_readiness_score(interactions_df: pd.DataFrame, summary_stats: Dict) -> Tuple[int, str, str]:
+    """Calculate overall trading readiness score and classification."""
+    if interactions_df.empty:
+        return 0, "SKIP", "No qualified interactions detected"
+    
+    # Primary metrics
+    scores = interactions_df["Score"].tolist()
+    top_3_avg = int(np.mean(sorted(scores, reverse=True)[:3])) if len(scores) >= 3 else int(np.mean(scores))
+    
+    # Simple adjustments
+    volume_quality = summary_stats.get("volume_quality", 0)
+    session_coverage = min(summary_stats.get("asia_touches", 0), 1) + min(summary_stats.get("london_touches", 0), 1)
+    
+    # Calculate final readiness
+    final_readiness = min(100, top_3_avg + int(volume_quality) + (session_coverage * 2))
+    
+    # Classification
+    if final_readiness >= 70:
+        classification = "HIGH"
+        indicator = "High Confidence"
+    elif final_readiness >= 45:
+        classification = "MEDIUM" 
+        indicator = "Medium Confidence"
+    else:
+        classification = "SKIP"
+        indicator = "Low Confidence"
+    
+    return final_readiness, classification, indicator
+
+def generate_trade_recommendations(interactions_df: pd.DataFrame, readiness_score: int) -> List[str]:
+    """Generate specific trade recommendations based on analysis."""
+    recommendations = []
+    
+    if interactions_df.empty:
+        recommendations.append("No qualified setups detected - consider waiting")
+        return recommendations
+    
+    # Analyze top interactions
+    top_interactions = interactions_df.nlargest(3, "Score")
+    
+    for _, interaction in top_interactions.iterrows():
+        direction = interaction["ExpectedDir"]
+        edge = interaction["Edge"]
+        score = interaction["Score"]
+        time_str = interaction["Time"]
+        
+        if score >= 70:
+            confidence = "High"
+        elif score >= 50:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+        
+        rec = f"{confidence} confidence {direction.lower()} from {edge} @ {time_str} (Score: {score})"
+        recommendations.append(rec)
+    
+    # Add sizing guidance
+    if readiness_score >= 70:
+        recommendations.append("Consider standard position sizing")
+    elif readiness_score >= 45:
+        recommendations.append("Consider reduced position sizing")
+    else:
+        recommendations.append("Consider skipping or minimal sizing")
+    
+    return recommendations
 
 
 
 
-# Part 4/4: Complete Enterprise Dashboard UI & Interactive Components
-# Main application layout with sidebar, tabs, and premium enterprise components
+
+
+
+
+# Part 4/4: Complete Enterprise UI & Dashboard (WORKING VERSION)
+# Main application layout that integrates with Parts 1-3
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR CONTROL PANEL
@@ -1748,79 +1623,51 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-use_manual_anchor = st.sidebar.checkbox(
-    "Use Manual Anchor Close", 
+use_manual_close = st.sidebar.checkbox(
+    "Enter 3:00 PM CT Close Manually", 
     value=False,
     help="Override automatic anchor detection"
 )
 
-manual_anchor_value = st.sidebar.number_input(
-    "Manual Anchor Close",
+manual_close_val = st.sidebar.number_input(
+    "Manual 3:00 PM Close",
     value=6400.00,
     step=0.01,
     format="%.2f",
-    disabled=not use_manual_anchor,
+    disabled=not use_manual_close,
     help="Manual 3:00 PM CT close value"
 )
 
 # Advanced configuration
 with st.sidebar.expander("⚙️ Advanced Configuration", expanded=False):
-    st.markdown("**Fan Slope Configuration**")
-    
-    enable_slope_override = st.checkbox(
-        "Enable Custom Slopes",
-        value=("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state),
-        help="Override default asymmetric fan slopes"
-    )
-    
-    col_top, col_bottom = st.columns(2)
-    with col_top:
-        top_slope_input = st.number_input(
-            "Top Slope",
-            value=float(st.session_state.get("top_slope_per_block", TOP_SLOPE_DEFAULT)),
-            step=0.001,
-            format="%.3f",
-            help="Points per 30m block (upward)"
-        )
-    
-    with col_bottom:
-        bottom_slope_input = st.number_input(
-            "Bottom Slope", 
-            value=float(st.session_state.get("bottom_slope_per_block", BOTTOM_SLOPE_DEFAULT)),
-            step=0.001,
-            format="%.3f",
-            help="Points per 30m block (downward)"
-        )
-    
-    tolerance_fraction = st.slider(
-        "Neutral Zone Width (%)",
-        min_value=0,
-        max_value=40,
-        value=int(NEUTRAL_BAND_DEFAULT * 100),
-        step=1,
-        help="Percentage of fan width for neutral bias zone"
-    ) / 100.0
-    
-    st.session_state["tolerance_fraction"] = tolerance_fraction
-    
-    # Slope control buttons
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        if st.button("💾 Apply", use_container_width=True, key="apply_slopes"):
-            if enable_slope_override:
-                st.session_state["top_slope_per_block"] = float(top_slope_input)
-                st.session_state["bottom_slope_per_block"] = float(bottom_slope_input)
-                st.success("Slopes applied!")
+    st.caption("Adjust **asymmetric** fan slopes and within-fan neutrality band.")
+    enable_slope = st.checkbox("Enable slope override",
+                               value=("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state))
+    top_slope_val = st.number_input("Top slope (+ per 30m)",
+                                    value=float(st.session_state.get("top_slope_per_block", TOP_SLOPE_DEFAULT)),
+                                    step=0.001, format="%.3f")
+    bottom_slope_val = st.number_input("Bottom slope (− per 30m)",
+                                       value=float(st.session_state.get("bottom_slope_per_block", BOTTOM_SLOPE_DEFAULT)),
+                                       step=0.001, format="%.3f")
+    tol_frac = st.slider("Neutrality band (% of fan width)", 0, 40, int(NEUTRAL_BAND_DEFAULT*100), 1) / 100.0
+    st.session_state["tol_frac"] = tol_frac
+
+    colA, colB = st.columns(2)
+    with colA:
+        if st.button("Apply slopes", use_container_width=True, key="apply_slope"):
+            if enable_slope:
+                st.session_state["top_slope_per_block"] = float(top_slope_val)
+                st.session_state["bottom_slope_per_block"] = float(bottom_slope_val)
+                st.success(f"Applied: Top=+{top_slope_val:.3f} • Bottom=−{bottom_slope_val:.3f}")
             else:
-                for key in ("top_slope_per_block", "bottom_slope_per_block"):
-                    st.session_state.pop(key, None)
+                for k in ("top_slope_per_block","bottom_slope_per_block"):
+                    st.session_state.pop(k, None)
                 st.info("Using default slopes")
-    
-    with btn_col2:
-        if st.button("🔄 Reset", use_container_width=True, key="reset_slopes"):
-            for key in ("top_slope_per_block", "bottom_slope_per_block"):
-                st.session_state.pop(key, None)
-            st.success("Reset to defaults!")
+    with colB:
+        if st.button("Reset slopes", use_container_width=True, key="reset_slope"):
+            for k in ("top_slope_per_block","bottom_slope_per_block"):
+                st.session_state.pop(k, None)
+            st.success(f"Reset to defaults")
 
 # Action buttons
 st.sidebar.markdown("---")
@@ -1832,14 +1679,14 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-refresh_anchors = st.sidebar.button(
+btn_anchor = st.sidebar.button(
     "📐 Refresh SPX Anchors",
     type="primary",
     use_container_width=True,
     help="Recalculate fan projections and strategy table"
 )
 
-refresh_probability = st.sidebar.button(
+btn_prob = st.sidebar.button(
     "🧠 Refresh Probability Board", 
     type="secondary",
     use_container_width=True,
@@ -1857,54 +1704,46 @@ st.markdown(create_header_section(
 ), unsafe_allow_html=True)
 
 # Live status metrics
-current_time = datetime.now(CT_TZ)
+now = datetime.now(CT_TZ)
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown(create_metric_card(
         title="Current Time",
-        value=current_time.strftime("%H:%M:%S"),
-        subtext=f"{current_time.strftime('%A, %B %d, %Y')} CT",
+        value=now.strftime("%H:%M:%S"),
+        subtext=f"{now.strftime('%A, %B %d, %Y')} CT",
         icon="🕐",
         card_type="primary"
     ), unsafe_allow_html=True)
 
 with col2:
-    # Market status logic
-    is_weekday = current_time.weekday() < 5
-    market_open = current_time.replace(hour=8, minute=30, second=0, microsecond=0)
-    market_close = current_time.replace(hour=14, minute=30, second=0, microsecond=0)
-    is_market_open = is_weekday and (market_open <= current_time <= market_close)
-    
-    status_text = "OPEN" if is_market_open else "CLOSED"
-    status_badge = create_status_badge(status_text, "open" if is_market_open else "closed")
+    is_wkday = now.weekday() < 5
+    open_dt = now.replace(hour=8, minute=30, second=0, microsecond=0)
+    close_dt = now.replace(hour=14, minute=30, second=0, microsecond=0)
+    is_open = is_wkday and (open_dt <= now <= close_dt)
+    badge = create_status_badge("OPEN" if is_open else "CLOSED", "open" if is_open else "closed")
     
     st.markdown(create_metric_card(
         title="Market Status",
-        value=status_badge,
+        value=badge,
         subtext="RTH: 08:30–14:30 CT • Monday–Friday",
         icon="📊",
-        card_type="success" if is_market_open else "danger"
+        card_type="success" if is_open else "danger"
     ), unsafe_allow_html=True)
 
 with col3:
-    # Current slopes
-    current_top, current_bottom = current_spx_slopes()
+    ts, bs = current_spx_slopes()
     slope_override = ("top_slope_per_block" in st.session_state or "bottom_slope_per_block" in st.session_state)
-    
-    slope_display = f"+{current_top:.3f} / -{current_bottom:.3f}"
-    override_indicator = "🔧 Override Active" if slope_override else "📐 Default Slopes"
     
     st.markdown(create_metric_card(
         title="Fan Slopes",
-        value=slope_display,
-        subtext=f"{override_indicator} • Per 30m Block",
+        value=f"+{ts:.3f} / -{bs:.3f}",
+        subtext=f"{'Override Active' if slope_override else 'Default Slopes'} • Per 30m",
         icon="📐",
         card_type="warning" if slope_override else "neutral"
     ), unsafe_allow_html=True)
 
 with col4:
-    # System status
     st.markdown(create_metric_card(
         title="System Status",
         value="READY",
@@ -1917,7 +1756,7 @@ with col4:
 # MAIN TAB SYSTEM
 # ═══════════════════════════════════════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tabAnchors, tabBC, tabProb, tabPlan = st.tabs([
     "📐 SPX Anchors", 
     "📈 BC Forecast", 
     "🧠 Probability Board", 
@@ -1928,7 +1767,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1: SPX ANCHORS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-with tab1:
+with tabAnchors:
     st.markdown("""
     <div class="enterprise-card animate-slide-in">
         <h2 style="margin-top: 0; color: var(--primary-600); display: flex; align-items: center; gap: 12px;">
@@ -1940,78 +1779,64 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
     
-    if refresh_anchors:
-        with st.spinner("🔄 Building SPX anchor analysis..."):
-            # Determine anchor source
-            if use_manual_anchor:
-                anchor_close = float(manual_anchor_value)
-                anchor_time = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+    if btn_anchor:
+        with st.spinner("Building SPX fan & strategy…"):
+            if use_manual_close:
+                anchor_close = float(manual_close_val)
+                anchor_time  = fmt_ct(datetime.combine(prev_day, time(15,0)))
                 anchor_label = ""
-                is_estimated = False
+                est = False
             else:
-                anchor_close, anchor_time, is_estimated = get_spx_anchor_prevday(prev_day)
+                anchor_close, anchor_time, est = get_spx_anchor_prevday(prev_day)
                 if anchor_close is None or anchor_time is None:
-                    st.error("❌ Cannot resolve SPX anchor for selected date")
+                    st.error("❌ Could not resolve ^GSPC anchor at ≤ 3:00 PM CT (and ES estimate failed).")
                     st.stop()
-                anchor_label = " (estimated)" if is_estimated else ""
-            
-            # Generate fan projection
-            fan_projection = project_fan_from_close(anchor_close, anchor_time, proj_day)
-            
-            # Fetch current SPX data for strategy table
-            current_spx = fetch_intraday("^GSPC", proj_day, proj_day, "30m")
-            rth_spx = between_time(current_spx, RTH_START, RTH_END) if not current_spx.empty else pd.DataFrame()
-            
-            # Build strategy table
-            strategy_rows = []
-            rth_slots = rth_slots_ct(proj_day)
-            
-            for time_slot in rth_slots:
-                blocks_from_anchor = count_effective_blocks(anchor_time, time_slot)
-                top_level = anchor_close + current_top * blocks_from_anchor
-                bottom_level = anchor_close + current_bottom * blocks_from_anchor
-                
-                # Check if we have real SPX data for this slot
-                if not rth_spx.empty and time_slot in rth_spx.index:
-                    current_bar = rth_spx.loc[time_slot]
-                    current_price = float(current_bar["Close"])
-                    current_bias = compute_bias(current_price, top_level, bottom_level, tolerance_fraction)
-                    price_display = f"{current_price:.2f}"
-                    data_note = "Live Data"
+                anchor_label = " (est)" if est else ""
+
+            fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
+
+            # Try to fetch SPX 30m for the projection day (display only)
+            spx_proj_rth = fetch_intraday("^GSPC", proj_day, proj_day, "30m")
+            spx_proj_rth = between_time(spx_proj_rth, RTH_START, RTH_END) if not spx_proj_rth.empty else pd.DataFrame()
+
+            tslope, bslope = current_spx_slopes()
+            rows = []
+            iter_index = (spx_proj_rth.index if not spx_proj_rth.empty
+                          else pd.DatetimeIndex(rth_slots_ct(proj_day)))
+            for dt in iter_index:
+                blocks = count_effective_blocks(anchor_time, dt)
+                top = anchor_close + tslope * blocks
+                bottom = anchor_close - bslope * blocks
+                if not spx_proj_rth.empty and dt in spx_proj_rth.index:
+                    bar = spx_proj_rth.loc[dt]
+                    price = float(bar["Close"])
+                    bias = compute_bias(price, top, bottom, st.session_state.get("tol_frac", NEUTRAL_BAND_DEFAULT))
+                    note = "Live Data"
+                    pdisp = round(price,2)
                 else:
-                    current_bias = "—"
-                    price_display = "—"
-                    data_note = "Projection Only"
-                
-                # Highlight 8:30 AM
-                slot_marker = "⭐ 08:30" if time_slot.strftime("%H:%M") == "08:30" else ""
-                
-                strategy_rows.append({
-                    "Highlight": slot_marker,
-                    "Time": time_slot.strftime("%H:%M"),
-                    "Price": price_display,
-                    "Bias": current_bias,
-                    "Top": f"{top_level:.2f}",
-                    "Bottom": f"{bottom_level:.2f}",
-                    "Width": f"{top_level - bottom_level:.2f}",
-                    "Note": data_note
+                    bias = "—"
+                    note = "Fan Projection"
+                    pdisp = "—"
+                rows.append({
+                    "Slot": "⭐ 8:30" if dt.strftime("%H:%M")=="08:30" else "",
+                    "Time": dt.strftime("%H:%M"),
+                    "Price": pdisp,
+                    "Bias": bias, "Top": round(top,2), "Bottom": round(bottom,2),
+                    "Fan_Width": round(top-bottom,2),
+                    "Note": note
                 })
-            
-            strategy_df = pd.DataFrame(strategy_rows)
-            
-            # Store results
-            st.session_state["anchor_results"] = {
-                "fan_projection": fan_projection,
-                "strategy_table": strategy_df,
-                "anchor_close": anchor_close,
-                "anchor_time": anchor_time,
+            strat_df = pd.DataFrame(rows)
+
+            st.session_state["anchors"] = {
+                "fan_df": fan_df, "strat_df": strat_df,
+                "anchor_close": anchor_close, "anchor_time": anchor_time,
                 "anchor_label": anchor_label,
-                "is_estimated": is_estimated
+                "prev_day": prev_day, "proj_day": proj_day,
+                "is_estimated": est
             }
-    
-    # Display results
-    if "anchor_results" in st.session_state:
-        results = st.session_state["anchor_results"]
+
+    if "anchors" in st.session_state:
+        results = st.session_state["anchors"]
         
         # Anchor information card
         st.markdown(f"""
@@ -2033,7 +1858,7 @@ with tab1:
                 <div>
                     <strong style="color: var(--text-secondary);">Source:</strong><br>
                     <span style="font-size: 1.25rem; font-weight: 700; color: var(--primary-600);">
-                        {"Manual" if use_manual_anchor else ("Estimated" if results['is_estimated'] else "^GSPC")}
+                        {"Manual" if use_manual_close else ("Estimated" if results['is_estimated'] else "^GSPC")}
                     </span>
                 </div>
             </div>
@@ -2042,21 +1867,11 @@ with tab1:
         
         # Fan projection table
         st.markdown("### 🎯 Fan Level Projection")
-        fan_display = results["fan_projection"][["Time", "Top", "Bottom", "Fan_Width"]].copy()
+        fan_display = results["fan_df"][["Time", "Top", "Bottom", "Fan_Width"]].copy()
         fan_display.loc[fan_display["Time"] == "08:30", "Time"] = "⭐ 08:30"
         
         st.markdown('<div class="enterprise-table">', unsafe_allow_html=True)
-        st.dataframe(
-            fan_display, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Time": st.column_config.TextColumn("Time", width="small"),
-                "Top": st.column_config.NumberColumn("Top Level", format="%.2f"),
-                "Bottom": st.column_config.NumberColumn("Bottom Level", format="%.2f"),
-                "Fan_Width": st.column_config.NumberColumn("Fan Width", format="%.2f")
-            }
-        )
+        st.dataframe(fan_display, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Strategy table
@@ -2064,21 +1879,7 @@ with tab1:
         st.markdown("Real-time bias analysis with entry/exit levels. ⭐ indicates key 8:30 decision point.")
         
         st.markdown('<div class="enterprise-table">', unsafe_allow_html=True)
-        st.dataframe(
-            results["strategy_table"],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Highlight": st.column_config.TextColumn("", width="small"),
-                "Time": st.column_config.TextColumn("Time", width="small"),
-                "Price": st.column_config.TextColumn("SPX Price", width="medium"),
-                "Bias": st.column_config.TextColumn("Bias", width="small"),
-                "Top": st.column_config.TextColumn("Top", width="small"),
-                "Bottom": st.column_config.TextColumn("Bottom", width="small"),
-                "Width": st.column_config.TextColumn("Width", width="small"),
-                "Note": st.column_config.TextColumn("Data Source", width="medium")
-            }
-        )
+        st.dataframe(results["strat_df"], use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.markdown("""
@@ -2094,7 +1895,7 @@ with tab1:
 # TAB 2: BC FORECAST  
 # ═══════════════════════════════════════════════════════════════════════════════
 
-with tab2:
+with tabBC:
     st.markdown("""
     <div class="enterprise-card animate-slide-in">
         <h2 style="margin-top: 0; color: var(--primary-600); display: flex; align-items: center; gap: 12px;">
@@ -2106,282 +1907,105 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
     
-    # Generate overnight session slots for bounce selection
-    overnight_start = fmt_ct(datetime.combine(prev_day, time(19, 0)))
-    overnight_end = fmt_ct(datetime.combine(proj_day, time(7, 0)))
-    
+    # Generate overnight session slots
+    asia_start = fmt_ct(datetime.combine(prev_day, time(19,0)))
+    euro_end   = fmt_ct(datetime.combine(proj_day, time(7,0)))
     session_slots = []
-    current_slot = overnight_start
-    while current_slot <= overnight_end:
-        session_slots.append(current_slot)
-        current_slot += timedelta(minutes=30)
-    
-    slot_options = [dt.strftime("%Y-%m-%d %H:%M") for dt in session_slots]
-    
-    # BC Forecast form
-    with st.form("bc_forecast_form", clear_on_submit=False):
-        st.markdown("#### 🎯 Underlying Bounce Configuration")
-        st.markdown("Define exactly **two bounce points** from overnight session:")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Bounce #1**")
-            bounce1_time = st.selectbox(
-                "Time Slot",
-                slot_options,
-                index=0,
-                key="b1_time",
-                help="First bounce timestamp"
-            )
-            bounce1_price = st.number_input(
-                "SPX Price",
-                value=6500.00,
-                step=0.25,
-                format="%.2f",
-                key="b1_price",
-                help="SPX price at first bounce"
-            )
-        
-        with col2:
-            st.markdown("**Bounce #2**")
-            bounce2_time = st.selectbox(
-                "Time Slot",
-                slot_options,
-                index=min(6, len(slot_options) - 1),
-                key="b2_time",
-                help="Second bounce timestamp"
-            )
-            bounce2_price = st.number_input(
-                "SPX Price",
-                value=6512.00,
-                step=0.25,
-                format="%.2f",
-                key="b2_price",
-                help="SPX price at second bounce"
-            )
-        
+    cur = asia_start
+    while cur <= euro_end:
+        session_slots.append(cur)
+        cur += timedelta(minutes=30)
+    slot_labels = [dt.strftime("%Y-%m-%d %H:%M") for dt in session_slots]
+
+    with st.form("bc_form_v3", clear_on_submit=False):
+        st.markdown("**Underlying bounces (exactly two):**")
+        c1, c2 = st.columns(2)
+        with c1:
+            b1_sel = st.selectbox("Bounce #1 Time (slot)", slot_labels, index=0, key="bc_b1_sel")
+            b1_spx = st.number_input("Bounce #1 SPX Price", value=6500.00, step=0.25, format="%.2f", key="bc_b1_spx")
+        with c2:
+            b2_sel = st.selectbox("Bounce #2 Time (slot)", slot_labels, index=min(6, len(slot_labels)-1), key="bc_b2_sel")
+            b2_spx = st.number_input("Bounce #2 SPX Price", value=6512.00, step=0.25, format="%.2f", key="bc_b2_spx")
+
         st.markdown("---")
-        st.markdown("#### 📋 Contract A Configuration (Required)")
-        
-        contract_a_symbol = st.text_input(
-            "Contract Symbol",
-            value="6525c",
-            key="ca_symbol",
-            help="Option contract identifier"
-        )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Entry Line (from bounces)**")
-            ca_bounce1_price = st.number_input(
-                "Price at Bounce #1",
-                value=10.00,
-                step=0.05,
-                format="%.2f",
-                key="ca_b1_price"
-            )
-            ca_bounce2_price = st.number_input(
-                "Price at Bounce #2",
-                value=12.50,
-                step=0.05,
-                format="%.2f",
-                key="ca_b2_price"
-            )
-        
-        with col2:
-            st.markdown("**Exit Line (from highs)**")
-            ca_high1_time = st.selectbox(
-                "High #1 Time",
-                slot_options,
-                index=min(2, len(slot_options) - 1),
-                key="ca_h1_time"
-            )
-            ca_high1_price = st.number_input(
-                "High #1 Price",
-                value=14.00,
-                step=0.05,
-                format="%.2f",
-                key="ca_h1_price"
-            )
-            ca_high2_time = st.selectbox(
-                "High #2 Time",
-                slot_options,
-                index=min(8, len(slot_options) - 1),
-                key="ca_h2_time"
-            )
-            ca_high2_price = st.number_input(
-                "High #2 Price",
-                value=16.00,
-                step=0.05,
-                format="%.2f",
-                key="ca_h2_price"
-            )
-        
+        st.markdown("**Contract A (required)**")
+        ca_sym = st.text_input("Contract A Label", value="6525c", key="bc_ca_sym")
+        ca_b1_price = st.number_input("A: Price at Bounce #1", value=10.00, step=0.05, format="%.2f", key="bc_ca_b1_price")
+        ca_b2_price = st.number_input("A: Price at Bounce #2", value=12.50, step=0.05, format="%.2f", key="bc_ca_b2_price")
+        ca_h1_time  = st.selectbox("A: High after Bounce #1 — Time", slot_labels, index=min(2, len(slot_labels)-1), key="bc_ca_h1_time")
+        ca_h1_price = st.number_input("A: High after Bounce #1 — Price", value=14.00, step=0.05, format="%.2f", key="bc_ca_h1_price")
+        ca_h2_time  = st.selectbox("A: High after Bounce #2 — Time", slot_labels, index=min(8, len(slot_labels)-1), key="bc_ca_h2_time")
+        ca_h2_price = st.number_input("A: High after Bounce #2 — Price", value=16.00, step=0.05, format="%.2f", key="bc_ca_h2_price")
+
         st.markdown("---")
-        st.markdown("#### 📋 Contract B Configuration (Optional)")
-        
-        enable_contract_b = st.checkbox(
-            "Enable Contract B",
-            value=False,
-            key="enable_cb",
-            help="Add second contract for comparison"
-        )
-        
-        if enable_contract_b:
-            contract_b_symbol = st.text_input(
-                "Contract B Symbol",
-                value="6515c",
-                key="cb_symbol"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Entry Line**")
-                cb_bounce1_price = st.number_input(
-                    "Price at Bounce #1",
-                    value=9.50,
-                    step=0.05,
-                    format="%.2f",
-                    key="cb_b1_price"
-                )
-                cb_bounce2_price = st.number_input(
-                    "Price at Bounce #2",
-                    value=11.80,
-                    step=0.05,
-                    format="%.2f",
-                    key="cb_b2_price"
-                )
-            
-            with col2:
-                st.markdown("**Exit Line**")
-                cb_high1_time = st.selectbox(
-                    "High #1 Time",
-                    slot_options,
-                    index=min(3, len(slot_options) - 1),
-                    key="cb_h1_time"
-                )
-                cb_high1_price = st.number_input(
-                    "High #1 Price",
-                    value=13.30,
-                    step=0.05,
-                    format="%.2f",
-                    key="cb_h1_price"
-                )
-                cb_high2_time = st.selectbox(
-                    "High #2 Time",
-                    slot_options,
-                    index=min(9, len(slot_options) - 1),
-                    key="cb_h2_time"
-                )
-                cb_high2_price = st.number_input(
-                    "High #2 Price",
-                    value=15.10,
-                    step=0.05,
-                    format="%.2f",
-                    key="cb_h2_price"
-                )
-        
-        # Submit button
-        submit_forecast = st.form_submit_button(
-            "🚀 Generate NY Session Projection",
-            type="primary",
-            use_container_width=True
-        )
-    
-    # Process BC Forecast
-    if submit_forecast:
+        st.markdown("**Contract B (optional)**")
+        cb_enable = st.checkbox("Add Contract B", value=False, key="bc_cb_enable")
+        if cb_enable:
+            cb_sym = st.text_input("Contract B Label", value="6515c", key="bc_cb_sym")
+            cb_b1_price = st.number_input("B: Price at Bounce #1", value=9.50, step=0.05, format="%.2f", key="bc_cb_b1_price")
+            cb_b2_price = st.number_input("B: Price at Bounce #2", value=11.80, step=0.05, format="%.2f", key="bc_cb_b2_price")
+            cb_h1_time  = st.selectbox("B: High after Bounce #1 — Time", slot_labels, index=min(3, len(slot_labels)-1), key="bc_cb_h1_time")
+            cb_h1_price = st.number_input("B: High after Bounce #1 — Price", value=13.30, step=0.05, format="%.2f", key="bc_cb_h1_price")
+            cb_h2_time  = st.selectbox("B: High after Bounce #2 — Time", slot_labels, index=min(9, len(slot_labels)-1), key="bc_cb_h2_time")
+            cb_h2_price = st.number_input("B: High after Bounce #2 — Price", value=15.10, step=0.05, format="%.2f", key="bc_cb_h2_price")
+
+        submit_bc = st.form_submit_button("🚀 Generate NY Session Projection", type="primary", use_container_width=True)
+
+    if submit_bc:
         try:
-            # Parse bounce timestamps
-            b1_dt = fmt_ct(datetime.strptime(st.session_state["b1_time"], "%Y-%m-%d %H:%M"))
-            b2_dt = fmt_ct(datetime.strptime(st.session_state["b2_time"], "%Y-%m-%d %H:%M"))
-            
+            b1_dt = fmt_ct(datetime.strptime(st.session_state["bc_b1_sel"], "%Y-%m-%d %H:%M"))
+            b2_dt = fmt_ct(datetime.strptime(st.session_state["bc_b2_sel"], "%Y-%m-%d %H:%M"))
             if b2_dt <= b1_dt:
-                st.error("❌ Bounce #2 must occur after Bounce #1")
+                st.error("❌ Bounce #2 must occur after Bounce #1.")
             else:
-                # Calculate underlying projection
-                underlying_df, underlying_slope = project_contract_line(
-                    b1_dt, st.session_state["b1_price"],
-                    b2_dt, st.session_state["b2_price"],
-                    proj_day, "SPX_Projected"
-                )
-                
-                # Add highlight column
-                underlying_df.insert(0, "Highlight", underlying_df["Time"].apply(
-                    lambda x: "⭐ 08:30" if x == "08:30" else ""
-                ))
-                
+                # Calculate projections using your working functions
+                blocks_u = count_effective_blocks(b1_dt, b2_dt)
+                u_slope = (float(b2_spx) - float(b1_spx)) / blocks_u if blocks_u > 0 else 0.0
+
+                rows_u = []
+                for slot in rth_slots_ct(proj_day):
+                    b = count_effective_blocks(b1_dt, slot)
+                    price = float(b1_spx) + u_slope * b
+                    rows_u.append({"Time": slot.strftime("%H:%M"), "SPX_Projected": round(price,2)})
+                spx_proj_df = pd.DataFrame(rows_u)
+                spx_proj_df.insert(0, "Slot", spx_proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
+
                 # Contract A projections
-                ca_entry_df, ca_entry_slope = project_contract_line(
-                    b1_dt, st.session_state["ca_b1_price"],
-                    b2_dt, st.session_state["ca_b2_price"],
-                    proj_day, f"{st.session_state['ca_symbol']}_Entry"
-                )
-                
-                ca_h1_dt = fmt_ct(datetime.strptime(st.session_state["ca_h1_time"], "%Y-%m-%d %H:%M"))
-                ca_h2_dt = fmt_ct(datetime.strptime(st.session_state["ca_h2_time"], "%Y-%m-%d %H:%M"))
-                
-                ca_exit_df, ca_exit_slope = project_contract_line(
-                    ca_h1_dt, st.session_state["ca_h1_price"],
-                    ca_h2_dt, st.session_state["ca_h2_price"],
-                    proj_day, f"{st.session_state['ca_symbol']}_Exit"
-                )
-                
+                ca_entry_df, ca_entry_slope = project_line(b1_dt, float(ca_b1_price), b2_dt, float(ca_b2_price), proj_day, f"{st.session_state['bc_ca_sym']}_Entry")
+                ca_h1_dt = fmt_ct(datetime.strptime(st.session_state["bc_ca_h1_time"], "%Y-%m-%d %H:%M"))
+                ca_h2_dt = fmt_ct(datetime.strptime(st.session_state["bc_ca_h2_time"], "%Y-%m-%d %H:%M"))
+                ca_exit_df, ca_exit_slope = project_line(ca_h1_dt, float(ca_h1_price), ca_h2_dt, float(ca_h2_price), proj_day, f"{st.session_state['bc_ca_sym']}_Exit")
+
                 # Merge data
-                projection_df = underlying_df.merge(ca_entry_df, on="Time").merge(ca_exit_df, on="Time")
-                
-                # Calculate spreads
-                ca_symbol = st.session_state["ca_symbol"]
-                projection_df[f"{ca_symbol}_Spread"] = (
-                    projection_df[f"{ca_symbol}_Exit"] - projection_df[f"{ca_symbol}_Entry"]
-                )
-                
-                # Expected exit timing
-                ca_expected_exit = calculate_expected_exit_timing(b1_dt, ca_h1_dt, b2_dt, ca_h2_dt, proj_day)
-                
-                # Contract B (if enabled)
+                out = spx_proj_df.merge(ca_entry_df, on="Time", how="left").merge(ca_exit_df, on="Time", how="left")
+                ca = st.session_state["bc_ca_sym"]
+                out[f"{ca}_Spread"] = out[f"{ca}_Exit"] - out[f"{ca}_Entry"]
+
+                # Contract B if enabled
                 cb_data = {}
-                if enable_contract_b:
-                    cb_symbol = st.session_state["cb_symbol"]
+                if cb_enable:
+                    cb_symbol = st.session_state["bc_cb_sym"]
+                    cb_entry_df, cb_entry_slope = project_line(b1_dt, float(cb_b1_price), b2_dt, float(cb_b2_price), proj_day, f"{cb_symbol}_Entry")
+                    cb_h1_dt = fmt_ct(datetime.strptime(st.session_state["bc_cb_h1_time"], "%Y-%m-%d %H:%M"))
+                    cb_h2_dt = fmt_ct(datetime.strptime(st.session_state["bc_cb_h2_time"], "%Y-%m-%d %H:%M"))
+                    cb_exit_df, cb_exit_slope = project_line(cb_h1_dt, float(cb_h1_price), cb_h2_dt, float(cb_h2_price), proj_day, f"{cb_symbol}_Exit")
                     
-                    cb_entry_df, cb_entry_slope = project_contract_line(
-                        b1_dt, st.session_state["cb_b1_price"],
-                        b2_dt, st.session_state["cb_b2_price"],
-                        proj_day, f"{cb_symbol}_Entry"
-                    )
+                    out = out.merge(cb_entry_df, on="Time", how="left").merge(cb_exit_df, on="Time", how="left")
+                    out[f"{cb_symbol}_Spread"] = out[f"{cb_symbol}_Exit"] - out[f"{cb_symbol}_Entry"]
                     
-                    cb_h1_dt = fmt_ct(datetime.strptime(st.session_state["cb_h1_time"], "%Y-%m-%d %H:%M"))
-                    cb_h2_dt = fmt_ct(datetime.strptime(st.session_state["cb_h2_time"], "%Y-%m-%d %H:%M"))
-                    
-                    cb_exit_df, cb_exit_slope = project_contract_line(
-                        cb_h1_dt, st.session_state["cb_h1_price"],
-                        cb_h2_dt, st.session_state["cb_h2_price"],
-                        proj_day, f"{cb_symbol}_Exit"
-                    )
-                    
-                    projection_df = projection_df.merge(cb_entry_df, on="Time").merge(cb_exit_df, on="Time")
-                    projection_df[f"{cb_symbol}_Spread"] = (
-                        projection_df[f"{cb_symbol}_Exit"] - projection_df[f"{cb_symbol}_Entry"]
-                    )
-                    
-                    cb_expected_exit = calculate_expected_exit_timing(b1_dt, cb_h1_dt, b2_dt, cb_h2_dt, proj_day)
-                    
-                    cb_data = {
-                        "symbol": cb_symbol,
-                        "entry_slope": cb_entry_slope,
-                        "exit_slope": cb_exit_slope,
-                        "expected_exit": cb_expected_exit
-                    }
-                
+                    cb_expected = expected_exit_time(b1_dt, cb_h1_dt, b2_dt, cb_h2_dt, proj_day)
+                    cb_data = {"symbol": cb_symbol, "entry_slope": cb_entry_slope, "exit_slope": cb_exit_slope, "expected_exit": cb_expected}
+
+                ca_expected = expected_exit_time(b1_dt, ca_h1_dt, b2_dt, ca_h2_dt, proj_day)
+
                 # Display results
                 st.markdown("### 📊 Projection Results")
                 
-                # Metrics row
                 col1, col2, col3, col4 = st.columns(4)
-                
                 with col1:
                     st.markdown(create_metric_card(
                         title="Underlying Slope",
-                        value=f"{underlying_slope:+.3f}",
+                        value=f"{u_slope:+.3f}",
                         subtext="SPX points per 30m block",
                         icon="📐",
                         card_type="primary"
@@ -2389,7 +2013,7 @@ with tab2:
                 
                 with col2:
                     st.markdown(create_metric_card(
-                        title=f"{ca_symbol} Entry",
+                        title=f"{ca} Entry",
                         value=f"{ca_entry_slope:+.3f}",
                         subtext=f"Exit slope: {ca_exit_slope:+.3f}",
                         icon="📈",
@@ -2417,38 +2041,27 @@ with tab2:
                 with col4:
                     st.markdown(create_metric_card(
                         title="Expected Exit",
-                        value=ca_expected_exit,
+                        value=ca_expected,
                         subtext="Based on historical duration",
                         icon="⏰",
                         card_type="warning"
                     ), unsafe_allow_html=True)
-                
-                # Projection table
+
                 st.markdown("### 🔮 NY Session Projection Table")
-                st.markdown("Complete projection from overnight bounces through RTH session.")
-                
                 st.markdown('<div class="enterprise-table">', unsafe_allow_html=True)
-                st.dataframe(
-                    projection_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(out, use_container_width=True, hide_index=True)
                 st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Store results
-                st.session_state["bc_results"] = {
-                    "projection_table": projection_df,
-                    "underlying_slope": underlying_slope,
-                    "ca_symbol": ca_symbol,
-                    "ca_expected_exit": ca_expected_exit,
-                    "cb_data": cb_data if enable_contract_b else None
+
+                st.session_state["bc_result"] = {
+                    "table": out, "u_slope": u_slope,
+                    "ca_sym": ca, "cb_sym": (cb_data.get("symbol") if cb_data else None),
+                    "ca_expected": ca_expected, "cb_expected": (cb_data.get("expected_exit") if cb_data else None)
                 }
                 
         except Exception as e:
             st.error(f"❌ BC Forecast Error: {str(e)}")
-    
-    # Show help if no results
-    if "bc_results" not in st.session_state:
+
+    if "bc_result" not in st.session_state:
         st.markdown("""
         <div style="text-align: center; padding: 60px 20px; background: var(--bg-tertiary); border-radius: 16px; border: 2px dashed var(--border-medium);">
             <h3 style="color: var(--text-secondary); margin: 0;">📈 Ready for BC Forecast</h3>
@@ -2462,72 +2075,50 @@ with tab2:
 # TAB 3: PROBABILITY BOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 
-with tab3:
+with tabProb:
     st.markdown("""
     <div class="enterprise-card animate-slide-in">
         <h2 style="margin-top: 0; color: var(--primary-600); display: flex; align-items: center; gap: 12px;">
             🧠 Probability Board — Overnight Edge Analysis
         </h2>
         <p style="color: var(--text-secondary); margin-bottom: 24px;">
-            Advanced scoring of overnight edge interactions with volume context and time-based momentum analysis.
+            Scoring of overnight edge interactions with volume context and time-based momentum analysis.
         </p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Advanced options
-    show_advanced_scoring = st.checkbox(
-        "🔬 Show Advanced Scoring Components",
-        value=False,
-        help="Display detailed scoring breakdown for each interaction"
-    )
+    show_adv = st.checkbox("Show advanced component columns", value=False, key="prob_show_adv")
     
-    if refresh_probability:
-        with st.spinner("🧠 Analyzing overnight probability patterns..."):
-            # Get anchor (reuse from anchors if available)
-            if use_manual_anchor:
-                anchor_close = float(manual_anchor_value)
-                anchor_time = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+    if btn_prob:
+        with st.spinner("Evaluating qualified 30m interactions…"):
+            if use_manual_close:
+                anchor_close = float(manual_close_val)
+                anchor_time  = fmt_ct(datetime.combine(prev_day, time(15,0)))
                 anchor_label = ""
             else:
-                anchor_close, anchor_time, is_estimated = get_spx_anchor_prevday(prev_day)
+                anchor_close, anchor_time, est = get_spx_anchor_prevday(prev_day)
                 if anchor_close is None or anchor_time is None:
-                    st.error("❌ Cannot resolve anchor for probability analysis")
+                    st.error("❌ Could not resolve ^GSPC anchor at ≤ 3:00 PM CT (and ES estimate failed).")
                     st.stop()
-                anchor_label = " (estimated)" if is_estimated else ""
-            
-            # Build comprehensive probability board
-            interactions_df, fan_projection, es_offset, summary_stats = build_comprehensive_probability_board(
-                prev_day, proj_day, anchor_close, anchor_time, tolerance_fraction
+                anchor_label = " (est)" if est else ""
+
+            interactions_df, fan_df, es_offset, summary_stats = build_comprehensive_probability_board(
+                prev_day, proj_day, anchor_close, anchor_time, st.session_state.get("tol_frac", NEUTRAL_BAND_DEFAULT)
             )
-            
-            # Calculate readiness score
-            readiness_score, readiness_class, readiness_indicator = calculate_readiness_score(
-                interactions_df, summary_stats
-            )
-            
-            # Generate recommendations
-            recommendations = generate_trade_recommendations(
-                interactions_df, fan_projection, readiness_score
-            )
-            
-            # Store results
-            st.session_state["probability_results"] = {
-                "interactions": interactions_df,
-                "fan_projection": fan_projection,
-                "es_offset": es_offset,
-                "summary_stats": summary_stats,
-                "readiness_score": readiness_score,
-                "readiness_class": readiness_class,
-                "readiness_indicator": readiness_indicator,
-                "recommendations": recommendations,
-                "anchor_close": anchor_close,
-                "anchor_time": anchor_time,
-                "anchor_label": anchor_label
+
+            readiness_score, readiness_class, readiness_indicator = calculate_readiness_score(interactions_df, summary_stats)
+            recommendations = generate_trade_recommendations(interactions_df, readiness_score)
+
+            st.session_state["prob_result"] = {
+                "interactions_df": interactions_df, "fan_df": fan_df,
+                "es_offset": float(es_offset), "summary_stats": summary_stats,
+                "readiness_score": readiness_score, "readiness_class": readiness_class,
+                "readiness_indicator": readiness_indicator, "recommendations": recommendations,
+                "anchor_close": anchor_close, "anchor_time": anchor_time, "anchor_label": anchor_label
             }
-    
-    # Display results
-    if "probability_results" in st.session_state:
-        results = st.session_state["probability_results"]
+
+    if "prob_result" in st.session_state:
+        pr = st.session_state["prob_result"]
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -2535,8 +2126,8 @@ with tab3:
         with col1:
             st.markdown(create_metric_card(
                 title="Anchor Close",
-                value=f"{results['anchor_close']:.2f}",
-                subtext=f"Previous ≤3:00 PM CT{results['anchor_label']}",
+                value=f"{pr['anchor_close']:.2f}",
+                subtext=f"Previous ≤3:00 PM CT{pr['anchor_label']}",
                 icon="⚓",
                 card_type="primary"
             ), unsafe_allow_html=True)
@@ -2544,7 +2135,7 @@ with tab3:
         with col2:
             st.markdown(create_metric_card(
                 title="Qualified Interactions",
-                value=str(results['summary_stats']['total_interactions']),
+                value=str(pr['summary_stats']['total_interactions']),
                 subtext="Overnight edge touches detected",
                 icon="🎯",
                 card_type="neutral"
@@ -2553,60 +2144,43 @@ with tab3:
         with col3:
             st.markdown(create_metric_card(
                 title="ES→SPX Offset",
-                value=f"{results['es_offset']:+.2f}",
+                value=f"{pr['es_offset']:+.2f}",
                 subtext="Applied for overnight conversion",
                 icon="🔄",
                 card_type="neutral"
             ), unsafe_allow_html=True)
         
         with col4:
-            readiness_type = "success" if results['readiness_class'] == "HIGH" else ("warning" if results['readiness_class'] == "MEDIUM" else "danger")
+            readiness_type = "success" if pr['readiness_class'] == "HIGH" else ("warning" if pr['readiness_class'] == "MEDIUM" else "danger")
             st.markdown(create_metric_card(
                 title="Readiness Score",
-                value=str(results['readiness_score']),
-                subtext=results['readiness_indicator'],
+                value=str(pr['readiness_score']),
+                subtext=pr['readiness_indicator'],
                 icon="🔥",
                 card_type=readiness_type
             ), unsafe_allow_html=True)
-        
+
         # Interactions table
-        if not results['interactions'].empty:
+        if not pr['interactions_df'].empty:
             st.markdown("### 📡 Qualified Edge Interactions")
-            st.markdown("Scored overnight interactions with comprehensive analysis components.")
             
-            # Column selection based on advanced view
-            base_columns = [
-                "Time", "Price", "Top", "Bottom", "Bias", "Edge", "Case", 
-                "Expectation", "ExpectedDir", "Score", "LiquidityBonus"
-            ]
-            
-            advanced_columns = [
-                "Confluence", "Structure", "Wick", "ATR", "Compression", "Gap", "Cluster",
-                "VolumeSpike", "VolumeTrend", "VolumeDistribution", "OvernightVolume",
-                "SessionTransition", "TimeSignificance", "DirectionalPersistence", "TimeDecay"
-            ]
-            
-            display_columns = base_columns + (advanced_columns if show_advanced_scoring else [])
-            display_data = results['interactions'][display_columns]
+            base_cols = ["Time","Price","Top","Bottom","Bias","Edge","Case","Expectation","ExpectedDir","Score","LiquidityBonus"]
+            adv_cols  = ["Confluence_w","Structure_w","Wick_w","ATR_w","Compression_w","Gap_w","Cluster_w","Volume_w","VolumeBonus_w","TimeBonus_w"]
+            cols = base_cols + (adv_cols if show_adv else [])
             
             st.markdown('<div class="enterprise-table">', unsafe_allow_html=True)
-            st.dataframe(
-                display_data,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(pr['interactions_df'][cols], use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
             # Trade recommendations
             st.markdown("### 💡 Trade Recommendations")
-            for i, rec in enumerate(results['recommendations'], 1):
+            for i, rec in enumerate(pr['recommendations'], 1):
                 recommendation_type = "success" if "High confidence" in rec else ("warning" if "Medium confidence" in rec else "neutral")
                 st.markdown(f"""
                 <div style="background: var(--{recommendation_type}-50); border: 1px solid var(--{recommendation_type}-200); border-radius: 8px; padding: 12px; margin: 8px 0;">
                     <strong>{i}.</strong> {rec}
                 </div>
                 """, unsafe_allow_html=True)
-        
         else:
             st.markdown("""
             <div style="text-align: center; padding: 40px 20px; background: var(--warning-50); border-radius: 16px; border: 2px solid var(--warning-200);">
@@ -2616,7 +2190,6 @@ with tab3:
                 </p>
             </div>
             """, unsafe_allow_html=True)
-    
     else:
         st.markdown("""
         <div style="text-align: center; padding: 60px 20px; background: var(--bg-tertiary); border-radius: 16px; border: 2px dashed var(--border-medium);">
@@ -2631,7 +2204,7 @@ with tab3:
 # TAB 4: PLAN CARD
 # ═══════════════════════════════════════════════════════════════════════════════
 
-with tab4:
+with tabPlan:
     st.markdown("""
     <div class="enterprise-card animate-slide-in">
         <h2 style="margin-top: 0; color: var(--primary-600); display: flex; align-items: center; gap: 12px;">
@@ -2644,9 +2217,9 @@ with tab4:
     """, unsafe_allow_html=True)
     
     # Check data availability
-    has_anchors = "anchor_results" in st.session_state
-    has_probability = "probability_results" in st.session_state
-    has_bc = "bc_results" in st.session_state
+    has_anchors = "anchors" in st.session_state
+    has_probability = "prob_result" in st.session_state
+    has_bc = "bc_result" in st.session_state
     
     if not has_anchors or not has_probability:
         st.markdown("""
@@ -2660,10 +2233,10 @@ with tab4:
         """, unsafe_allow_html=True)
     
     else:
-        # Build comprehensive plan card
-        anchor_data = st.session_state["anchor_results"]
-        prob_data = st.session_state["probability_results"]
-        bc_data = st.session_state.get("bc_results", None)
+        # Build plan card from session data
+        anchor_data = st.session_state["anchors"]
+        prob_data = st.session_state["prob_result"]
+        bc_data = st.session_state.get("bc_result", None)
         
         # Plan card header metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -2678,8 +2251,7 @@ with tab4:
             ), unsafe_allow_html=True)
         
         with col2:
-            # Get 8:30 fan width
-            fan_830 = anchor_data['fan_projection'][anchor_data['fan_projection']['Time'] == '08:30']
+            fan_830 = anchor_data['fan_df'][anchor_data['fan_df']['Time'] == '08:30']
             fan_width = fan_830['Fan_Width'].iloc[0] if not fan_830.empty else 0
             
             st.markdown(create_metric_card(
@@ -2711,7 +2283,7 @@ with tab4:
                 icon=bc_icon,
                 card_type=bc_type
             ), unsafe_allow_html=True)
-        
+
         # Main plan sections
         col_left, col_right = st.columns(2)
         
@@ -2723,7 +2295,7 @@ with tab4:
             """, unsafe_allow_html=True)
             
             # 8:30 bias and levels
-            strategy_830 = anchor_data['strategy_table'][anchor_data['strategy_table']['Time'] == '08:30']
+            strategy_830 = anchor_data['strat_df'][anchor_data['strat_df']['Time'] == '08:30']
             
             if not strategy_830.empty:
                 row_830 = strategy_830.iloc[0]
@@ -2731,15 +2303,15 @@ with tab4:
                 st.markdown(f"• **Current Bias:** {create_status_badge(row_830['Bias'], 'up' if row_830['Bias'] == 'UP' else ('down' if row_830['Bias'] == 'DOWN' else 'neutral'))}")
                 st.markdown(f"• **Top Level:** {row_830['Top']}")
                 st.markdown(f"• **Bottom Level:** {row_830['Bottom']}")
-                st.markdown(f"• **Fan Width:** {row_830['Width']}")
+                st.markdown(f"• **Fan Width:** {row_830['Fan_Width']}")
                 st.markdown(f"• **Data Source:** {row_830['Note']}")
             
             st.markdown("---")
             
             # Probability insights
             st.markdown("**🧠 Overnight Probability Analysis:**")
-            if not prob_data['interactions'].empty:
-                top_interactions = prob_data['interactions'].nlargest(3, 'Score')
+            if not prob_data['interactions_df'].empty:
+                top_interactions = prob_data['interactions_df'].nlargest(3, 'Score')
                 for i, (_, interaction) in enumerate(top_interactions.iterrows(), 1):
                     direction_badge = create_status_badge(
                         interaction['ExpectedDir'], 
@@ -2761,14 +2333,14 @@ with tab4:
             
             if bc_data:
                 # BC Forecast integration
-                projection_830 = bc_data['projection_table'][bc_data['projection_table']['Time'] == '08:30']
+                projection_830 = bc_data['table'][bc_data['table']['Time'] == '08:30']
                 
                 if not projection_830.empty:
                     row_830 = projection_830.iloc[0]
                     st.markdown("**📈 Contract Projections @ 8:30:**")
                     st.markdown(f"• **SPX Projected:** {row_830['SPX_Projected']:.2f}")
                     
-                    ca_symbol = bc_data['ca_symbol']
+                    ca_symbol = bc_data['ca_sym']
                     if f"{ca_symbol}_Entry" in row_830:
                         st.markdown(f"• **{ca_symbol} Entry:** {row_830[f'{ca_symbol}_Entry']:.2f}")
                     if f"{ca_symbol}_Exit" in row_830:
@@ -2776,11 +2348,11 @@ with tab4:
                     if f"{ca_symbol}_Spread" in row_830:
                         st.markdown(f"• **{ca_symbol} Spread:** {row_830[f'{ca_symbol}_Spread']:.2f}")
                     
-                    st.markdown(f"• **Expected Exit Time:** {bc_data['ca_expected_exit']}")
+                    st.markdown(f"• **Expected Exit Time:** {bc_data['ca_expected']}")
                     
                     # Contract B if available
-                    if bc_data.get('cb_data'):
-                        cb_symbol = bc_data['cb_data']['symbol']
+                    if bc_data.get('cb_sym'):
+                        cb_symbol = bc_data['cb_sym']
                         if f"{cb_symbol}_Entry" in row_830:
                             st.markdown(f"• **{cb_symbol} Entry:** {row_830[f'{cb_symbol}_Entry']:.2f}")
                         if f"{cb_symbol}_Exit" in row_830:
@@ -2797,44 +2369,12 @@ with tab4:
             
             # Risk management
             st.markdown("**⚠️ Risk Management:**")
-            if prob_data['readiness_score'] >= 71:
+            if prob_data['readiness_score'] >= 70:
                 st.markdown("• ✅ High confidence - standard position sizing")
-            elif prob_data['readiness_score'] >= 41:
+            elif prob_data['readiness_score'] >= 45:
                 st.markdown("• ⚡ Medium confidence - reduced position sizing")
             else:
                 st.markdown("• 🚫 Low confidence - consider skipping or minimal size")
-            
-            st.markdown("• Invalidation: bias reversal beyond fan levels")
-            st.markdown("• Monitor volume confirmation at key levels")
-        
-        # Action recommendations
-        st.markdown("### 🚀 Recommended Actions")
-        
-        action_cards = []
-        
-        # Generate specific action items
-        if prob_data['readiness_score'] >= 71:
-            action_cards.append(("🎯 High Probability Setup", "Execute standard trade plan with full position sizing", "success"))
-        elif prob_data['readiness_score'] >= 41:
-            action_cards.append(("⚡ Medium Probability Setup", "Consider reduced position sizing with tight risk management", "warning"))
-        else:
-            action_cards.append(("🚫 Low Probability Setup", "Consider skipping or paper trading this session", "danger"))
-        
-        if bc_data:
-            action_cards.append(("📈 Contract Targets Set", f"Monitor {bc_data['ca_symbol']} progression toward exit targets", "success"))
-        else:
-            action_cards.append(("📋 Set Contract Targets", "Configure BC Forecast for specific contract projections", "neutral"))
-        
-        # Display action cards
-        cols = st.columns(len(action_cards))
-        for i, (title, desc, card_type) in enumerate(action_cards):
-            with cols[i]:
-                st.markdown(f"""
-                <div style="background: var(--{card_type}-50); border: 2px solid var(--{card_type}-200); border-radius: 12px; padding: 16px; height: 120px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <h4 style="margin: 0; color: var(--{card_type}-700);">{title}</h4>
-                    <p style="margin: 8px 0 0 0; color: var(--{card_type}-600); font-size: 0.875rem;">{desc}</p>
-                </div>
-                """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FOOTER & SYSTEM STATUS
