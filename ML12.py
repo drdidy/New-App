@@ -1292,11 +1292,11 @@ def analyze_weekend_gap_behavior(prev_day: date, touches_df: pd.DataFrame) -> Di
 
 
 
-# Part 3/4: Dashboard Builders, Probability Board & Advanced Scoring Integration
-# Comprehensive scoring system with volume context and time-based edge analysis
+# Part 3/4: Dashboard Builders & Probability Board (CORRECTED)
+# Simplified approach following working code pattern with volume & time enhancements
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ADVANCED SCORING COMPONENTS
+# ENHANCED SCORING COMPONENTS (Simplified)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def in_liquidity_window(ts: datetime, window: List[Tuple[int, int]]) -> bool:
@@ -1375,35 +1375,87 @@ def assess_wick_quality(bar: pd.Series, expected_dir: str) -> bool:
 
 def detect_touch_clustering(touch_history: List[pd.Timestamp], current_ts: pd.Timestamp) -> bool:
     """Detect if similar qualified touches occurred recently."""
-    cutoff_time = current_ts - pd.Timedelta(hours=TOUCH_CLUSTER_WINDOW / 2)
-    recent_touches = [t for t in touch_history if cutoff_time <= t < current_ts]
+    if not touch_history:
+        return False
+    
+    # Simple approach - check if any touch in last 3 hours
+    cutoff_seconds = TOUCH_CLUSTER_WINDOW * 1800  # 6 * 30min * 60sec
+    recent_touches = []
+    
+    for touch_ts in touch_history:
+        time_diff = (current_ts - touch_ts).total_seconds()
+        if 0 < time_diff <= cutoff_seconds:
+            recent_touches.append(touch_ts)
+    
     return len(recent_touches) > 0
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# INTEGRATED SCORING ENGINE
+# VOLUME CONTEXT ANALYSIS (Simplified)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def compute_comprehensive_score(df_30m: pd.DataFrame, ts: pd.Timestamp, expected_dir: str,
-                               touch_history: List[pd.Timestamp], asia_hits: set, 
-                               london_hits: set, overnight_volume_context: Dict) -> Tuple[int, Dict[str, int], int]:
-    """
-    Comprehensive scoring engine integrating all probability components:
-    - Traditional technical factors
-    - Volume context analysis  
-    - Time-based edge scoring
-    - Session transition momentum
-    """
-    ts_ct = fmt_ct(ts.to_pydatetime())
+def analyze_volume_context_simple(df_30m: pd.DataFrame, ts: pd.Timestamp) -> Dict[str, int]:
+    """Simplified volume analysis that won't cause errors."""
+    volume_scores = {"volume_spike": 0, "session_volume": 0}
     
+    if "Volume" not in df_30m.columns or df_30m["Volume"].notna().sum() < 5:
+        return volume_scores
+    
+    if ts not in df_30m.index or pd.isna(df_30m.loc[ts, "Volume"]):
+        return volume_scores
+    
+    current_volume = df_30m.loc[ts, "Volume"]
+    
+    # Volume spike detection
+    recent_volumes = df_30m["Volume"].loc[:ts].tail(20)
+    if len(recent_volumes) >= 10:
+        avg_volume = recent_volumes.mean()
+        if current_volume > avg_volume * 1.5:
+            volume_scores["volume_spike"] = 8
+        elif current_volume > avg_volume * 1.25:
+            volume_scores["volume_spike"] = 5
+    
+    # Session volume context
+    ts_hour = fmt_ct(ts.to_pydatetime()).hour
+    if ts_hour in [21, 22, 2, 3, 7, 8]:  # Key session transition hours
+        volume_scores["session_volume"] = 3
+    
+    return volume_scores
+
+def calculate_time_significance(ts: pd.Timestamp) -> int:
+    """Calculate time-based significance score."""
+    ts_ct = fmt_ct(ts.to_pydatetime())
+    hour = ts_ct.hour
+    
+    # Time-of-day significance scores
+    if hour == 8:  # Pre-NY open
+        return 10
+    elif hour == 21:  # Asia open
+        return 6
+    elif hour == 2:  # London open
+        return 7
+    elif hour in [7, 22, 3]:  # Transition hours
+        return 5
+    else:
+        return 2
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIMPLIFIED SCORING ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_enhanced_score_components(df_30m: pd.DataFrame, ts: pd.Timestamp,
+                                     expected_dir: str, touch_history: List[pd.Timestamp],
+                                     asia_hit: bool, london_hit: bool) -> Tuple[int, Dict[str, int], int]:
+    """
+    Enhanced scoring that follows the working pattern but adds volume/time features.
+    """
     # Base liquidity bonus
+    ts_ct = fmt_ct(ts.to_pydatetime())
     liquidity_bonus = calculate_liquidity_bonus(ts_ct)
     
-    # Traditional scoring components
+    # Traditional scoring components (from working code)
     score_components = {}
     
     # 1. Confluence (cross-session alignment)
-    asia_hit = ts in asia_hits
-    london_hit = ts in london_hits
     if asia_hit and london_hit:
         score_components["confluence"] = WEIGHTS["confluence"]
     elif asia_hit or london_hit:
@@ -1412,7 +1464,7 @@ def compute_comprehensive_score(df_30m: pd.DataFrame, ts: pd.Timestamp, expected
         score_components["confluence"] = 0
     
     # 2. Structure (edge interaction qualification)
-    score_components["structure"] = WEIGHTS["structure"]  # Already qualified
+    score_components["structure"] = WEIGHTS["structure"]
     
     # 3. Wick quality
     score_components["wick"] = WEIGHTS["wick"] if assess_wick_quality(df_30m.loc[ts], expected_dir) else 0
@@ -1433,28 +1485,26 @@ def compute_comprehensive_score(df_30m: pd.DataFrame, ts: pd.Timestamp, expected
     # 7. Touch clustering
     score_components["cluster"] = WEIGHTS["cluster"] if detect_touch_clustering(touch_history, ts) else 0
     
-    # NEW: Volume Context Scoring
-    volume_analysis = analyze_volume_context(df_30m, ts, expected_dir)
+    # 8. Basic volume
+    if "Volume" in df_30m.columns and df_30m["Volume"].notna().any():
+        if ts in df_30m.index and pd.notna(df_30m.loc[ts, "Volume"]):
+            recent_vol = df_30m["Volume"].loc[:ts].tail(20).mean()
+            if df_30m.loc[ts, "Volume"] > recent_vol * 1.15:
+                score_components["volume"] = WEIGHTS["volume"]
+            else:
+                score_components["volume"] = 0
+        else:
+            score_components["volume"] = 0
+    else:
+        score_components["volume"] = 0
+    
+    # NEW: Enhanced volume context
+    volume_analysis = analyze_volume_context_simple(df_30m, ts)
     score_components["volume_spike"] = volume_analysis["volume_spike"]
-    score_components["volume_trend"] = volume_analysis["volume_trend"] 
-    score_components["volume_distribution"] = volume_analysis["volume_distribution"]
+    score_components["session_volume"] = volume_analysis["session_volume"]
     
-    # Add overnight volume context
-    score_components["overnight_volume"] = int(overnight_volume_context.get("overnight_vs_session", 0))
-    score_components["volume_dist_quality"] = int(overnight_volume_context.get("overnight_distribution", 0))
-    
-    # NEW: Time-Based Edge Scoring
-    asia_touch_times = [t for t in touch_history if t in asia_hits]
-    london_touch_times = [t for t in touch_history if t in london_hits]
-    
-    momentum_analysis = analyze_session_momentum(ts, expected_dir, asia_touch_times, london_touch_times)
-    score_components["session_transition"] = momentum_analysis["session_transition"]
-    score_components["time_significance"] = momentum_analysis["time_significance"]
-    score_components["directional_persistence"] = momentum_analysis["directional_persistence"]
-    
-    # Time decay factor
-    decay_factor = calculate_time_decay_factor(ts)
-    score_components["time_decay"] = int(WEIGHTS["time_decay"] * decay_factor)
+    # NEW: Time significance
+    score_components["time_significance"] = calculate_time_significance(ts)
     
     # Calculate total score
     base_score = sum(score_components.values())
@@ -1463,40 +1513,32 @@ def compute_comprehensive_score(df_30m: pd.DataFrame, ts: pd.Timestamp, expected
     return final_score, score_components, liquidity_bonus
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PROBABILITY BOARD BUILDER
+# MAIN PROBABILITY BOARD BUILDER (Following working pattern)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def build_comprehensive_probability_board(prev_day: date, proj_day: date,
-                                        anchor_close: float, anchor_time: datetime,
-                                        tolerance_fraction: float) -> Tuple[pd.DataFrame, pd.DataFrame, float, Dict]:
+def build_enhanced_probability_board(prev_day: date, proj_day: date,
+                                   anchor_close: float, anchor_time: datetime,
+                                   tolerance_fraction: float) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
     """
-    Build comprehensive probability board with enhanced scoring:
-    - Fan projection for RTH
-    - Overnight edge interaction detection
-    - Volume context analysis
-    - Time-based momentum scoring
+    Enhanced probability board following the working code pattern.
     """
-    
     # Generate RTH fan projection
     fan_projection = project_fan_from_close(anchor_close, anchor_time, proj_day)
     
     # Calculate ES→SPX offset
     es_offset = es_spx_offset_at_anchor(prev_day)
     if es_offset is None:
-        return pd.DataFrame(), fan_projection, 0.0, {}
+        return pd.DataFrame(), fan_projection, 0.0
     
     # Fetch overnight ES data
     overnight_es = fetch_overnight(prev_day, proj_day)
     if overnight_es.empty:
-        return pd.DataFrame(), fan_projection, float(es_offset), {}
+        return pd.DataFrame(), fan_projection, float(es_offset)
     
     # Convert to SPX frame
     overnight_spx = adjust_to_spx_frame(overnight_es, es_offset)
     
-    # Analyze overnight volume context
-    overnight_vol_context = calculate_overnight_volume_context(overnight_spx)
-    
-    # Generate fan levels for each overnight timestamp
+    # Generate fan levels for each overnight timestamp (following working pattern)
     fan_timeline = []
     for ts, bar in overnight_spx.iterrows():
         blocks_from_anchor = count_effective_blocks(anchor_time, ts)
@@ -1507,7 +1549,7 @@ def build_comprehensive_probability_board(prev_day: date, proj_day: date,
         
         fan_timeline.append((ts, bar, top_level, bottom_level))
     
-    # Detect qualified edge interactions
+    # Detect qualified edge interactions (following working pattern)
     qualified_interactions = []
     touch_history = []
     asia_touches = set()
@@ -1527,16 +1569,19 @@ def build_comprehensive_probability_board(prev_day: date, proj_day: date,
         
         # Track session hits
         ts_ct = fmt_ct(current_ts.to_pydatetime())
-        if in_liquidity_window(ts_ct, SYD_TOK):
+        is_asia_overlap = in_liquidity_window(ts_ct, SYD_TOK)
+        is_london_overlap = in_liquidity_window(ts_ct, TOK_LON)
+        
+        if is_asia_overlap:
             asia_touches.add(current_ts)
-        if in_liquidity_window(ts_ct, TOK_LON):
+        if is_london_overlap:
             london_touches.add(current_ts)
         
-        # Calculate comprehensive score
+        # Calculate enhanced score
         expected_direction = interaction["direction"]
-        final_score, score_breakdown, liquidity_bonus = compute_comprehensive_score(
-            overnight_spx, current_ts, expected_direction, touch_history[-10:],  # Last 10 touches
-            asia_touches, london_touches, overnight_vol_context
+        final_score, score_breakdown, liquidity_bonus = compute_enhanced_score_components(
+            overnight_spx, current_ts, expected_direction, touch_history[-5:],  # Last 5 touches
+            is_asia_overlap, is_london_overlap
         )
         
         # Update touch history
@@ -1546,7 +1591,7 @@ def build_comprehensive_probability_board(prev_day: date, proj_day: date,
         current_price = float(current_bar["Close"])
         current_bias = compute_bias(current_price, current_top, current_bottom, tolerance_fraction)
         
-        # Store interaction record
+        # Store interaction record (following working pattern but with enhancements)
         interaction_record = {
             "TimeDT": current_ts,
             "Time": current_ts.strftime("%H:%M"),
@@ -1561,27 +1606,20 @@ def build_comprehensive_probability_board(prev_day: date, proj_day: date,
             "Score": final_score,
             "LiquidityBonus": liquidity_bonus,
             
-            # Traditional components
-            "Confluence": score_breakdown["confluence"],
-            "Structure": score_breakdown["structure"], 
-            "Wick": score_breakdown["wick"],
-            "ATR": score_breakdown["atr"],
-            "Compression": score_breakdown["compression"],
-            "Gap": score_breakdown["gap"],
-            "Cluster": score_breakdown["cluster"],
+            # Traditional components (matching working code)
+            "Confluence_w": score_breakdown["confluence"],
+            "Structure_w": score_breakdown["structure"], 
+            "Wick_w": score_breakdown["wick"],
+            "ATR_w": score_breakdown["atr"],
+            "Compression_w": score_breakdown["compression"],
+            "Gap_w": score_breakdown["gap"],
+            "Cluster_w": score_breakdown["cluster"],
+            "Volume_w": score_breakdown["volume"],
             
-            # NEW: Volume components
-            "VolumeSpike": score_breakdown["volume_spike"],
-            "VolumeTrend": score_breakdown["volume_trend"],
-            "VolumeDistribution": score_breakdown["volume_distribution"],
-            "OvernightVolume": score_breakdown["overnight_volume"],
-            "VolumeQuality": score_breakdown["volume_dist_quality"],
-            
-            # NEW: Time-based components
-            "SessionTransition": score_breakdown["session_transition"],
-            "TimeSignificance": score_breakdown["time_significance"],
-            "DirectionalPersistence": score_breakdown["directional_persistence"],
-            "TimeDecay": score_breakdown["time_decay"]
+            # NEW: Enhanced components
+            "VolumeSpike_w": score_breakdown.get("volume_spike", 0),
+            "SessionVolume_w": score_breakdown.get("session_volume", 0),
+            "TimeSignificance_w": score_breakdown.get("time_significance", 0)
         }
         
         qualified_interactions.append(interaction_record)
@@ -1591,20 +1629,10 @@ def build_comprehensive_probability_board(prev_day: date, proj_day: date,
     if not interactions_df.empty:
         interactions_df = interactions_df.sort_values("TimeDT").reset_index(drop=True)
     
-    # Calculate summary statistics
-    summary_stats = {
-        "total_interactions": len(qualified_interactions),
-        "avg_score": interactions_df["Score"].mean() if not interactions_df.empty else 0,
-        "max_score": interactions_df["Score"].max() if not interactions_df.empty else 0,
-        "asia_touches": len(asia_touches),
-        "london_touches": len(london_touches),
-        "volume_quality": overnight_vol_context.get("overnight_distribution", 0)
-    }
-    
-    return interactions_df, fan_projection, float(es_offset), summary_stats
+    return interactions_df, fan_projection, float(es_offset)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BC FORECAST SYSTEM
+# BC FORECAST SYSTEM (unchanged from working code)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def project_contract_line(bounce1_dt: datetime, bounce1_price: float,
@@ -1654,87 +1682,6 @@ def calculate_expected_exit_timing(b1_dt: datetime, h1_dt: datetime,
             return rth_slot.strftime("%H:%M")
     
     return "n/a"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# READINESS SCORING SYSTEM
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def calculate_readiness_score(interactions_df: pd.DataFrame, summary_stats: Dict) -> Tuple[int, str, str]:
-    """
-    Calculate overall trading readiness score and classification:
-    - Skip: Low confidence (0-40)
-    - Medium: Moderate confidence (41-70)  
-    - High: Strong confidence (71-100)
-    """
-    if interactions_df.empty:
-        return 0, "SKIP", "🚫 No qualified interactions detected"
-    
-    # Primary metrics
-    scores = interactions_df["Score"].tolist()
-    top_3_avg = int(np.mean(sorted(scores, reverse=True)[:3])) if len(scores) >= 3 else int(np.mean(scores))
-    
-    # Adjustment factors
-    volume_quality = summary_stats.get("volume_quality", 0)
-    session_coverage = min(summary_stats.get("asia_touches", 0), 1) + min(summary_stats.get("london_touches", 0), 1)
-    
-    # Calculate adjusted readiness
-    base_readiness = top_3_avg
-    volume_adjustment = min(5, volume_quality * 2)  # Max +5 for volume quality
-    coverage_adjustment = session_coverage * 3      # Max +6 for dual session coverage
-    
-    final_readiness = min(100, base_readiness + volume_adjustment + coverage_adjustment)
-    
-    # Classification
-    if final_readiness >= 71:
-        classification = "HIGH"
-        indicator = "🔥 High Confidence"
-    elif final_readiness >= 41:
-        classification = "MEDIUM" 
-        indicator = "⚡ Medium Confidence"
-    else:
-        classification = "SKIP"
-        indicator = "🚫 Low Confidence"
-    
-    return final_readiness, classification, indicator
-
-def generate_trade_recommendations(interactions_df: pd.DataFrame, fan_df: pd.DataFrame,
-                                 readiness_score: int) -> List[str]:
-    """Generate specific trade recommendations based on analysis."""
-    recommendations = []
-    
-    if interactions_df.empty:
-        recommendations.append("No qualified setups detected - consider waiting")
-        return recommendations
-    
-    # Analyze top interactions
-    top_interactions = interactions_df.nlargest(3, "Score")
-    
-    for _, interaction in top_interactions.iterrows():
-        direction = interaction["ExpectedDir"]
-        edge = interaction["Edge"]
-        score = interaction["Score"]
-        time_str = interaction["Time"]
-        
-        if score >= 70:
-            confidence = "High"
-        elif score >= 50:
-            confidence = "Medium"
-        else:
-            confidence = "Low"
-        
-        rec = f"{confidence} confidence {direction.lower()} from {edge} interaction @ {time_str} (Score: {score})"
-        recommendations.append(rec)
-    
-    # Add sizing guidance
-    if readiness_score >= 71:
-        recommendations.append("Consider standard position sizing")
-    elif readiness_score >= 41:
-        recommendations.append("Consider reduced position sizing")
-    else:
-        recommendations.append("Consider skipping or minimal sizing")
-    
-    return recommendations
-
 
 
 
