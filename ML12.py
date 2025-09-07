@@ -1,13 +1,13 @@
 # app.py
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🔮 SPX PROPHET — SPX-only Enterprise App
-# Tabs: 1) SPX Anchors  2) BC Forecast (Bounce + Contract, EXACTLY 2 bounces)
+# Tabs: 1) SPX Anchors  2) BC Forecast (EXACTLY 2 bounces, Entries & Exits)
 #       3) Probability Board  4) Plan Card
 #
 # Core:
 # - Anchor: previous session ≤ 3:00 PM CT SPX cash close
 # - Fan slopes (per 30m): Top +0.312  •  Bottom −0.25  (overrideable)
-# - Corrected bias + edge interaction logic
+# - Corrected bias + edge interaction logic (within-fan proximity + neutrality band)
 # - ES→SPX offset ladder (1m → 5m → 30m → recent median)
 # - Overnight detection with 1m/5m; 30m last-resort for robustness
 # - Forms & slot pickers minimize disruptive reruns; ⭐ 8:30 highlight
@@ -33,14 +33,14 @@ BOTTOM_SLOPE_DEFAULT = 0.25
 
 # Probability boosters (30m basis)
 WEIGHTS_DEFAULT = {"ema":20, "volume":25, "wick":20, "atr":15, "tod":20, "div":0}
-KEY_TOD = [(8,30), (10,0), (13,30)]  # key decision moments
+KEY_TOD = [(8,30), (10,0), (13,30)]
 KEY_TOD_WINDOW_MIN = 7
 WICK_MIN_RATIO = 0.6
 ATR_LOOKBACK = 14
 ATR_HIGH_PCTL = 70
 ATR_LOW_PCTL  = 30
 RSI_LEN = 14
-RSI_WINDOW_MIN = 10  # 10×30m bars
+RSI_WINDOW_MIN = 10
 
 # ───────────────────────────────────────────────────────────────────────────────
 # PAGE & THEME
@@ -91,20 +91,17 @@ def between_time(df: pd.DataFrame, start_str: str, end_str: str) -> pd.DataFrame
 def rth_slots_ct(target_date: date) -> List[datetime]:
     start_dt = fmt_ct(datetime.combine(target_date, time(8,30)))
     end_dt   = fmt_ct(datetime.combine(target_date, time(14,30)))
-    slots = []
-    cur = start_dt
+    out, cur = [], start_dt
     while cur <= end_dt:
-        slots.append(cur)
+        out.append(cur)
         cur += timedelta(minutes=30)
-    return slots
+    return out
 
 def gen_slots(start_dt: datetime, end_dt: datetime, step_min: int = 30) -> List[datetime]:
     start_dt = fmt_ct(start_dt); end_dt = fmt_ct(end_dt)
-    out = []
-    cur = start_dt
+    out, cur = [], start_dt
     while cur <= end_dt:
-        out.append(cur)
-        cur += timedelta(minutes=step_min)
+        out.append(cur); cur += timedelta(minutes=step_min)
     return out
 
 def is_maintenance(dt: datetime) -> bool:
@@ -185,13 +182,12 @@ def resample_to_30m_ct(min_df: pd.DataFrame) -> pd.DataFrame:
     if min_df.empty or not isinstance(min_df.index, pd.DatetimeIndex):
         return pd.DataFrame()
     df = min_df.sort_index()
-    cols = [c for c in ["Open","High","Low","Close","Volume"] if c in df.columns]
     agg = {}
-    if "Open" in cols:   agg["Open"] = "first"
-    if "High" in cols:   agg["High"] = "max"
-    if "Low"  in cols:   agg["Low"]  = "min"
-    if "Close" in cols:  agg["Close"]= "last"
-    if "Volume" in cols: agg["Volume"]="sum"
+    if "Open"   in df.columns: agg["Open"]   = "first"
+    if "High"   in df.columns: agg["High"]   = "max"
+    if "Low"    in df.columns: agg["Low"]    = "min"
+    if "Close"  in df.columns: agg["Close"]  = "last"
+    if "Volume" in df.columns: agg["Volume"] = "sum"
     out = df.resample("30T", label="right", closed="right").agg(agg)
     out = out.dropna(subset=[c for c in ["Open","High","Low","Close"] if c in out.columns], how="any")
     return out
@@ -278,7 +274,7 @@ def touched_line(low, high, line) -> bool:
 
 def classify_edge_touch(bar: pd.Series, top: float, bottom: float) -> Optional[Dict]:
     """
-    Encodes your fan-edge interaction rules:
+    Edge interaction rules:
     - Top touched + bearish close (inside/above) → different expectations
     - Bottom touched + bullish close (inside/below) → different expectations
     """
@@ -483,9 +479,7 @@ def nearest_30m_index(idx_30m: pd.DatetimeIndex, ts: pd.Timestamp) -> Optional[p
     if idx_30m.empty:
         return None
     loc_df = idx_30m[idx_30m <= ts]
-    if len(loc_df) == 0:
-        return None
-    return loc_df[-1]
+    return loc_df[-1] if len(loc_df) else None
 
 # ───────────────────────────────────────────────────────────────────────────────
 # DASHBOARD BUILDS
@@ -670,7 +664,6 @@ with tabAnchors:
 
             fan_df = project_fan_from_close(anchor_close, anchor_time, proj_day)
 
-            # Pull RTH (30m). If empty (historic issues), still show fan-only rows.
             spx_proj = fetch_intraday("^GSPC", proj_day, proj_day, "30m")
             if spx_proj.empty:
                 spx_proj = fetch_intraday("SPY", proj_day, proj_day, "30m")
@@ -727,52 +720,56 @@ with tabAnchors:
         st.info("Use **Refresh SPX Anchors** in the sidebar.")
 
 # ╔═════════════════════════════════════════════════════════════════════════════╗
-# ║ TAB 2: BC FORECAST  (EXACTLY 2 BOUNCES)                                     ║
+# ║ TAB 2: BC FORECAST  (EXACTLY 2 BOUNCES + ENTRY/EXIT LINES)                  ║
 # ╚═════════════════════════════════════════════════════════════════════════════╝
 with tabBC:
     st.subheader("BC Forecast — Bounce + Contract Forecast (Asia/Europe → NY 8:30–14:30)")
-    st.caption("Requires **exactly 2 bounces** to fit slopes for SPX and up to two option contracts.")
+    st.caption("Requires **exactly 2 bounces** (times + SPX prices). For each contract, provide prices at both bounces and highs after each bounce (with times).")
 
-    # Build 30m slot list for sessions:
-    asia_start   = fmt_ct(datetime.combine(prev_day, time(19,0)))  # 7PM
-    europe_end   = fmt_ct(datetime.combine(proj_day, time(7,0)))   # 7AM
-    session_slots = gen_slots(asia_start, europe_end, 30)
+    # Session window for slot pickers:
+    asia_start = fmt_ct(datetime.combine(prev_day, time(19,0)))  # 7PM CT
+    euro_end   = fmt_ct(datetime.combine(proj_day, time(7,0)))   # 7AM CT
+    session_slots = gen_slots(asia_start, euro_end, 30)
     slot_labels = [dt.strftime("%Y-%m-%d %H:%M") for dt in session_slots]
 
-    with st.form("bc_form", clear_on_submit=False):
-        st.markdown("**Bounces (exactly two):** pick 30-min slots + underlying prices")
-        col1, col2 = st.columns(2)
-        with col1:
-            b1_sel = st.selectbox("Bounce #1 Time (slot)", slot_labels, index=0, key="bc_b1_sel")
-            b1_spx = st.number_input("Bounce #1 SPX Price", value=6500.00, step=0.25, format="%.2f", key="bc_b1_spx")
-        with col2:
-            b2_sel = st.selectbox("Bounce #2 Time (slot)", slot_labels, index=min(6, len(slot_labels)-1), key="bc_b2_sel")
-            b2_spx = st.number_input("Bounce #2 SPX Price", value=6512.00, step=0.25, format="%.2f", key="bc_b2_spx")
+    with st.form("bc_form_v2", clear_on_submit=False):
+        st.markdown("**Underlying bounces (exactly two):**")
+        c1, c2 = st.columns(2)
+        with c1:
+            b1_sel = st.selectbox("Bounce #1 Time (slot)", slot_labels, index=0, key="bc2_b1_sel")
+            b1_spx = st.number_input("Bounce #1 SPX Price", value=6500.00, step=0.25, format="%.2f", key="bc2_b1_spx")
+        with c2:
+            b2_sel = st.selectbox("Bounce #2 Time (slot)", slot_labels, index=min(6, len(slot_labels)-1), key="bc2_b2_sel")
+            b2_spx = st.number_input("Bounce #2 SPX Price", value=6512.00, step=0.25, format="%.2f", key="bc2_b2_spx")
 
         st.markdown("---")
-        st.markdown("**Contract A (e.g., 6525c) — required**")
-        ca_sym = st.text_input("Contract A Label", value="6525c", key="bc_ca_sym")
-        ca_b1  = st.number_input("A: Price at Bounce #1", value=10.00, step=0.05, format="%.2f", key="bc_ca_b1")
-        ca_b2  = st.number_input("A: Price at Bounce #2", value=12.50, step=0.05, format="%.2f", key="bc_ca_b2")
-        ca_h1  = st.number_input("A: High after Bounce #1 (optional)", value=14.00, step=0.05, format="%.2f", key="bc_ca_h1")
-        ca_h2  = st.number_input("A: High after Bounce #2 (optional)", value=16.00, step=0.05, format="%.2f", key="bc_ca_h2")
+        st.markdown("**Contract A (required)**")
+        ca_sym = st.text_input("Contract A Label", value="6525c", key="bc2_ca_sym")
+        ca_b1_price = st.number_input("A: Price at Bounce #1", value=10.00, step=0.05, format="%.2f", key="bc2_ca_b1_price")
+        ca_b2_price = st.number_input("A: Price at Bounce #2", value=12.50, step=0.05, format="%.2f", key="bc2_ca_b2_price")
+        ca_h1_time  = st.selectbox("A: High after Bounce #1 — Time", slot_labels, index=min(2, len(slot_labels)-1), key="bc2_ca_h1_time")
+        ca_h1_price = st.number_input("A: High after Bounce #1 — Price", value=14.00, step=0.05, format="%.2f", key="bc2_ca_h1_price")
+        ca_h2_time  = st.selectbox("A: High after Bounce #2 — Time", slot_labels, index=min(8, len(slot_labels)-1), key="bc2_ca_h2_time")
+        ca_h2_price = st.number_input("A: High after Bounce #2 — Price", value=16.00, step=0.05, format="%.2f", key="bc2_ca_h2_price")
 
         st.markdown("---")
-        st.markdown("**Contract B (e.g., 6515c) — optional**")
-        cb_enable = st.checkbox("Add Contract B", value=False, key="bc_cb_enable")
+        st.markdown("**Contract B (optional)**")
+        cb_enable = st.checkbox("Add Contract B", value=False, key="bc2_cb_enable")
         if cb_enable:
-            cb_sym = st.text_input("Contract B Label", value="6515c", key="bc_cb_sym")
-            cb_b1  = st.number_input("B: Price at Bounce #1", value=9.50, step=0.05, format="%.2f", key="bc_cb_b1")
-            cb_b2  = st.number_input("B: Price at Bounce #2", value=11.80, step=0.05, format="%.2f", key="bc_cb_b2")
-            cb_h1  = st.number_input("B: High after Bounce #1 (optional)", value=13.30, step=0.05, format="%.2f", key="bc_cb_h1")
-            cb_h2  = st.number_input("B: High after Bounce #2 (optional)", value=15.10, step=0.05, format="%.2f", key="bc_cb_h2")
+            cb_sym = st.text_input("Contract B Label", value="6515c", key="bc2_cb_sym")
+            cb_b1_price = st.number_input("B: Price at Bounce #1", value=9.50, step=0.05, format="%.2f", key="bc2_cb_b1_price")
+            cb_b2_price = st.number_input("B: Price at Bounce #2", value=11.80, step=0.05, format="%.2f", key="bc2_cb_b2_price")
+            cb_h1_time  = st.selectbox("B: High after Bounce #1 — Time", slot_labels, index=min(3, len(slot_labels)-1), key="bc2_cb_h1_time")
+            cb_h1_price = st.number_input("B: High after Bounce #1 — Price", value=13.30, step=0.05, format="%.2f", key="bc2_cb_h1_price")
+            cb_h2_time  = st.selectbox("B: High after Bounce #2 — Time", slot_labels, index=min(9, len(slot_labels)-1), key="bc2_cb_h2_time")
+            cb_h2_price = st.number_input("B: High after Bounce #2 — Price", value=15.10, step=0.05, format="%.2f", key="bc2_cb_h2_price")
 
         submit_bc = st.form_submit_button("📈 Project NY Session (8:30–14:30)")
 
     if submit_bc:
         try:
-            b1_dt = fmt_ct(datetime.strptime(st.session_state["bc_b1_sel"], "%Y-%m-%d %H:%M"))
-            b2_dt = fmt_ct(datetime.strptime(st.session_state["bc_b2_sel"], "%Y-%m-%d %H:%M"))
+            b1_dt = fmt_ct(datetime.strptime(st.session_state["bc2_b1_sel"], "%Y-%m-%d %H:%M"))
+            b2_dt = fmt_ct(datetime.strptime(st.session_state["bc2_b2_sel"], "%Y-%m-%d %H:%M"))
             if b2_dt <= b1_dt:
                 st.error("Bounce #2 must occur after Bounce #1.")
             else:
@@ -780,7 +777,8 @@ with tabBC:
                 blocks_u = count_effective_blocks(b1_dt, b2_dt)
                 u_slope = (float(b2_spx) - float(b1_spx)) / blocks_u if blocks_u > 0 else 0.0
 
-                def project_contract_two_point(p1_dt, p1_price, p2_dt, p2_price, proj_day):
+                # Helpers: two-point line projection via 30m blocks
+                def project_line(p1_dt, p1_price, p2_dt, p2_price, proj_day, label_proj: str):
                     blocks = count_effective_blocks(p1_dt, p2_dt)
                     slope = (p2_price - p1_price) / blocks if blocks > 0 else 0.0
                     rows = []
@@ -788,20 +786,7 @@ with tabBC:
                         b = count_effective_blocks(p1_dt, slot)
                         price = p1_price + slope * b
                         rows.append({"Time": slot.strftime("%H:%M"),
-                                     "Projected": round(price, 2),
-                                     "Blocks_From_B1": round(b, 1)})
-                    return pd.DataFrame(rows), slope
-
-                def project_exit_line(p1_dt, e1, p2_dt, e2, proj_day):
-                    blocks = count_effective_blocks(p1_dt, p2_dt)
-                    if blocks <= 0: 
-                        return None, 0.0
-                    slope = (e2 - e1) / blocks
-                    rows = []
-                    for slot in rth_slots_ct(proj_day):
-                        b = count_effective_blocks(p1_dt, slot)
-                        price = e1 + slope * b
-                        rows.append({"Time": slot.strftime("%H:%M"), "ExitRef": round(price,2)})
+                                     label_proj: round(price, 2)})
                     return pd.DataFrame(rows), slope
 
                 # SPX projection from bounces
@@ -814,48 +799,89 @@ with tabBC:
                 spx_proj_df = pd.DataFrame(rows_u)
                 spx_proj_df.insert(0, "Slot", spx_proj_df["Time"].apply(lambda x: "⭐ 8:30" if x=="08:30" else ""))
 
-                # Contract A projections
-                ca_df, ca_slope = project_contract_two_point(b1_dt, float(ca_b1), b2_dt, float(ca_b2), proj_day)
-                ca_exit_df, ca_exit_slope = project_exit_line(b1_dt, float(ca_h1), b2_dt, float(ca_h2), proj_day)
+                # Contract A — entry line from bounce prices
+                ca_entry_df, ca_entry_slope = project_line(
+                    b1_dt, float(ca_b1_price), b2_dt, float(ca_b2_price), proj_day, f"{st.session_state['bc2_ca_sym']}_Entry"
+                )
+                # Contract A — exit line from high times/prices
+                ca_h1_dt = fmt_ct(datetime.strptime(st.session_state["bc2_ca_h1_time"], "%Y-%m-%d %H:%M"))
+                ca_h2_dt = fmt_ct(datetime.strptime(st.session_state["bc2_ca_h2_time"], "%Y-%m-%d %H:%M"))
+                ca_exit_df, ca_exit_slope = project_line(
+                    ca_h1_dt, float(ca_h1_price), ca_h2_dt, float(ca_h2_price), proj_day, f"{st.session_state['bc2_ca_sym']}_Exit"
+                )
 
-                # Optional Contract B
+                # Contract B (optional)
+                cb_entry_df = cb_exit_df = None
+                cb_entry_slope = cb_exit_slope = 0.0
                 if cb_enable:
-                    cb_df, cb_slope = project_contract_two_point(b1_dt, float(cb_b1), b2_dt, float(cb_b2), proj_day)
-                    cb_exit_df, cb_exit_slope = project_exit_line(b1_dt, float(cb_h1), b2_dt, float(cb_h2), proj_day)
-                else:
-                    cb_df = cb_exit_df = None
-                    cb_slope = cb_exit_slope = 0.0
+                    cb_entry_df, cb_entry_slope = project_line(
+                        b1_dt, float(cb_b1_price), b2_dt, float(cb_b2_price), proj_day, f"{st.session_state['bc2_cb_sym']}_Entry"
+                    )
+                    cb_h1_dt = fmt_ct(datetime.strptime(st.session_state["bc2_cb_h1_time"], "%Y-%m-%d %H:%M"))
+                    cb_h2_dt = fmt_ct(datetime.strptime(st.session_state["bc2_cb_h2_time"], "%Y-%m-%d %H:%M"))
+                    cb_exit_df, cb_exit_slope = project_line(
+                        cb_h1_dt, float(cb_h1_price), cb_h2_dt, float(cb_h2_price), proj_day, f"{st.session_state['bc2_cb_sym']}_Exit"
+                    )
 
                 # Merge into one table
-                out = spx_proj_df.merge(ca_df, on="Time", how="left", suffixes=("",""))
-                out = out.rename(columns={"Projected": f"{ca_sym}_Proj"})
-                if ca_exit_df is not None:
-                    out = out.merge(ca_exit_df, on="Time", how="left")
-                    out = out.rename(columns={"ExitRef": f"{ca_sym}_ExitRef"})
-                if cb_df is not None:
-                    out = out.merge(cb_df, on="Time", how="left")
-                    out = out.rename(columns={"Projected": f"{cb_sym}_Proj"})
-                    if cb_exit_df is not None:
-                        out = out.merge(cb_exit_df, on="Time", how="left")
-                        out = out.rename(columns={"ExitRef": f"{cb_sym}_ExitRef"})
+                out = spx_proj_df.merge(ca_entry_df, on="Time", how="left")
+                out = out.merge(ca_exit_df, on="Time", how="left")
+                # Spread for Contract A
+                ca = st.session_state["bc2_ca_sym"]
+                out[f"{ca}_Spread"] = out[f"{ca}_Exit"] - out[f"{ca}_Entry"]
+
+                if cb_enable and cb_entry_df is not None and cb_exit_df is not None:
+                    cb = st.session_state["bc2_cb_sym"]
+                    out = out.merge(cb_entry_df, on="Time", how="left")
+                    out = out.merge(cb_exit_df, on="Time", how="left")
+                    out[f"{cb}_Spread"] = out[f"{cb}_Exit"] - out[f"{cb}_Entry"]
+
+                # Expected Exit Time (median-duration method) per contract
+                def expected_exit_chip(b1_dt, h1_dt, b2_dt, h2_dt):
+                    d1 = count_effective_blocks(b1_dt, h1_dt)
+                    d2 = count_effective_blocks(b2_dt, h2_dt)
+                    durations = [d for d in [d1, d2] if d > 0]
+                    if not durations:
+                        return "n/a"
+                    med_blocks = int(round(np.median(durations)))
+                    # Expectation from the later of (b2_dt) into RTH:
+                    candidate = b2_dt
+                    for _ in range(med_blocks):
+                        candidate += timedelta(minutes=30)
+                        if is_maintenance(candidate) or in_weekend_gap(candidate):
+                            continue
+                    # Snap to first RTH slot ≥ candidate
+                    for slot in rth_slots_ct(proj_day):
+                        if slot >= candidate:
+                            return slot.strftime("%H:%M")
+                    return "n/a"
+
+                ca_expected = expected_exit_chip(b1_dt, ca_h1_dt, b2_dt, ca_h2_dt)
+                if cb_enable:
+                    cb_expected = expected_exit_chip(b1_dt, cb_h1_dt, b2_dt, cb_h2_dt)
+                else:
+                    cb_expected = None
 
                 # Metrics
                 m1, m2, m3, m4 = st.columns(4)
-                with m1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Underlying Slope /30m</p><div class='metric-value'>📐 {u_slope:+.3f}</div><div class='kicker'>From two bounces</div></div>", unsafe_allow_html=True)
-                with m2: st.markdown(f"<div class='metric-card'><p class='metric-title'>{ca_sym} Slope /30m</p><div class='metric-value'>📐 {ca_slope:+.3f}</div></div>", unsafe_allow_html=True)
+                with m1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Underlying Slope /30m</p><div class='metric-value'>📐 {u_slope:+.3f}</div><div class='kicker'>From 2 bounces</div></div>", unsafe_allow_html=True)
+                with m2: st.markdown(f"<div class='metric-card'><p class='metric-title'>{ca} Entry Slope /30m</p><div class='metric-value'>📈 {ca_entry_slope:+.3f}</div><div class='kicker'>Exit slope {ca_exit_slope:+.3f} • Expected exit ≈ {ca_expected}</div></div>", unsafe_allow_html=True)
                 with m3:
-                    if cb_enable: st.markdown(f"<div class='metric-card'><p class='metric-title'>{cb_sym} Slope /30m</p><div class='metric-value'>📐 {cb_slope:+.3f}</div></div>", unsafe_allow_html=True)
-                    else: st.markdown(f"<div class='metric-card'><p class='metric-title'>Contracts</p><div class='metric-value'>1</div></div>", unsafe_allow_html=True)
+                    if cb_enable:
+                        cb = st.session_state["bc2_cb_sym"]
+                        st.markdown(f"<div class='metric-card'><p class='metric-title'>{cb} Entry Slope /30m</p><div class='metric-value'>📈 {cb_entry_slope:+.3f}</div><div class='kicker'>Exit slope {cb_exit_slope:+.3f} • Expected exit ≈ {cb_expected}</div></div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div class='metric-card'><p class='metric-title'>Contracts</p><div class='metric-value'>1</div></div>", unsafe_allow_html=True)
                 with m4:
-                    exit_note = f"{ca_sym} exit slope {ca_exit_slope:+.3f}" + (f" • {cb_sym} {cb_exit_slope:+.3f}" if cb_enable else "")
-                    st.markdown(f"<div class='metric-card'><p class='metric-title'>Exit Ref Slope</p><div class='metric-value'>🎯 {exit_note}</div></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='metric-card'><p class='metric-title'>BC Forecast</p><div class='metric-value'>⭐ 8:30 highlighted</div><div class='kicker'>Spread = Exit − Entry</div></div>", unsafe_allow_html=True)
 
-                st.markdown("### 🔮 NY Session Projection (SPX + Contracts)")
+                st.markdown("### 🔮 NY Session Projection (SPX + Contract Entry/Exit Lines)")
                 st.dataframe(out, use_container_width=True, hide_index=True)
 
                 st.session_state["bc_result"] = {
                     "table": out, "u_slope": u_slope,
-                    "ca_sym": ca_sym, "cb_sym": (cb_sym if cb_enable else None)
+                    "ca_sym": ca, "cb_sym": (st.session_state["bc2_cb_sym"] if cb_enable else None),
+                    "ca_expected": ca_expected, "cb_expected": cb_expected
                 }
 
         except Exception as e:
@@ -961,15 +987,14 @@ with tabPlan:
         # Headline metrics
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.markdown(f"<div class='metric-card'><p class='metric-title'>Anchor Close</p><div class='metric-value'>💠 {an['anchor_close']:.2f}</div><div class='kicker'>Prev ≤ 3:00 PM CT</div></div>", unsafe_allow_html=True)
-        with m2: st.markdown(f"<div class='metric-card'><p class='metric-title'>Fan Width @ 8:30</p><div class='metric-value'>🧭 {float(an['fan_df'].loc[an['fan_df']['Time']=='08:30','Fan_Width']) if 'fan_df' in an else np.nan:.2f}</div></div>", unsafe_allow_html=True)
+        with m2: 
+            w830 = an['fan_df'].loc[an['fan_df']['Time']=='08:30','Fan_Width']
+            fan_w = float(w830.iloc[0]) if not w830.empty else np.nan
+            st.markdown(f"<div class='metric-card'><p class='metric-title'>Fan Width @ 8:30</p><div class='metric-value'>🧭 {fan_w:.2f}</div></div>", unsafe_allow_html=True)
         with m3: st.markdown(f"<div class='metric-card'><p class='metric-title'>Offset</p><div class='metric-value'>Δ {pr['offset_used']:+.2f}</div><div class='kicker'>Overnight basis</div></div>", unsafe_allow_html=True)
         with m4:
-            # Readiness = average of top 3 scored touches (simple)
             tdf = pr["touches_df"]
-            if not tdf.empty:
-                readiness = int(np.mean(sorted(tdf["Score"].tolist(), reverse=True)[:3]))
-            else:
-                readiness = 0
+            readiness = int(np.mean(sorted(tdf["Score"].tolist(), reverse=True)[:3])) if not tdf.empty else 0
             st.markdown(f"<div class='metric-card'><p class='metric-title'>Readiness</p><div class='metric-value'>🔥 {readiness}</div><div class='kicker'>0–100</div></div>", unsafe_allow_html=True)
 
         st.markdown("---")
@@ -1001,9 +1026,20 @@ with tabPlan:
                 if not row830.empty:
                     st.write(f"- **SPX @ 8:30:** {float(row830['SPX_Projected']):.2f}")
                     ca = bc["ca_sym"]; cb = bc.get("cb_sym")
-                    st.write(f"- **{ca} @ 8:30:** {float(row830[f'{ca}_Proj']):.2f}" if f"{ca}_Proj" in row830 else "-")
-                    if cb and f"{cb}_Proj" in row830:
-                        st.write(f"- **{cb} @ 8:30:** {float(row830[f'{cb}_Proj']):.2f}")
+                    if f"{ca}_Entry" in row830:
+                        st.write(f"- **{ca} Entry @ 8:30:** {float(row830[f'{ca}_Entry']):.2f}")
+                    if f"{ca}_Exit" in row830:
+                        st.write(f"- **{ca} ExitRef @ 8:30:** {float(row830[f'{ca}_Exit']):.2f}")
+                    if cb:
+                        if f"{cb}_Entry" in row830:
+                            st.write(f"- **{cb} Entry @ 8:30:** {float(row830[f'{cb}_Entry']):.2f}")
+                        if f"{cb}_Exit" in row830:
+                            st.write(f"- **{cb} ExitRef @ 8:30:** {float(row830[f'{cb}_Exit']):.2f}")
+                    # Expected exit time chips
+                    if bc.get("ca_expected") and bc["ca_expected"] != "n/a":
+                        st.write(f"- **{ca} expected exit ≈ {bc['ca_expected']}**")
+                    if cb and bc.get("cb_expected") and bc["cb_expected"] != "n/a":
+                        st.write(f"- **{cb} expected exit ≈ {bc['cb_expected']}**")
                 else:
                     st.write("- BC Forecast 8:30 not available.")
 
