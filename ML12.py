@@ -904,10 +904,10 @@ def render_bc_forecast_tab(controls: Dict):
     </div>
     """, unsafe_allow_html=True)
     
-    # Generate extended overnight slots - FIXED: Much broader time range
-    # Start from 5 PM previous day and go through the next day 2 PM (covers full next session)
+    # Generate extended overnight slots - Much broader time range to ensure full coverage
+    # Start from 5 PM previous day and go through 2 days later to ensure no time constraints
     session_start = fmt_ct(datetime.combine(controls["prev_day"], time(17, 0)))  # 5 PM prev day
-    session_end = fmt_ct(datetime.combine(controls["proj_day"] + timedelta(days=1), time(14, 0)))  # 2 PM next day
+    session_end = fmt_ct(datetime.combine(controls["proj_day"] + timedelta(days=2), time(14, 0)))  # 2 PM two days later
     
     session_slots = []
     current_slot = session_start
@@ -915,19 +915,27 @@ def render_bc_forecast_tab(controls: Dict):
         session_slots.append(current_slot)
         current_slot += timedelta(minutes=30)
     
-    # Format slots with more descriptive labels
+    # Format slots with clear descriptive labels showing day and time
     slot_options = []
     for dt in session_slots:
+        day_name = dt.strftime("%A")  # Monday, Tuesday, etc.
+        time_12hr = dt.strftime("%I:%M %p")  # 9:00 PM, 10:30 AM, etc.
+        date_str = dt.strftime("%Y-%m-%d")
+        
         if dt.date() == controls["prev_day"]:
-            label = f"{dt.strftime('%Y-%m-%d %H:%M')} (Prev Day)"
+            label = f"{date_str} {time_12hr} ({day_name} - Prev Day)"
         elif dt.date() == controls["proj_day"]:
-            label = f"{dt.strftime('%Y-%m-%d %H:%M')} (Forecast Day)"
+            label = f"{date_str} {time_12hr} ({day_name} - Forecast Day)"
         else:
-            label = f"{dt.strftime('%Y-%m-%d %H:%M')} (Next Day)"
+            days_diff = (dt.date() - controls["proj_day"]).days
+            label = f"{date_str} {time_12hr} ({day_name} - +{days_diff} day)"
         slot_options.append(label)
     
     # Create mapping for easy lookup
     slot_mapping = {label: dt.strftime("%Y-%m-%d %H:%M") for label, dt in zip(slot_options, session_slots)}
+    
+    # Debug info to help troubleshoot
+    st.info(f"📊 Generated {len(slot_options)} time slots from {session_start.strftime('%Y-%m-%d %H:%M')} to {session_end.strftime('%Y-%m-%d %H:%M')}")
     
     with st.form("bc_form"):
         st.markdown("### 📍 Underlying Bounces")
@@ -945,6 +953,7 @@ def render_bc_forecast_tab(controls: Dict):
             b2_price = st.number_input("SPX Price ", value=6512.00, step=0.25, format="%.2f", key="b2_price")
         
         st.markdown("### 📋 Contract A")
+        st.info("ℹ️ High Time 2 can be selected AFTER High Time 1 - no time restrictions between highs")
         
         col3, col4 = st.columns(2)
         
@@ -954,10 +963,19 @@ def render_bc_forecast_tab(controls: Dict):
             ca_b2_price = st.number_input("Price at Bounce #2", value=12.50, step=0.05, format="%.2f", key="ca_b2_price")
         
         with col4:
-            ca_h1_time_label = st.selectbox("High #1 Time", slot_options, index=min(4, len(slot_options)-1), key="ca_h1_time")
+            # Use smaller default indices to avoid any potential issues
+            default_h1_index = min(4, len(slot_options)-1)
+            default_h2_index = min(20, len(slot_options)-1)  # Much later default for H2
+            
+            ca_h1_time_label = st.selectbox("High #1 Time", slot_options, index=default_h1_index, key="ca_h1_time")
             ca_h1_price = st.number_input("High #1 Price", value=14.00, step=0.05, format="%.2f", key="ca_h1_price")
-            ca_h2_time_label = st.selectbox("High #2 Time", slot_options, index=min(16, len(slot_options)-1), key="ca_h2_time")
+            ca_h2_time_label = st.selectbox("High #2 Time", slot_options, index=default_h2_index, key="ca_h2_time")
             ca_h2_price = st.number_input("High #2 Price", value=16.00, step=0.05, format="%.2f", key="ca_h2_price")
+        
+        # Show current selections for debugging
+        st.markdown("**Current Selections:**")
+        st.text(f"High #1: {ca_h1_time_label}")
+        st.text(f"High #2: {ca_h2_time_label}")
         
         submitted = st.form_submit_button("🚀 Generate Projections", type="primary")
     
@@ -971,10 +989,16 @@ def render_bc_forecast_tab(controls: Dict):
             
             b1_dt = fmt_ct(datetime.strptime(b1_time, "%Y-%m-%d %H:%M"))
             b2_dt = fmt_ct(datetime.strptime(b2_time, "%Y-%m-%d %H:%M"))
+            ca_h1_dt = fmt_ct(datetime.strptime(ca_h1_time, "%Y-%m-%d %H:%M"))
+            ca_h2_dt = fmt_ct(datetime.strptime(ca_h2_time, "%Y-%m-%d %H:%M"))
             
+            # Validation - only bounce times need to be in order
             if b2_dt <= b1_dt:
                 st.error("❌ Bounce #2 must be after Bounce #1")
                 return
+            
+            # Note: NO validation on high times - High #2 can be before OR after High #1
+            st.success(f"✅ Processing: High #1 at {ca_h1_dt.strftime('%Y-%m-%d %H:%M')}, High #2 at {ca_h2_dt.strftime('%Y-%m-%d %H:%M')}")
             
             # Project underlying
             underlying_df, underlying_slope = project_contract_line(
@@ -987,9 +1011,6 @@ def render_bc_forecast_tab(controls: Dict):
             )
             
             # Project contract exit line
-            ca_h1_dt = fmt_ct(datetime.strptime(ca_h1_time, "%Y-%m-%d %H:%M"))
-            ca_h2_dt = fmt_ct(datetime.strptime(ca_h2_time, "%Y-%m-%d %H:%M"))
-            
             ca_exit_df, ca_exit_slope = project_contract_line(
                 ca_h1_dt, ca_h1_price, ca_h2_dt, ca_h2_price, controls["proj_day"], f"{ca_symbol}_Exit"
             )
@@ -1013,6 +1034,7 @@ def render_bc_forecast_tab(controls: Dict):
             
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
+            st.error(f"Debug info: b1_time={b1_time}, b2_time={b2_time}, ca_h1_time={ca_h1_time}, ca_h2_time={ca_h2_time}")
     
     # Display results
     if "bc_results" in st.session_state:
