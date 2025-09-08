@@ -585,7 +585,7 @@ def resample_to_30m_ct(min_df: pd.DataFrame) -> pd.DataFrame:
     return resampled
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TRADING LOGIC WITH PROPER ES INTEGRATION
+# TRADING LOGIC
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_spx_anchor_prevday(prev_day: date) -> Tuple[Optional[float], Optional[datetime], bool]:
@@ -602,171 +602,163 @@ def get_spx_anchor_prevday(prev_day: date) -> Tuple[Optional[float], Optional[da
         return anchor_close, fmt_ct(anchor_time), False
     return None, None, True
 
-def fetch_es_data_robust(start_date: date, end_date: date, interval: str = "5m") -> pd.DataFrame:
-    """Robust ES futures data fetching with multiple symbol attempts."""
-    # Try different ES symbols
-    es_symbols = ["ES=F", "ESZ24.CME", "ESU24.CME", "ESH25.CME"]  # Current and near contracts
+def calculate_es_spx_offset(prev_day: date) -> Tuple[Optional[float], Optional[datetime]]:
+    """
+    Calculate ES-SPX offset using 2:55 PM prices to avoid timing mismatch.
+    Returns (offset, reference_time) where offset = ES_price - SPX_price
+    """
+    # Use 2:55 PM to avoid SPX 3pm close vs ES 5pm timing issue
+    ref_time = fmt_ct(datetime.combine(prev_day, time(14, 55)))
     
-    for symbol in es_symbols:
+    # Get SPX at 2:55 PM (or closest before)
+    spx_price = None
+    for interval in ["1m", "5m", "30m"]:
+        spx_data = fetch_intraday("^GSPC", prev_day, prev_day, interval)
+        if spx_data.empty:
+            continue
+        before_ref = spx_data.loc[:ref_time]
+        if not before_ref.empty:
+            spx_price = float(before_ref["Close"].iloc[-1])
+            break
+    
+    if spx_price is None:
+        return None, None
+    
+    # Get ES at 2:55 PM (or closest before) 
+    es_price = None
+    for interval in ["1m", "5m", "30m"]:
+        es_data = fetch_intraday("ES=F", prev_day, prev_day, interval)
+        if es_data.empty:
+            continue
+        before_ref = es_data.loc[:ref_time]
+        if not before_ref.empty:
+            es_price = float(before_ref["Close"].iloc[-1])
+            break
+    
+    if es_price is None:
+        return None, None
+    
+    offset = es_price - spx_price
+    return offset, ref_time
+
+def fetch_overnight_es_robust(prev_day: date, proj_day: date) -> pd.DataFrame:
+    """
+    Robust ES overnight data fetching with better error handling and weekend gap awareness.
+    """
+    # Handle weekend gaps - if prev_day is Friday and proj_day is Monday
+    days_diff = (proj_day - prev_day).days
+    if days_diff > 3:  # Likely a weekend gap or holiday
+        # Extend fetch range to ensure we get data across gaps
+        fetch_start = prev_day - timedelta(days=1)
+        fetch_end = proj_day + timedelta(days=1)
+    else:
+        fetch_start = prev_day
+        fetch_end = proj_day
+    
+    # Try multiple intervals with longer periods
+    for interval in ["30m", "15m", "5m"]:
         try:
-            es_data = fetch_intraday(symbol, start_date, end_date, interval)
+            # Use longer period for overnight data
+            if interval in ["1m", "5m"]:
+                period_days = min(7, max(3, days_diff + 2))
+            else:
+                period_days = max(5, days_diff + 3)
+            
+            es_data = fetch_intraday("ES=F", fetch_start, fetch_end, interval)
+            
             if not es_data.empty:
-                return es_data
-        except:
+                # Define overnight window (5:00 PM prev day to 8:30 AM proj day)
+                overnight_start = fmt_ct(datetime.combine(prev_day, time(17, 0)))
+                overnight_end = fmt_ct(datetime.combine(proj_day, time(8, 30)))
+                
+                # Filter to overnight window
+                overnight_data = es_data.loc[overnight_start:overnight_end]
+                
+                if not overnight_data.empty:
+                    # Resample to 30m if needed
+                    if interval != "30m":
+                        overnight_data = resample_to_30m_ct(overnight_data)
+                    
+                    return overnight_data
+        except Exception as e:
             continue
     
     return pd.DataFrame()
 
-def calculate_proper_offset(prev_day: date) -> Tuple[Optional[float], Dict]:
-    """Calculate ES-SPX offset using matching 3pm times, handle weekend gaps."""
-    target_3pm = fmt_ct(datetime.combine(prev_day, time(15, 0)))
-    
-    # Get SPX at 3pm
-    spx_data = fetch_intraday("^GSPC", prev_day, prev_day, "5m")
-    if spx_data.empty:
-        return None, {"error": "No SPX data available"}
-    
-    spx_at_3pm = spx_data.loc[:target_3pm]
-    if spx_at_3pm.empty:
-        return None, {"error": "No SPX data at 3pm"}
-    
-    spx_close_3pm = float(spx_at_3pm["Close"].iloc[-1])
-    spx_time_3pm = spx_at_3pm.index[-1]
-    
-    # Get ES at matching time (within 30min window of SPX 3pm close)
-    es_data = fetch_es_data_robust(prev_day, prev_day, "5m")
-    if es_data.empty:
-        return None, {"error": "No ES data available"}
-    
-    # Find ES price closest to SPX 3pm time
-    es_window_start = spx_time_3pm - timedelta(minutes=15)
-    es_window_end = spx_time_3pm + timedelta(minutes=15)
-    es_window = es_data.loc[es_window_start:es_window_end]
-    
-    if es_window.empty:
-        return None, {"error": "No ES data in 3pm window"}
-    
-    es_close_3pm = float(es_window["Close"].iloc[-1])
-    offset = es_close_3pm - spx_close_3pm
-    
-    return offset, {
-        "spx_3pm": spx_close_3pm,
-        "es_3pm": es_close_3pm,
-        "offset": offset,
-        "spx_time": spx_time_3pm.strftime("%H:%M"),
-        "success": True
-    }
-
-def get_overnight_es_levels(prev_day: date, proj_day: date, offset: float) -> Dict:
-    """Get overnight ES levels and convert to SPX equivalent."""
-    
-    # Handle weekend gap properly
-    if prev_day.weekday() == 4:  # Friday
-        # ES trading continues, but we need to track from Friday 5pm to Monday morning
-        overnight_start = fmt_ct(datetime.combine(prev_day, time(17, 0)))
-        overnight_end = fmt_ct(datetime.combine(proj_day, time(8, 30)))
-    else:
-        # Regular overnight session
-        overnight_start = fmt_ct(datetime.combine(prev_day, time(17, 0)))  
-        overnight_end = fmt_ct(datetime.combine(proj_day, time(8, 30)))
-    
-    # Fetch ES overnight data
-    es_overnight = fetch_es_data_robust(prev_day, proj_day, "5m")
-    if es_overnight.empty:
-        return {"error": "No overnight ES data"}
-    
-    # Filter to overnight session
-    es_session = es_overnight.loc[overnight_start:overnight_end]
-    if es_session.empty:
-        return {"error": "No ES data in overnight session"}
-    
-    # Get key overnight levels
-    overnight_high = float(es_session["High"].max())
-    overnight_low = float(es_session["Low"].min())
-    friday_close = float(es_session["Close"].iloc[0]) if len(es_session) > 0 else None
-    current_es = float(es_session["Close"].iloc[-1]) if len(es_session) > 0 else None
-    
-    # Convert to SPX equivalent
-    spx_overnight_high = overnight_high - offset
-    spx_overnight_low = overnight_low - offset
-    spx_friday_close = (friday_close - offset) if friday_close else None
-    spx_current = (current_es - offset) if current_es else None
-    
-    return {
-        "success": True,
-        "es_high": overnight_high,
-        "es_low": overnight_low,
-        "es_current": current_es,
-        "spx_high": spx_overnight_high,
-        "spx_low": spx_overnight_low,
-        "spx_current": spx_current,
-        "spx_friday_close": spx_friday_close,
-        "overnight_range": spx_overnight_high - spx_overnight_low,
-        "overnight_start": overnight_start.strftime("%Y-%m-%d %H:%M"),
-        "overnight_end": overnight_end.strftime("%Y-%m-%d %H:%M")
-    }
-
-def generate_fan_entry_signals(fan_df: pd.DataFrame, overnight_levels: Dict) -> List[Dict]:
-    """Generate entry signals based on overnight ES levels vs fan projections."""
-    if not overnight_levels.get("success"):
+def analyze_overnight_fan_touches(overnight_es: pd.DataFrame, offset: float, 
+                                anchor_close: float, anchor_time: datetime) -> List[Dict]:
+    """
+    Analyze overnight ES data for fan touches and convert to SPX frame.
+    Returns list of fan touches with SPX-equivalent prices and times.
+    """
+    if overnight_es.empty:
         return []
     
-    signals = []
-    spx_current = overnight_levels.get("spx_current")
-    spx_high = overnight_levels.get("spx_high")
-    spx_low = overnight_levels.get("spx_low")
+    # Convert ES to SPX frame
+    spx_equiv = overnight_es.copy()
+    for col in ["Open", "High", "Low", "Close"]:
+        if col in spx_equiv.columns:
+            spx_equiv[col] = spx_equiv[col] - offset
     
-    if not all([spx_current, spx_high, spx_low]):
-        return []
+    # Calculate fan levels for each overnight time
+    touches = []
+    top_slope, bottom_slope = get_current_slopes()
     
-    # Check 8:30 levels specifically
-    row_830 = fan_df[fan_df["Time"] == "08:30"]
-    if not row_830.empty:
-        fan_top = row_830["Top"].iloc[0]
-        fan_bottom = row_830["Bottom"].iloc[0]
+    for timestamp, bar in spx_equiv.iterrows():
+        # Calculate fan levels at this time
+        blocks_from_anchor = count_effective_blocks(anchor_time, timestamp)
+        fan_top = anchor_close + (top_slope * blocks_from_anchor)
+        fan_bottom = anchor_close - (bottom_slope * blocks_from_anchor)
         
-        # Generate signals based on overnight action vs fan
-        if spx_current > fan_top:
-            signals.append({
-                "time": "08:30",
-                "signal": "LONG BREAKOUT",
-                "reason": f"ES-adj SPX ({spx_current:.2f}) above fan top ({fan_top:.2f})",
-                "entry_type": "Breakout above fan",
-                "target": "Hold above fan top",
-                "stop": fan_top - 2
+        # Check for touches (use high/low for more accuracy)
+        spx_high = float(bar["High"])
+        spx_low = float(bar["Low"])
+        spx_close = float(bar["Close"])
+        
+        # Touch threshold (small buffer for near-touches)
+        touch_threshold = 0.5
+        
+        # Check top touch
+        if spx_high >= (fan_top - touch_threshold):
+            bias = determine_bias(spx_close, fan_top, fan_bottom)
+            touches.append({
+                "time": timestamp,
+                "time_str": timestamp.strftime("%H:%M"),
+                "spx_price": spx_close,
+                "fan_level": fan_top,
+                "touch_type": "TOP",
+                "bias": bias,
+                "entry_signal": generate_rth_entry_signal("TOP", bias, fan_top, fan_bottom)
             })
-        elif spx_current < fan_bottom:
-            signals.append({
-                "time": "08:30", 
-                "signal": "SHORT BREAKDOWN",
-                "reason": f"ES-adj SPX ({spx_current:.2f}) below fan bottom ({fan_bottom:.2f})",
-                "entry_type": "Breakdown below fan",
-                "target": "Continue below fan",
-                "stop": fan_bottom + 2
+        
+        # Check bottom touch  
+        if spx_low <= (fan_bottom + touch_threshold):
+            bias = determine_bias(spx_close, fan_top, fan_bottom)
+            touches.append({
+                "time": timestamp,
+                "time_str": timestamp.strftime("%H:%M"),
+                "spx_price": spx_close,
+                "fan_level": fan_bottom,
+                "touch_type": "BOTTOM", 
+                "bias": bias,
+                "entry_signal": generate_rth_entry_signal("BOTTOM", bias, fan_top, fan_bottom)
             })
-        elif fan_bottom < spx_current < fan_top:
-            # Inside fan - look for bounce opportunities
-            mid_fan = (fan_top + fan_bottom) / 2
-            if spx_current > mid_fan:
-                signals.append({
-                    "time": "08:30",
-                    "signal": "SHORT on rally to top",
-                    "reason": f"ES-adj SPX ({spx_current:.2f}) in upper fan, target top ({fan_top:.2f})",
-                    "entry_type": "Inside fan - upper half",
-                    "target": f"Short near {fan_top:.2f}",
-                    "stop": fan_top + 3
-                })
-            else:
-                signals.append({
-                    "time": "08:30",
-                    "signal": "LONG on dip to bottom", 
-                    "reason": f"ES-adj SPX ({spx_current:.2f}) in lower fan, target bottom ({fan_bottom:.2f})",
-                    "entry_type": "Inside fan - lower half",
-                    "target": f"Long near {fan_bottom:.2f}",
-                    "stop": fan_bottom - 3
-                })
     
-    return signals
+    return touches
+
+def generate_rth_entry_signal(touch_type: str, bias: str, fan_top: float, fan_bottom: float) -> str:
+    """Generate RTH entry signals based on overnight fan touches."""
+    if touch_type == "TOP":
+        if bias == "DOWN":
+            return f"SHORT entry on RTH rally to {fan_top:.2f}"
+        else:
+            return f"LONG entry on RTH dip to {fan_bottom:.2f}"
+    elif touch_type == "BOTTOM":
+        if bias == "UP":
+            return f"LONG entry on RTH dip to {fan_bottom:.2f}"
+        else:
+            return f"SHORT entry on RTH rally to {fan_top:.2f}"
+    return "Monitor for breakout"
 
 def get_current_slopes() -> Tuple[float, float]:
     top_slope = float(st.session_state.get("top_slope_per_block", TOP_SLOPE_DEFAULT))
@@ -831,8 +823,26 @@ def calculate_bias_strength(price: float, top_level: float, bottom_level: float)
     return round(strength, 1)
 
 def build_spx_strategy_table(anchor_close: float, anchor_time: datetime, 
-                            target_day: date, spx_rth_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+                            target_day: date, spx_rth_data: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame, List[Dict]]:
+    """
+    Build comprehensive strategy table for SPX Anchors tab.
+    Returns (strategy_df, overnight_touches)
+    """
     fan_df = project_fan_levels(anchor_close, anchor_time, target_day)
+    
+    # Get overnight ES analysis
+    prev_day = target_day - timedelta(days=1)
+    overnight_touches = []
+    
+    # Calculate ES-SPX offset
+    offset, ref_time = calculate_es_spx_offset(prev_day)
+    if offset is not None:
+        # Get overnight ES data
+        overnight_es = fetch_overnight_es_robust(prev_day, target_day)
+        if not overnight_es.empty:
+            overnight_touches = analyze_overnight_fan_touches(
+                overnight_es, offset, anchor_close, anchor_time
+            )
     
     strategy_rows = []
     neutral_band = float(st.session_state.get("neutral_band_pct", NEUTRAL_BAND_DEFAULT))
@@ -858,7 +868,12 @@ def build_spx_strategy_table(anchor_close: float, anchor_time: datetime,
             bias = "NO DATA"
             bias_strength = 0
             price_display = "—"
-            entry_signal = "Fan projection only"
+            # Use overnight analysis for entry signals when no RTH data
+            if overnight_touches:
+                latest_touch = overnight_touches[-1]  # Most recent overnight touch
+                entry_signal = latest_touch["entry_signal"]
+            else:
+                entry_signal = "Fan projection only"
         
         slot_display = "⭐ 8:30" if slot_time == "08:30" else slot_time
         
@@ -874,7 +889,7 @@ def build_spx_strategy_table(anchor_close: float, anchor_time: datetime,
             "Entry_Signal": entry_signal
         })
     
-    return pd.DataFrame(strategy_rows)
+    return pd.DataFrame(strategy_rows), overnight_touches
 
 def generate_entry_signal(price: float, top: float, bottom: float, bias: str) -> str:
     if bias == "UP":
@@ -1105,7 +1120,7 @@ def render_spx_anchors_tab(controls: Dict):
     st.markdown("""
     <div class="enterprise-card">
         <h2 style="margin-top: 0; display: flex; align-items: center; gap: 12px;">
-            🎯 SPX Anchors - Fan Analysis & ES Integration
+            🎯 SPX Anchors - Fan Analysis & Strategy
         </h2>
         <p style="color: var(--text-secondary); margin-bottom: 0;">
             Previous day anchor projection with overnight ES analysis and RTH entry signals
@@ -1114,9 +1129,8 @@ def render_spx_anchors_tab(controls: Dict):
     """, unsafe_allow_html=True)
     
     if controls["refresh_anchors"] or "anchors_data" not in st.session_state:
-        with st.spinner("Building SPX anchor analysis with ES integration..."):
+        with st.spinner("Building SPX anchor analysis with overnight ES data..."):
             try:
-                # Get SPX anchor
                 if controls["use_manual"]:
                     anchor_close = float(controls["manual_value"])
                     anchor_time = fmt_ct(datetime.combine(controls["prev_day"], time(15, 0)))
@@ -1129,40 +1143,25 @@ def render_spx_anchors_tab(controls: Dict):
                         return
                     anchor_label = " (Estimated)" if estimated else ""
                 
-                # Calculate proper ES-SPX offset
-                offset, offset_info = calculate_proper_offset(controls["prev_day"])
-                
-                # Get overnight ES levels
-                overnight_levels = {}
-                if offset is not None:
-                    overnight_levels = get_overnight_es_levels(controls["prev_day"], controls["proj_day"], offset)
-                
-                # Get projection day SPX data
                 spx_rth_data = fetch_intraday("^GSPC", controls["proj_day"], controls["proj_day"], "30m")
                 spx_rth_data = between_time(spx_rth_data, RTH_START, RTH_END) if not spx_rth_data.empty else pd.DataFrame()
                 
-                # Build strategy table
-                strategy_df = build_spx_strategy_table(
+                strategy_df, overnight_touches = build_spx_strategy_table(
                     anchor_close, anchor_time, controls["proj_day"], spx_rth_data
                 )
                 
-                # Generate fan projections for signal generation
-                fan_df = project_fan_levels(anchor_close, anchor_time, controls["proj_day"])
-                
-                # Generate entry signals from ES overnight analysis
-                entry_signals = generate_fan_entry_signals(fan_df, overnight_levels)
+                # Calculate ES offset for display
+                offset, ref_time = calculate_es_spx_offset(controls["prev_day"])
                 
                 st.session_state["anchors_data"] = {
                     "anchor_close": anchor_close,
                     "anchor_time": anchor_time,
                     "anchor_label": anchor_label,
                     "strategy_df": strategy_df,
+                    "overnight_touches": overnight_touches,
+                    "es_offset": offset,
                     "spx_data": spx_rth_data,
-                    "estimated": estimated,
-                    "offset_info": offset_info,
-                    "overnight_levels": overnight_levels,
-                    "entry_signals": entry_signals,
-                    "fan_df": fan_df
+                    "estimated": estimated
                 }
                 
             except Exception as e:
@@ -1171,11 +1170,7 @@ def render_spx_anchors_tab(controls: Dict):
     
     if "anchors_data" in st.session_state:
         data = st.session_state["anchors_data"]
-        offset_info = data.get("offset_info", {})
-        overnight_levels = data.get("overnight_levels", {})
-        entry_signals = data.get("entry_signals", [])
         
-        # Main metrics row
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -1188,144 +1183,84 @@ def render_spx_anchors_tab(controls: Dict):
             ), unsafe_allow_html=True)
         
         with col2:
-            if offset_info.get("success"):
-                offset_val = offset_info.get("offset", 0)
-                st.markdown(create_metric_card(
-                    "ES-SPX Offset",
-                    f"{offset_val:+.2f}",
-                    f"ES@3PM: {offset_info.get('es_3pm', 0):.2f}",
-                    "⚖️",
-                    "success"
-                ), unsafe_allow_html=True)
-            else:
-                st.markdown(create_metric_card(
-                    "ES-SPX Offset",
-                    "ERROR",
-                    offset_info.get("error", "Calc failed"),
-                    "⚖️", 
-                    "danger"
-                ), unsafe_allow_html=True)
+            es_offset = data.get('es_offset', 0)
+            offset_status = "ACTIVE" if es_offset is not None else "UNAVAILABLE"
+            offset_type = "success" if es_offset is not None else "danger"
+            offset_subtext = f"ES-SPX: {es_offset:+.2f}" if es_offset is not None else "Check ES data"
+            
+            st.markdown(create_metric_card(
+                "Overnight Offset",
+                offset_status,
+                offset_subtext,
+                "🌙",
+                offset_type
+            ), unsafe_allow_html=True)
         
         with col3:
-            if overnight_levels.get("success"):
-                spx_current = overnight_levels.get("spx_current", 0)
-                overnight_range = overnight_levels.get("overnight_range", 0)
-                st.markdown(create_metric_card(
-                    "ES-Adj SPX Current",
-                    f"{spx_current:.2f}",
-                    f"O/N Range: {overnight_range:.2f}",
-                    "🌙",
-                    "primary"
-                ), unsafe_allow_html=True)
-            else:
-                st.markdown(create_metric_card(
-                    "ES-Adj SPX Current", 
-                    "NO DATA",
-                    "ES overnight unavailable",
-                    "🌙",
-                    "warning"
-                ), unsafe_allow_html=True)
+            overnight_touches = data.get('overnight_touches', [])
+            touch_count = len(overnight_touches)
+            touch_type = "warning" if touch_count > 0 else "neutral"
+            touch_subtext = f"{touch_count} fan touches" if touch_count > 0 else "No touches detected"
+            
+            st.markdown(create_metric_card(
+                "Overnight Activity",
+                str(touch_count),
+                touch_subtext,
+                "📡",
+                touch_type
+            ), unsafe_allow_html=True)
         
         with col4:
             df = data['strategy_df']
-            width_830 = df[df['Time'] == '08:30']['Width'].iloc[0] if not df.empty else 0
+            current_bias = "N/A"
+            if not df.empty:
+                bias_row = df[df['Time'] == '08:30']
+                if bias_row.empty:
+                    bias_row = df.iloc[0:1]
+                if not bias_row.empty:
+                    current_bias = bias_row['Bias'].iloc[0]
+            
+            bias_type = "success" if current_bias == "UP" else "danger" if current_bias == "DOWN" else "neutral"
             st.markdown(create_metric_card(
-                "Fan Width @ 8:30",
-                f"{width_830:.2f}",
-                "Points top to bottom",
-                "📏",
-                "neutral"
+                "Current Bias",
+                current_bias,
+                "At key decision point",
+                "🧭",
+                bias_type
             ), unsafe_allow_html=True)
         
         # Overnight Analysis Section
-        if overnight_levels.get("success"):
-            st.markdown("### 🌃 Overnight ES Analysis")
+        if overnight_touches:
+            st.markdown("### 🌙 Overnight Fan Touches (ES→SPX Frame)")
             
-            on_col1, on_col2, on_col3 = st.columns(3)
+            touches_data = []
+            for touch in overnight_touches:
+                touches_data.append({
+                    "Time": touch["time_str"],
+                    "SPX Equivalent": f"{touch['spx_price']:.2f}",
+                    "Fan Level": f"{touch['fan_level']:.2f}",
+                    "Touch Type": touch["touch_type"],
+                    "Bias": touch["bias"],
+                    "RTH Entry Signal": touch["entry_signal"]
+                })
             
-            with on_col1:
-                spx_high = overnight_levels.get("spx_high", 0)
-                spx_low = overnight_levels.get("spx_low", 0)
-                st.markdown(create_metric_card(
-                    "SPX-Adj O/N High",
-                    f"{spx_high:.2f}",
-                    f"Low: {spx_low:.2f}",
-                    "📈",
-                    "success"
-                ), unsafe_allow_html=True)
-            
-            with on_col2:
-                # Check where current level is vs fan
-                fan_830 = data['fan_df'][data['fan_df']['Time'] == '08:30']
-                if not fan_830.empty:
-                    fan_top = fan_830['Top'].iloc[0]
-                    fan_bottom = fan_830['Bottom'].iloc[0]
-                    spx_current = overnight_levels.get("spx_current", 0)
-                    
-                    if spx_current > fan_top:
-                        position = "ABOVE FAN"
-                        pos_type = "success"
-                    elif spx_current < fan_bottom:
-                        position = "BELOW FAN"
-                        pos_type = "danger"
-                    else:
-                        position = "INSIDE FAN"
-                        pos_type = "warning"
-                    
-                    st.markdown(create_metric_card(
-                        "Position vs Fan",
-                        position,
-                        f"Top: {fan_top:.2f} | Bot: {fan_bottom:.2f}",
-                        "🎯",
-                        pos_type
-                    ), unsafe_allow_html=True)
-            
-            with on_col3:
-                signal_count = len(entry_signals)
-                signal_type = "success" if signal_count > 0 else "neutral"
-                st.markdown(create_metric_card(
-                    "Entry Signals",
-                    str(signal_count),
-                    "Generated from O/N action",
-                    "🚨",
-                    signal_type
-                ), unsafe_allow_html=True)
+            if touches_data:
+                touches_df = pd.DataFrame(touches_data)
+                st.dataframe(
+                    touches_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Time": st.column_config.TextColumn("Time", width="small"),
+                        "SPX Equivalent": st.column_config.TextColumn("SPX Price", width="medium"),
+                        "Fan Level": st.column_config.TextColumn("Fan Level", width="medium"),
+                        "Touch Type": st.column_config.TextColumn("Touch", width="small"),
+                        "Bias": st.column_config.TextColumn("Bias", width="small"),
+                        "RTH Entry Signal": st.column_config.TextColumn("RTH Entry Signal", width="large")
+                    }
+                )
         
-        # Entry Signals Display
-        if entry_signals:
-            st.markdown("### 🚨 RTH Entry Signals (Based on Overnight ES)")
-            
-            for signal in entry_signals:
-                signal_type = signal['signal']
-                if "LONG" in signal_type:
-                    signal_color = "success"
-                elif "SHORT" in signal_type: 
-                    signal_color = "danger"
-                else:
-                    signal_color = "warning"
-                
-                st.markdown(f"""
-                <div class="enterprise-card">
-                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                        <span class="status-badge badge-{signal_color}">{signal['signal']}</span>
-                        <strong>{signal['time']}</strong>
-                    </div>
-                    <p style="margin: 8px 0; color: var(--text-secondary);">{signal['reason']}</p>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
-                        <div>
-                            <strong>Entry Type:</strong><br>
-                            <span style="color: var(--text-secondary);">{signal['entry_type']}</span>
-                        </div>
-                        <div>
-                            <strong>Target:</strong><br>
-                            <span style="color: var(--text-secondary);">{signal['target']}</span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        # Strategy Table
-        st.markdown("### 📊 Fan Levels & Strategy Table")
+        st.markdown("### 📊 RTH Strategy Table")
         
         if not data['strategy_df'].empty:
             st.dataframe(
@@ -1345,27 +1280,10 @@ def render_spx_anchors_tab(controls: Dict):
                 }
             )
         
-        # Debug info for ES data
-        if overnight_levels.get("success"):
-            with st.expander("🔍 Overnight Data Details", expanded=False):
-                st.markdown(f"""
-                **ES Overnight Session:** {overnight_levels.get('overnight_start')} to {overnight_levels.get('overnight_end')}
-                
-                **ES Levels:**
-                - High: {overnight_levels.get('es_high', 0):.2f}
-                - Low: {overnight_levels.get('es_low', 0):.2f} 
-                - Current: {overnight_levels.get('es_current', 0):.2f}
-                
-                **SPX Equivalent (ES - Offset):**
-                - High: {overnight_levels.get('spx_high', 0):.2f}
-                - Low: {overnight_levels.get('spx_low', 0):.2f}
-                - Current: {overnight_levels.get('spx_current', 0):.2f}
-                
-                **Offset Calculation:**
-                - SPX @ 3PM: {offset_info.get('spx_3pm', 0):.2f}
-                - ES @ 3PM: {offset_info.get('es_3pm', 0):.2f}
-                - Offset: {offset_info.get('offset', 0):+.2f}
-                """)
+        # ES Data Status
+        if data.get('es_offset') is None:
+            st.warning("⚠️ ES overnight data unavailable. Entry signals based on fan projections only.")
+            st.info("💡 ES data may be limited on weekends or during market holidays. Try a different date range.")
     
     else:
         st.info("👆 Click 'Refresh SPX Anchors' in the sidebar to begin analysis")
