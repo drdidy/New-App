@@ -904,17 +904,30 @@ def render_bc_forecast_tab(controls: Dict):
     </div>
     """, unsafe_allow_html=True)
     
-    # Generate overnight slots - FIXED: Extended time range from 5 PM previous day to 8 AM forecast day
-    asia_start = fmt_ct(datetime.combine(controls["prev_day"], time(17, 0)))  # Changed from 19, 0 to 17, 0 (5 PM)
-    europe_end = fmt_ct(datetime.combine(controls["proj_day"], time(8, 0)))   # Changed from 7, 0 to 8, 0 (8 AM)
+    # Generate extended overnight slots - FIXED: Much broader time range
+    # Start from 5 PM previous day and go through the next day 2 PM (covers full next session)
+    session_start = fmt_ct(datetime.combine(controls["prev_day"], time(17, 0)))  # 5 PM prev day
+    session_end = fmt_ct(datetime.combine(controls["proj_day"] + timedelta(days=1), time(14, 0)))  # 2 PM next day
     
     session_slots = []
-    current_slot = asia_start
-    while current_slot <= europe_end:
+    current_slot = session_start
+    while current_slot <= session_end:
         session_slots.append(current_slot)
         current_slot += timedelta(minutes=30)
     
-    slot_options = [dt.strftime("%Y-%m-%d %H:%M") for dt in session_slots]
+    # Format slots with more descriptive labels
+    slot_options = []
+    for dt in session_slots:
+        if dt.date() == controls["prev_day"]:
+            label = f"{dt.strftime('%Y-%m-%d %H:%M')} (Prev Day)"
+        elif dt.date() == controls["proj_day"]:
+            label = f"{dt.strftime('%Y-%m-%d %H:%M')} (Forecast Day)"
+        else:
+            label = f"{dt.strftime('%Y-%m-%d %H:%M')} (Next Day)"
+        slot_options.append(label)
+    
+    # Create mapping for easy lookup
+    slot_mapping = {label: dt.strftime("%Y-%m-%d %H:%M") for label, dt in zip(slot_options, session_slots)}
     
     with st.form("bc_form"):
         st.markdown("### 📍 Underlying Bounces")
@@ -923,33 +936,39 @@ def render_bc_forecast_tab(controls: Dict):
         
         with col1:
             st.markdown("**Bounce #1**")
-            b1_time = st.selectbox("Time", slot_options, index=0)
-            b1_price = st.number_input("SPX Price", value=6500.00, step=0.25, format="%.2f")
+            b1_time_label = st.selectbox("Time", slot_options, index=0, key="b1_time")
+            b1_price = st.number_input("SPX Price", value=6500.00, step=0.25, format="%.2f", key="b1_price")
         
         with col2:
             st.markdown("**Bounce #2**")
-            b2_time = st.selectbox("Time ", slot_options, index=min(6, len(slot_options)-1))
-            b2_price = st.number_input("SPX Price ", value=6512.00, step=0.25, format="%.2f")
+            b2_time_label = st.selectbox("Time ", slot_options, index=min(12, len(slot_options)-1), key="b2_time")
+            b2_price = st.number_input("SPX Price ", value=6512.00, step=0.25, format="%.2f", key="b2_price")
         
         st.markdown("### 📋 Contract A")
         
         col3, col4 = st.columns(2)
         
         with col3:
-            ca_symbol = st.text_input("Contract Symbol", value="6525c")
-            ca_b1_price = st.number_input("Price at Bounce #1", value=10.00, step=0.05, format="%.2f")
-            ca_b2_price = st.number_input("Price at Bounce #2", value=12.50, step=0.05, format="%.2f")
+            ca_symbol = st.text_input("Contract Symbol", value="6525c", key="ca_symbol")
+            ca_b1_price = st.number_input("Price at Bounce #1", value=10.00, step=0.05, format="%.2f", key="ca_b1_price")
+            ca_b2_price = st.number_input("Price at Bounce #2", value=12.50, step=0.05, format="%.2f", key="ca_b2_price")
         
         with col4:
-            ca_h1_time = st.selectbox("High #1 Time", slot_options, index=min(2, len(slot_options)-1))
-            ca_h1_price = st.number_input("High #1 Price", value=14.00, step=0.05, format="%.2f")
-            ca_h2_time = st.selectbox("High #2 Time", slot_options, index=min(8, len(slot_options)-1))
-            ca_h2_price = st.number_input("High #2 Price", value=16.00, step=0.05, format="%.2f")
+            ca_h1_time_label = st.selectbox("High #1 Time", slot_options, index=min(4, len(slot_options)-1), key="ca_h1_time")
+            ca_h1_price = st.number_input("High #1 Price", value=14.00, step=0.05, format="%.2f", key="ca_h1_price")
+            ca_h2_time_label = st.selectbox("High #2 Time", slot_options, index=min(16, len(slot_options)-1), key="ca_h2_time")
+            ca_h2_price = st.number_input("High #2 Price", value=16.00, step=0.05, format="%.2f", key="ca_h2_price")
         
         submitted = st.form_submit_button("🚀 Generate Projections", type="primary")
     
     if submitted:
         try:
+            # Convert labels back to datetime strings
+            b1_time = slot_mapping[b1_time_label]
+            b2_time = slot_mapping[b2_time_label]
+            ca_h1_time = slot_mapping[ca_h1_time_label]
+            ca_h2_time = slot_mapping[ca_h2_time_label]
+            
             b1_dt = fmt_ct(datetime.strptime(b1_time, "%Y-%m-%d %H:%M"))
             b2_dt = fmt_ct(datetime.strptime(b2_time, "%Y-%m-%d %H:%M"))
             
