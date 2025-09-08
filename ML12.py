@@ -1,4 +1,4 @@
-# app.py - SPX Prophet Complete Application
+# app.py - SPX Prophet - Clean & Focused
 # Enterprise Trading Analytics Platform
 # SPX Anchors | BC Forecast | Plan Card
 
@@ -21,20 +21,7 @@ RTH_END = "14:30"
 # Fan slopes (asymmetric)
 TOP_SLOPE_DEFAULT = 0.312
 BOTTOM_SLOPE_DEFAULT = 0.25
-NEUTRAL_BAND_DEFAULT = 0.20
-
-# Volume analysis parameters
-VOLUME_LOOKBACK = 20
-VOLUME_SPIKE_THRESHOLD = 1.25
-SESSION_VOLUME_WINDOWS = {
-    "ASIA": [(19, 0), (1, 0)],      # 7PM-1AM CT
-    "LONDON": [(1, 0), (7, 0)],     # 1AM-7AM CT  
-    "PREMARKET": [(7, 0), (8, 30)]  # 7AM-8:30AM CT
-}
-
-# Time-based scoring parameters
-TIME_DECAY_HOURS = 6
-SESSION_MOMENTUM_LOOKBACK = 4
+NEUTRAL_BAND_DEFAULT = 0.15  # 15% from center of fan width
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION & STYLING
@@ -47,32 +34,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Complete Enterprise UI System - Fixed Typography
+# Clean Enterprise UI System
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-    --primary-50: #eff6ff;
-    --primary-500: #3b82f6;
-    --primary-600: #2563eb;
-    --success-50: #f0fdf4;
-    --success-500: #22c55e;
-    --success-600: #16a34a;
-    --danger-50: #fef2f2;
-    --danger-500: #ef4444;
-    --warning-50: #fffbeb;
-    --warning-500: #f59e0b;
-    --gray-50: #f8fafc;
-    --gray-100: #f1f5f9;
-    --gray-200: #e2e8f0;
-    --gray-500: #64748b;
-    --gray-700: #334155;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-tertiary: #64748b;
-    --bg-primary: #ffffff;
-    --border-light: #e2e8f0;
+    --primary-50: #eff6ff; --primary-500: #3b82f6; --primary-600: #2563eb;
+    --success-50: #f0fdf4; --success-500: #22c55e; --success-600: #16a34a;
+    --danger-50: #fef2f2; --danger-500: #ef4444; --warning-50: #fffbeb; --warning-500: #f59e0b;
+    --gray-50: #f8fafc; --gray-100: #f1f5f9; --gray-200: #e2e8f0; --gray-500: #64748b; --gray-700: #334155;
+    --text-primary: #0f172a; --text-secondary: #475569; --text-tertiary: #64748b;
+    --bg-primary: #ffffff; --border-light: #e2e8f0;
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
     --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
@@ -84,384 +57,104 @@ st.markdown("""
 }
 
 html, body, [class*="css"] {
-    background: var(--bg-primary) !important;
-    color: var(--text-primary) !important;
+    background: var(--bg-primary) !important; color: var(--text-primary) !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
+.main .block-container { padding: 1.5rem 1.5rem 2rem 1.5rem !important; max-width: 100% !important; }
 
-.main .block-container {
-    padding: 1.5rem 1.5rem 2rem 1.5rem !important;
-    max-width: 100% !important;
-}
-
-/* Enterprise Card System - Fixed Heights */
 .enterprise-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--border-light);
-    border-radius: 16px;
-    padding: 20px;
-    box-shadow: var(--shadow-lg);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-    margin-bottom: 1.5rem;
+    background: var(--bg-primary); border: 2px solid var(--border-light); border-radius: 16px; padding: 20px;
+    box-shadow: var(--shadow-lg); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative; overflow: hidden; margin-bottom: 1.5rem;
 }
-
 .enterprise-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--gradient-primary);
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--gradient-primary);
 }
+.enterprise-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-xl); border-color: var(--primary-500); }
 
-.enterprise-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-xl);
-    border-color: var(--primary-500);
-}
-
-/* Fixed Metric Card Heights and Typography */
 .metric-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--border-light);
-    border-radius: 12px;
-    padding: 16px;
-    box-shadow: var(--shadow-md);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-    height: auto;
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    background: var(--bg-primary); border: 2px solid var(--border-light); border-radius: 12px; padding: 16px;
+    box-shadow: var(--shadow-md); transition: all 0.3s ease; position: relative; overflow: hidden;
+    height: auto; min-height: 120px; display: flex; flex-direction: column; justify-content: space-between;
 }
+.metric-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); border-color: var(--primary-500); }
 
-.metric-card:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--primary-500);
-}
-
-.metric-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-/* Fixed Icon Sizing */
+.metric-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .metric-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    font-weight: 600;
-    background: var(--gradient-primary);
-    color: white;
-    box-shadow: var(--shadow-md);
-    flex-shrink: 0;
+    width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 600; background: var(--gradient-primary); color: white; box-shadow: var(--shadow-md); flex-shrink: 0;
 }
-
 .metric-icon.success { background: var(--gradient-success); }
 .metric-icon.danger { background: var(--gradient-danger); }
 .metric-icon.warning { background: var(--gradient-warning); }
 .metric-icon.neutral { background: var(--gradient-neutral); }
 
-/* Fixed Typography Sizes */
 .metric-title {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin: 0;
-    line-height: 1.2;
+    font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;
+    letter-spacing: 0.05em; margin: 0; line-height: 1.2;
 }
-
 .metric-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin: 4px 0 2px 0;
-    line-height: 1.1;
-    font-family: 'JetBrains Mono', monospace;
-    word-break: break-word;
+    font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin: 4px 0 2px 0;
+    line-height: 1.1; font-family: 'JetBrains Mono', monospace; word-break: break-word;
 }
-
 .metric-subtext {
-    font-size: 0.7rem;
-    color: var(--text-tertiary);
-    font-weight: 500;
-    line-height: 1.3;
-    margin-top: auto;
+    font-size: 0.7rem; color: var(--text-tertiary); font-weight: 500; line-height: 1.3; margin-top: auto;
 }
 
-/* Status Badge System */
 .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    border: 1px solid;
-    transition: all 0.3s ease;
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px;
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; border: 1px solid; transition: all 0.3s ease;
 }
+.badge-open { background: var(--success-50); border-color: var(--success-500); color: var(--success-600); }
+.badge-closed { background: var(--danger-50); border-color: var(--danger-500); color: var(--danger-500); }
+.badge-up { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-color: var(--success-500); color: var(--success-600); font-weight: 700; }
+.badge-down { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); border-color: var(--danger-500); color: var(--danger-500); font-weight: 700; }
+.badge-neutral { background: var(--gray-100); border-color: var(--gray-500); color: var(--gray-700); font-weight: 700; }
 
-.badge-open {
-    background: var(--success-50);
-    border-color: var(--success-500);
-    color: var(--success-600);
-}
-
-.badge-closed {
-    background: var(--danger-50);
-    border-color: var(--danger-500);
-    color: var(--danger-500);
-}
-
-.badge-up {
-    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-    border-color: var(--success-500);
-    color: var(--success-600);
-    font-weight: 700;
-}
-
-.badge-down {
-    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-    border-color: var(--danger-500);
-    color: var(--danger-500);
-    font-weight: 700;
-}
-
-.badge-neutral {
-    background: var(--gray-100);
-    border-color: var(--gray-500);
-    color: var(--gray-700);
-    font-weight: 700;
-}
-
-/* Main Header - Fixed Typography */
 .main-header {
-    background: var(--bg-primary);
-    border: 2px solid var(--border-light);
-    border-radius: 16px;
-    padding: 20px 24px;
-    margin-bottom: 24px;
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
+    background: var(--bg-primary); border: 2px solid var(--border-light); border-radius: 16px; padding: 20px 24px;
+    margin-bottom: 24px; box-shadow: var(--shadow-lg); position: relative; overflow: hidden;
 }
+.main-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--gradient-primary); }
+.header-title { font-size: 2rem; font-weight: 800; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 12px; line-height: 1.2; }
+.header-subtitle { font-size: 0.95rem; color: var(--text-secondary); margin: 6px 0 0 0; font-weight: 500; line-height: 1.4; }
 
-.main-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--gradient-primary);
-}
-
-.header-title {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--text-primary);
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    line-height: 1.2;
-}
-
-.header-subtitle {
-    font-size: 0.95rem;
-    color: var(--text-secondary);
-    margin: 6px 0 0 0;
-    font-weight: 500;
-    line-height: 1.4;
-}
-
-/* Button Styling */
 .stButton > button {
-    background: var(--gradient-primary) !important;
-    border: none !important;
-    border-radius: 12px !important;
-    color: white !important;
-    font-weight: 600 !important;
-    font-size: 0.8rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.03em !important;
-    padding: 10px 16px !important;
-    transition: all 0.3s ease !important;
-    box-shadow: var(--shadow-md) !important;
-    height: 40px !important;
+    background: var(--gradient-primary) !important; border: none !important; border-radius: 12px !important; color: white !important;
+    font-weight: 600 !important; font-size: 0.8rem !important; text-transform: uppercase !important; letter-spacing: 0.03em !important;
+    padding: 10px 16px !important; transition: all 0.3s ease !important; box-shadow: var(--shadow-md) !important; height: 40px !important;
 }
+.stButton > button:hover { transform: translateY(-1px) !important; box-shadow: var(--shadow-lg) !important; }
 
-.stButton > button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: var(--shadow-lg) !important;
-}
-
-/* Tab System */
 .stTabs [data-baseweb="tab-list"] {
-    background: var(--gray-100) !important;
-    border: 2px solid var(--border-light) !important;
-    border-radius: 12px !important;
-    padding: 6px !important;
-    margin-bottom: 24px !important;
-    box-shadow: var(--shadow-md) !important;
+    background: var(--gray-100) !important; border: 2px solid var(--border-light) !important; border-radius: 12px !important;
+    padding: 6px !important; margin-bottom: 24px !important; box-shadow: var(--shadow-md) !important;
 }
-
 .stTabs [data-baseweb="tab"] {
-    background: transparent !important;
-    border-radius: 8px !important;
-    color: var(--text-secondary) !important;
-    font-weight: 600 !important;
-    font-size: 0.8rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.03em !important;
-    padding: 8px 16px !important;
-    transition: all 0.3s ease !important;
+    background: transparent !important; border-radius: 8px !important; color: var(--text-secondary) !important; font-weight: 600 !important;
+    font-size: 0.8rem !important; text-transform: uppercase !important; letter-spacing: 0.03em !important;
+    padding: 8px 16px !important; transition: all 0.3s ease !important;
 }
+.stTabs [aria-selected="true"] { background: var(--gradient-primary) !important; color: white !important; box-shadow: var(--shadow-md) !important; }
 
-.stTabs [aria-selected="true"] {
-    background: var(--gradient-primary) !important;
-    color: white !important;
-    box-shadow: var(--shadow-md) !important;
-}
-
-/* Form Controls */
-.stSelectbox > div > div {
-    background: var(--bg-primary) !important;
-    border: 1px solid var(--border-light) !important;
-    border-radius: 8px !important;
-    font-size: 0.85rem !important;
-}
-
-.stNumberInput > div > div > input {
-    background: var(--bg-primary) !important;
-    border: 1px solid var(--border-light) !important;
-    border-radius: 8px !important;
-    color: var(--text-primary) !important;
-    font-weight: 500 !important;
-    font-size: 0.85rem !important;
-}
-
-.stTextInput > div > div > input {
-    background: var(--bg-primary) !important;
-    border: 1px solid var(--border-light) !important;
-    border-radius: 8px !important;
-    color: var(--text-primary) !important;
-    font-weight: 500 !important;
-    font-size: 0.85rem !important;
-}
-
-/* Dataframe Styling */
-.stDataFrame {
-    border: 2px solid var(--border-light) !important;
-    border-radius: 12px !important;
-    overflow: hidden !important;
-    font-size: 0.8rem !important;
-}
-
-.stDataFrame table {
-    font-size: 0.8rem !important;
-}
-
-.stDataFrame th {
-    background: var(--gray-100) !important;
-    color: var(--text-secondary) !important;
-    font-weight: 600 !important;
-    font-size: 0.75rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.03em !important;
-}
-
-/* Sidebar Styling */
-.css-1d391kg {
-    background: var(--gray-50) !important;
-    border-right: 2px solid var(--border-light) !important;
-}
-
-.sidebar-section {
-    background: var(--bg-primary) !important;
-    border: 1px solid var(--border-light) !important;
-    border-radius: 12px !important;
-    padding: 16px !important;
-    margin-bottom: 16px !important;
-    box-shadow: var(--shadow-md) !important;
-}
-
-/* Utility Classes */
-.star-highlight {
-    color: var(--warning-500) !important;
-    font-weight: 700 !important;
-}
-
+.star-highlight { color: var(--warning-500) !important; font-weight: 700 !important; }
 .text-success { color: var(--success-600) !important; }
 .text-danger { color: var(--danger-500) !important; }
 .text-warning { color: var(--warning-500) !important; }
 
-/* Animations */
-@keyframes slideInUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
+@keyframes slideInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.animate-slide-in { animation: slideInUp 0.4s ease-out; }
 
-.animate-slide-in {
-    animation: slideInUp 0.4s ease-out;
-}
-
-/* Responsive Design */
 @media (max-width: 768px) {
-    .main .block-container {
-        padding: 1rem !important;
-    }
-    
-    .metric-card {
-        min-height: 100px;
-        padding: 12px;
-    }
-    
-    .header-title {
-        font-size: 1.5rem;
-    }
-    
-    .metric-value {
-        font-size: 1.25rem;
-    }
-    
-    .enterprise-card {
-        padding: 16px;
-    }
+    .main .block-container { padding: 1rem !important; }
+    .metric-card { min-height: 100px; padding: 12px; }
+    .header-title { font-size: 1.5rem; }
+    .metric-value { font-size: 1.25rem; }
+    .enterprise-card { padding: 16px; }
 }
 
-/* Ensure text doesn't overflow */
-* {
-    box-sizing: border-box;
-}
-
-.metric-card * {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+* { box-sizing: border-box; }
+.metric-card * { overflow: hidden; text-overflow: ellipsis; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -491,11 +184,11 @@ def is_maintenance(dt: datetime) -> bool:
 
 def in_weekend_gap(dt: datetime) -> bool:
     weekday = dt.weekday()
-    if weekday == 5:
+    if weekday == 5:  # Saturday
         return True
-    if weekday == 6 and dt.hour < 17:
+    if weekday == 6 and dt.hour < 17:  # Sunday before 5 PM
         return True
-    if weekday == 4 and dt.hour >= 17:
+    if weekday == 4 and dt.hour >= 17:  # Friday after 5 PM
         return True
     return False
 
@@ -533,27 +226,41 @@ def normalize_to_ct(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFram
     end_dt = fmt_ct(datetime.combine(end_d, time(23, 59)))
     return df.loc[start_dt:end_dt]
 
-@st.cache_data(ttl=120, show_spinner=False)
+def get_previous_trading_day(target_date: date) -> date:
+    """Get the previous trading day, handling weekends properly."""
+    prev_date = target_date - timedelta(days=1)
+    
+    # If target is Monday, go back to Friday
+    if target_date.weekday() == 0:  # Monday
+        prev_date = target_date - timedelta(days=3)  # Friday
+    # If target is Sunday, go back to Friday  
+    elif target_date.weekday() == 6:  # Sunday
+        prev_date = target_date - timedelta(days=2)  # Friday
+    
+    return prev_date
+
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_intraday(symbol: str, start_d: date, end_d: date, interval: str) -> pd.DataFrame:
     try:
         ticker = yf.Ticker(symbol)
         if interval in ["1m", "2m", "5m", "15m"]:
-            days = max(1, min(7, (end_d - start_d).days + 2))
+            # For minute data, extend range to capture weekend gaps
+            range_days = max(1, min(30, (end_d - start_d).days + 7))
             df = ticker.history(
-                period=f"{days}d",
+                period=f"{range_days}d",
                 interval=interval,
                 prepost=True,
                 auto_adjust=False,
                 back_adjust=False
             )
-            df = normalize_to_ct(df, start_d - timedelta(days=1), end_d + timedelta(days=1))
+            df = normalize_to_ct(df, start_d - timedelta(days=7), end_d + timedelta(days=7))
             start_filter = fmt_ct(datetime.combine(start_d, time(0, 0)))
             end_filter = fmt_ct(datetime.combine(end_d, time(23, 59)))
             df = df.loc[start_filter:end_filter]
         else:
             df = ticker.history(
-                start=(start_d - timedelta(days=5)).strftime("%Y-%m-%d"),
-                end=(end_d + timedelta(days=2)).strftime("%Y-%m-%d"),
+                start=(start_d - timedelta(days=7)).strftime("%Y-%m-%d"),
+                end=(end_d + timedelta(days=7)).strftime("%Y-%m-%d"),
                 interval=interval,
                 prepost=True,
                 auto_adjust=False,
@@ -569,27 +276,24 @@ def resample_to_30m_ct(min_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     df = min_df.sort_index()
     agg_rules = {}
-    if "Open" in df.columns:
-        agg_rules["Open"] = "first"
-    if "High" in df.columns:
-        agg_rules["High"] = "max"
-    if "Low" in df.columns:
-        agg_rules["Low"] = "min"
-    if "Close" in df.columns:
-        agg_rules["Close"] = "last"
-    if "Volume" in df.columns:
-        agg_rules["Volume"] = "sum"
+    if "Open" in df.columns: agg_rules["Open"] = "first"
+    if "High" in df.columns: agg_rules["High"] = "max"
+    if "Low" in df.columns: agg_rules["Low"] = "min"
+    if "Close" in df.columns: agg_rules["Close"] = "last"
+    if "Volume" in df.columns: agg_rules["Volume"] = "sum"
     resampled = df.resample("30T", label="right", closed="right").agg(agg_rules)
     ohlc_cols = [c for c in ["Open", "High", "Low", "Close"] if c in resampled.columns]
     resampled = resampled.dropna(subset=ohlc_cols, how="any")
     return resampled
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TRADING LOGIC
+# SPX ANCHOR & OFFSET LOGIC
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_spx_anchor_prevday(prev_day: date) -> Tuple[Optional[float], Optional[datetime], bool]:
+def get_spx_anchor_3pm(prev_day: date) -> Tuple[Optional[float], Optional[datetime], bool]:
+    """Get SPX anchor at 3:00 PM CT from previous trading day."""
     target_time = fmt_ct(datetime.combine(prev_day, time(15, 0)))
+    
     for interval in ["30m", "5m", "1m"]:
         spx_data = fetch_intraday("^GSPC", prev_day, prev_day, interval)
         if spx_data.empty:
@@ -602,165 +306,41 @@ def get_spx_anchor_prevday(prev_day: date) -> Tuple[Optional[float], Optional[da
         return anchor_close, fmt_ct(anchor_time), False
     return None, None, True
 
-def calculate_offset_at_255pm(prev_day: date) -> Optional[float]:
-    """Calculate ES-SPX offset using 2:30pm timing for both instruments."""
+def calculate_es_spx_offset_230pm(prev_day: date) -> Optional[float]:
+    """Calculate ES-SPX offset using 2:30 PM prices for both instruments."""
     target_time = fmt_ct(datetime.combine(prev_day, time(14, 30)))  # 2:30 PM CT
     
-    # Get SPX at 2:30pm
-    spx_255 = None
-    for interval in ["5m", "1m"]:
+    # Get SPX at 2:30 PM
+    spx_230 = None
+    for interval in ["30m", "5m", "1m"]:
         spx_data = fetch_intraday("^GSPC", prev_day, prev_day, interval)
         if spx_data.empty:
             continue
-        
-        # Find closest time <= 2:30pm
-        before_255 = spx_data.loc[:target_time]
-        if not before_255.empty:
-            spx_255 = float(before_255["Close"].iloc[-1])
-            break
+        spx_window = spx_data.loc[:target_time]
+        if spx_window.empty:
+            continue
+        spx_230 = float(spx_window["Close"].iloc[-1])
+        break
     
-    if spx_255 is None:
+    if spx_230 is None:
         return None
     
-    # Get ES at 2:30pm  
-    es_255 = None
-    for interval in ["5m", "1m"]:
+    # Get ES at 2:30 PM  
+    es_230 = None
+    for interval in ["5m", "1m", "30m"]:
         es_data = fetch_intraday("ES=F", prev_day, prev_day, interval)
         if es_data.empty:
             continue
-            
-        before_255 = es_data.loc[:target_time]
-        if not before_255.empty:
-            es_255 = float(before_255["Close"].iloc[-1])
-            break
-    
-    if es_255 is None:
-        return None
-        
-    return es_255 - spx_255
-
-def fetch_overnight_es(prev_day: date, proj_day: date) -> pd.DataFrame:
-    """Fetch ES overnight data with proper weekend handling."""
-    # Handle Friday-to-Monday continuity
-    if prev_day.weekday() == 4:  # Friday
-        # For Friday, get data from Friday 5pm through Monday 8:30am
-        start_time = fmt_ct(datetime.combine(prev_day, time(17, 0)))
-        
-        # Skip weekend, start Monday
-        monday = prev_day + timedelta(days=3)
-        end_time = fmt_ct(datetime.combine(monday, time(8, 30)))
-        
-        # Fetch data across the weekend gap
-        es_data = pd.DataFrame()
-        
-        # Friday evening session
-        fri_evening = fetch_intraday("ES=F", prev_day, prev_day + timedelta(days=1), "30m")
-        if not fri_evening.empty:
-            fri_session = fri_evening.loc[start_time:]
-            es_data = pd.concat([es_data, fri_session])
-        
-        # Monday morning session  
-        mon_morning = fetch_intraday("ES=F", monday, monday, "30m")
-        if not mon_morning.empty:
-            mon_session = mon_morning.loc[:end_time]
-            es_data = pd.concat([es_data, mon_session])
-            
-    else:
-        # Regular overnight session
-        start_time = fmt_ct(datetime.combine(prev_day, time(17, 0)))
-        end_time = fmt_ct(datetime.combine(proj_day, time(8, 30)))
-        
-        # Try 30m first, then fallback to resampling
-        es_data = fetch_intraday("ES=F", prev_day, proj_day, "30m")
-        if es_data.empty:
-            # Try 5m and resample
-            es_5m = fetch_intraday("ES=F", prev_day, proj_day, "5m")
-            if not es_5m.empty:
-                es_data = resample_to_30m_ct(es_5m)
-        
-        # Filter to overnight window
-        if not es_data.empty:
-            es_data = es_data.loc[start_time:end_time]
-    
-    return es_data.sort_index() if not es_data.empty else pd.DataFrame()
-
-def project_overnight_fan(anchor_close: float, anchor_time: datetime, 
-                         overnight_start: datetime, overnight_end: datetime) -> pd.DataFrame:
-    """Project fan levels across overnight session."""
-    top_slope, bottom_slope = get_current_slopes()
-    
-    # Generate 30-minute slots for overnight period
-    overnight_slots = []
-    current = overnight_start
-    while current <= overnight_end:
-        overnight_slots.append(current)
-        current += timedelta(minutes=30)
-    
-    fan_levels = []
-    for slot_time in overnight_slots:
-        effective_blocks = count_effective_blocks(anchor_time, slot_time)
-        top_level = anchor_close + (top_slope * effective_blocks)
-        bottom_level = anchor_close - (bottom_slope * effective_blocks)
-        
-        fan_levels.append({
-            "DateTime": slot_time,
-            "Time": slot_time.strftime("%H:%M"),
-            "Top": round(top_level, 2),
-            "Bottom": round(bottom_level, 2)
-        })
-    
-    return pd.DataFrame(fan_levels)
-
-def detect_overnight_touches(es_data: pd.DataFrame, fan_levels: pd.DataFrame, 
-                           offset: float) -> List[Dict]:
-    """Detect ES touches of fan levels overnight."""
-    touches = []
-    
-    if es_data.empty or fan_levels.empty:
-        return touches
-    
-    # Convert ES to SPX frame
-    es_spx = es_data.copy()
-    for col in ["Open", "High", "Low", "Close"]:
-        if col in es_spx.columns:
-            es_spx[col] = es_spx[col] - offset
-    
-    # Check each ES bar against fan levels
-    for es_time, es_bar in es_spx.iterrows():
-        # Find corresponding fan levels
-        fan_row = fan_levels[fan_levels["DateTime"] <= es_time]
-        if fan_row.empty:
+        es_window = es_data.loc[:target_time]
+        if es_window.empty:
             continue
-            
-        fan_levels_at_time = fan_row.iloc[-1]  # Most recent fan level
-        top_level = fan_levels_at_time["Top"]
-        bottom_level = fan_levels_at_time["Bottom"]
-        
-        es_high = float(es_bar["High"])
-        es_low = float(es_bar["Low"])
-        es_close = float(es_bar["Close"])
-        
-        # Check for top touch
-        if es_high >= top_level:
-            touches.append({
-                "Time": es_time.strftime("%H:%M"),
-                "Level": "Top",
-                "Fan_Level": top_level,
-                "Touch_Price": top_level,  # Price where it touched the fan
-                "Action": "Touched/Broke Top"
-            })
-        
-        # Check for bottom touch  
-        if es_low <= bottom_level:
-            touches.append({
-                "Time": es_time.strftime("%H:%M"),
-                "Level": "Bottom", 
-                "Fan_Level": bottom_level,
-                "Touch_Price": bottom_level,  # Price where it touched the fan
-                "Action": "Touched/Broke Bottom"
-            })
+        es_230 = float(es_window["Close"].iloc[-1])
+        break
     
-    return touches
+    if es_230 is None:
+        return None
+    
+    return es_230 - spx_230
 
 def get_current_slopes() -> Tuple[float, float]:
     top_slope = float(st.session_state.get("top_slope_per_block", TOP_SLOPE_DEFAULT))
@@ -807,27 +387,133 @@ def determine_bias(price: float, top_level: float, bottom_level: float,
     
     return "UP" if distance_to_bottom < distance_to_top else "DOWN"
 
-def calculate_bias_strength(price: float, top_level: float, bottom_level: float) -> float:
-    if price > top_level:
-        distance_above = price - top_level
-        fan_width = top_level - bottom_level
-        strength = min(100, 50 + (distance_above / fan_width) * 50)
-    elif price < bottom_level:
-        distance_below = bottom_level - price
-        fan_width = top_level - bottom_level
-        strength = min(100, 50 + (distance_below / fan_width) * 50)
+# ═══════════════════════════════════════════════════════════════════════════════
+# OVERNIGHT TOUCH DETECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fetch_es_overnight(prev_day: date, proj_day: date) -> pd.DataFrame:
+    """Fetch ES overnight data with proper weekend handling."""
+    # Handle Friday to Monday gap
+    if prev_day.weekday() == 4 and proj_day.weekday() == 0:  # Friday to Monday
+        start_time = fmt_ct(datetime.combine(prev_day, time(17, 0)))  # Friday 5 PM
+        end_time = fmt_ct(datetime.combine(proj_day, time(8, 30)))   # Monday 8:30 AM
     else:
-        fan_center = (top_level + bottom_level) / 2
-        distance_from_center = abs(price - fan_center)
-        half_width = (top_level - bottom_level) / 2
-        strength = (distance_from_center / half_width) * 50
+        start_time = fmt_ct(datetime.combine(prev_day, time(17, 0)))
+        end_time = fmt_ct(datetime.combine(proj_day, time(8, 30)))
     
-    return round(strength, 1)
+    # Try multiple intervals for ES data
+    for interval in ["30m", "5m", "1m"]:
+        es_data = fetch_intraday("ES=F", prev_day, proj_day, interval)
+        if es_data.empty:
+            continue
+        
+        # Filter to overnight window
+        overnight_data = es_data.loc[start_time:end_time]
+        
+        if not overnight_data.empty:
+            # Resample to 30m if needed
+            if interval != "30m":
+                overnight_data = resample_to_30m_ct(overnight_data)
+            
+            return overnight_data
+    
+    return pd.DataFrame()
+
+def detect_overnight_fan_touches(prev_day: date, proj_day: date, anchor_close: float, 
+                                anchor_time: datetime, es_spx_offset: float) -> pd.DataFrame:
+    """Detect ES touches of fan levels overnight, converted to SPX frame."""
+    
+    # Get ES overnight data
+    es_overnight = fetch_es_overnight(prev_day, proj_day)
+    if es_overnight.empty:
+        return pd.DataFrame()
+    
+    # Convert ES to SPX frame
+    spx_equiv = es_overnight.copy()
+    for col in ["Open", "High", "Low", "Close"]:
+        if col in spx_equiv.columns:
+            spx_equiv[col] = spx_equiv[col] - es_spx_offset
+    
+    # Calculate fan levels for each overnight period
+    touch_results = []
+    top_slope, bottom_slope = get_current_slopes()
+    
+    for timestamp, bar in spx_equiv.iterrows():
+        # Calculate fan levels at this time
+        blocks_from_anchor = count_effective_blocks(anchor_time, timestamp)
+        fan_top = anchor_close + (top_slope * blocks_from_anchor)
+        fan_bottom = anchor_close - (bottom_slope * blocks_from_anchor)
+        
+        # Check for touches
+        bar_high = float(bar["High"])
+        bar_low = float(bar["Low"])
+        bar_close = float(bar["Close"])
+        
+        touch_type = None
+        if bar_high >= fan_top:
+            touch_type = "TOP"
+        elif bar_low <= fan_bottom:
+            touch_type = "BOTTOM"
+        
+        if touch_type:
+            # Determine bias and entry signal
+            bias = determine_bias(bar_close, fan_top, fan_bottom)
+            entry_signal = generate_entry_signal(bar_close, fan_top, fan_bottom, bias, touch_type)
+            
+            touch_results.append({
+                "Time": timestamp.strftime("%H:%M"),
+                "DateTime": timestamp,
+                "SPX_Equiv_Price": round(bar_close, 2),
+                "Fan_Top": round(fan_top, 2),
+                "Fan_Bottom": round(fan_bottom, 2),
+                "Touch_Type": touch_type,
+                "Bias": bias,
+                "Entry_Signal": entry_signal,
+                "High": round(bar_high, 2),
+                "Low": round(bar_low, 2)
+            })
+    
+    return pd.DataFrame(touch_results)
+
+def generate_entry_signal(price: float, top: float, bottom: float, bias: str, touch_type: str = None) -> str:
+    if touch_type == "TOP":
+        if price > top:
+            return "Short from above fan top"
+        else:
+            return "Short rejection at fan top"
+    elif touch_type == "BOTTOM":
+        if price < bottom:
+            return "Long from below fan bottom"
+        else:
+            return "Long bounce at fan bottom"
+    else:
+        # Regular RTH signals
+        if bias == "UP":
+            return "Long on dip to bottom" if price > top else "Long breakout above fan"
+        elif bias == "DOWN":
+            return "Short on rally to top" if price < bottom else "Short breakdown below fan"
+        elif bias == "NEUTRAL":
+            return "Range-bound - wait for breakout"
+        else:
+            return "—"
 
 def build_spx_strategy_table(anchor_close: float, anchor_time: datetime, 
-                            target_day: date, spx_rth_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+                            target_day: date, prev_day: date, 
+                            spx_rth_data: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    
+    # Build fan projections
     fan_df = project_fan_levels(anchor_close, anchor_time, target_day)
     
+    # Get overnight touches
+    es_spx_offset = calculate_es_spx_offset_230pm(prev_day)
+    overnight_touches = pd.DataFrame()
+    
+    if es_spx_offset is not None:
+        overnight_touches = detect_overnight_fan_touches(
+            prev_day, target_day, anchor_close, anchor_time, es_spx_offset
+        )
+    
+    # Build RTH strategy table
     strategy_rows = []
     neutral_band = float(st.session_state.get("neutral_band_pct", NEUTRAL_BAND_DEFAULT))
     
@@ -845,12 +531,10 @@ def build_spx_strategy_table(anchor_close: float, anchor_time: datetime,
         
         if actual_price is not None:
             bias = determine_bias(actual_price, top_level, bottom_level, neutral_band)
-            bias_strength = calculate_bias_strength(actual_price, top_level, bottom_level)
             price_display = f"{actual_price:.2f}"
             entry_signal = generate_entry_signal(actual_price, top_level, bottom_level, bias)
         else:
             bias = "NO DATA"
-            bias_strength = 0
             price_display = "—"
             entry_signal = "Fan projection only"
         
@@ -861,39 +545,23 @@ def build_spx_strategy_table(anchor_close: float, anchor_time: datetime,
             "Time": slot_time,
             "Price": price_display,
             "Bias": bias,
-            "Strength": f"{bias_strength:.1f}%" if bias_strength > 0 else "—",
             "Top": top_level,
             "Bottom": bottom_level,
             "Width": fan_width,
             "Entry_Signal": entry_signal
         })
     
-    return pd.DataFrame(strategy_rows)
+    return pd.DataFrame(strategy_rows), overnight_touches
 
-def generate_entry_signal(price: float, top: float, bottom: float, bias: str) -> str:
-    if bias == "UP":
-        if price > top:
-            return "Long breakout above fan"
-        else:
-            return "Long on dip to bottom"
-    elif bias == "DOWN":
-        if price < bottom:
-            return "Short breakdown below fan"
-        else:
-            return "Short on rally to top"
-    elif bias == "NEUTRAL":
-        return "Range-bound - wait for breakout"
-    else:
-        return "—"
+# ═══════════════════════════════════════════════════════════════════════════════
+# BC FORECAST LOGIC
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def project_contract_line(bounce1_time: datetime, bounce1_price: float,
                          bounce2_time: datetime, bounce2_price: float,
                          target_day: date, line_label: str) -> Tuple[pd.DataFrame, float]:
     effective_blocks = count_effective_blocks(bounce1_time, bounce2_time)
-    if effective_blocks <= 0:
-        slope = 0.0
-    else:
-        slope = (bounce2_price - bounce1_price) / effective_blocks
+    slope = (bounce2_price - bounce1_price) / effective_blocks if effective_blocks > 0 else 0.0
     
     rth_slots = rth_slots_ct(target_day)
     projections = []
@@ -901,7 +569,6 @@ def project_contract_line(bounce1_time: datetime, bounce1_price: float,
     for slot_time in rth_slots:
         blocks_from_bounce1 = count_effective_blocks(bounce1_time, slot_time)
         projected_price = bounce1_price + (slope * blocks_from_bounce1)
-        
         projections.append({
             "Time": slot_time.strftime("%H:%M"),
             line_label: round(projected_price, 2)
@@ -920,7 +587,6 @@ def calculate_expected_exit_time(bounce1_time: datetime, high1_time: datetime,
         return "N/A"
     
     median_duration = int(np.median(durations))
-    
     exit_candidate = bounce2_time
     blocks_added = 0
     
@@ -1050,13 +716,13 @@ def render_sidebar_controls():
     
     prev_day = st.sidebar.date_input(
         "Previous Trading Day",
-        value=today_ct - timedelta(days=1),
+        value=get_previous_trading_day(today_ct),
         help="Day to get SPX anchor close ≤ 3:00 PM CT"
     )
     
     proj_day = st.sidebar.date_input(
         "Projection Day", 
-        value=prev_day + timedelta(days=1),
+        value=today_ct,
         help="Target day for RTH projections"
     )
     
@@ -1084,7 +750,7 @@ def render_sidebar_controls():
         "🔮 Refresh SPX Anchors",
         type="primary",
         use_container_width=True,
-        help="Rebuild fan projections and strategy table"
+        help="Rebuild fan projections and overnight analysis"
     )
     
     return {
@@ -1099,16 +765,16 @@ def render_spx_anchors_tab(controls: Dict):
     st.markdown("""
     <div class="enterprise-card">
         <h2 style="margin-top: 0; display: flex; align-items: center; gap: 12px;">
-            🎯 SPX Anchors - Fan Analysis & Strategy
+            🎯 SPX Anchors - Fan Analysis & Overnight Touches
         </h2>
         <p style="color: var(--text-secondary); margin-bottom: 0;">
-            Previous day anchor projection with bias analysis and overnight ES touch detection
+            Previous day anchor projection with overnight ES touch detection converted to SPX frame
         </p>
     </div>
     """, unsafe_allow_html=True)
     
     if controls["refresh_anchors"] or "anchors_data" not in st.session_state:
-        with st.spinner("Building SPX anchor analysis..."):
+        with st.spinner("Building SPX anchor analysis with overnight touches..."):
             try:
                 if controls["use_manual"]:
                     anchor_close = float(controls["manual_value"])
@@ -1116,57 +782,33 @@ def render_spx_anchors_tab(controls: Dict):
                     anchor_label = " (Manual)"
                     estimated = False
                 else:
-                    anchor_close, anchor_time, estimated = get_spx_anchor_prevday(controls["prev_day"])
+                    anchor_close, anchor_time, estimated = get_spx_anchor_3pm(controls["prev_day"])
                     if anchor_close is None:
                         st.error("❌ Could not resolve SPX anchor for previous day")
                         return
                     anchor_label = " (Estimated)" if estimated else ""
                 
-                # Get SPX RTH data for current analysis
+                # Get RTH SPX data
                 spx_rth_data = fetch_intraday("^GSPC", controls["proj_day"], controls["proj_day"], "30m")
                 spx_rth_data = between_time(spx_rth_data, RTH_START, RTH_END) if not spx_rth_data.empty else pd.DataFrame()
                 
-                # Build strategy table
-                strategy_df = build_spx_strategy_table(
-                    anchor_close, anchor_time, controls["proj_day"], spx_rth_data
+                # Build strategy table with overnight touches
+                strategy_df, overnight_touches = build_spx_strategy_table(
+                    anchor_close, anchor_time, controls["proj_day"], controls["prev_day"], spx_rth_data
                 )
                 
-                # Overnight ES Analysis
-                overnight_touches = []
-                offset_used = None
-                
-                # Calculate 2:30pm offset
-                offset_255 = calculate_offset_at_255pm(controls["prev_day"])
-                if offset_255 is not None:
-                    offset_used = offset_255
-                    
-                    # Fetch overnight ES data
-                    es_overnight = fetch_overnight_es(controls["prev_day"], controls["proj_day"])
-                    
-                    if not es_overnight.empty:
-                        # Project fan levels through overnight
-                        if controls["prev_day"].weekday() == 4:  # Friday
-                            overnight_start = fmt_ct(datetime.combine(controls["prev_day"], time(17, 0)))
-                            monday = controls["prev_day"] + timedelta(days=3)
-                            overnight_end = fmt_ct(datetime.combine(monday, time(8, 30)))
-                        else:
-                            overnight_start = fmt_ct(datetime.combine(controls["prev_day"], time(17, 0)))
-                            overnight_end = fmt_ct(datetime.combine(controls["proj_day"], time(8, 30)))
-                        
-                        fan_overnight = project_overnight_fan(anchor_close, anchor_time, overnight_start, overnight_end)
-                        
-                        # Detect touches
-                        overnight_touches = detect_overnight_touches(es_overnight, fan_overnight, offset_255)
+                # Calculate offset used
+                es_spx_offset = calculate_es_spx_offset_230pm(controls["prev_day"])
                 
                 st.session_state["anchors_data"] = {
                     "anchor_close": anchor_close,
                     "anchor_time": anchor_time,
                     "anchor_label": anchor_label,
                     "strategy_df": strategy_df,
-                    "spx_data": spx_rth_data,
-                    "estimated": estimated,
                     "overnight_touches": overnight_touches,
-                    "offset_255": offset_used
+                    "es_spx_offset": es_spx_offset,
+                    "spx_data": spx_rth_data,
+                    "estimated": estimated
                 }
                 
             except Exception as e:
@@ -1176,13 +818,14 @@ def render_spx_anchors_tab(controls: Dict):
     if "anchors_data" in st.session_state:
         data = st.session_state["anchors_data"]
         
+        # Main metrics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.markdown(create_metric_card(
                 "Anchor Close",
                 f"{data['anchor_close']:.2f}",
-                f"Prev day ≤3PM{data['anchor_label']}",
+                f"3:00 PM CT{data['anchor_label']}",
                 "⚓",
                 "warning" if data['estimated'] else "primary"
             ), unsafe_allow_html=True)
@@ -1198,57 +841,46 @@ def render_spx_anchors_tab(controls: Dict):
             ), unsafe_allow_html=True)
         
         with col3:
-            df = data['strategy_df']
-            width_830 = df[df['Time'] == '08:30']['Width'].iloc[0] if not df.empty else 0
-            st.markdown(create_metric_card(
-                "Fan Width @ 8:30",
-                f"{width_830:.2f}",
-                "Points top to bottom",
-                "📏",
-                "neutral"
-            ), unsafe_allow_html=True)
-        
-        with col4:
-            # Overnight touch summary
-            touches = data.get('overnight_touches', [])
-            touch_count = len(touches)
-            touch_type = "warning" if touch_count > 0 else "neutral"
-            touch_text = f"{touch_count} touches" if touch_count > 0 else "No touches"
-            
+            touch_count = len(data['overnight_touches']) if not data['overnight_touches'].empty else 0
             st.markdown(create_metric_card(
                 "Overnight Touches",
                 str(touch_count),
-                touch_text,
+                "ES converted to SPX",
                 "🌙",
-                touch_type
+                "success" if touch_count > 0 else "neutral"
             ), unsafe_allow_html=True)
         
-        # Overnight Analysis Section
-        if data.get('offset_255') is not None:
-            st.markdown("### 🌙 Overnight ES Analysis")
-            
-            col_left, col_right = st.columns([1, 2])
-            
-            with col_left:
-                st.markdown(f"""
-                **ES→SPX Offset (2:30pm):** {data['offset_255']:+.2f}  
-                **Analysis Period:** Previous 5:00pm → 8:30am  
-                **Data Source:** ES=F converted to SPX equivalent
-                """)
-            
-            with col_right:
-                touches = data.get('overnight_touches', [])
-                if touches:
-                    st.markdown("**Detected Fan Interactions:**")
-                    for touch in touches:
-                        st.markdown(f"• **{touch['Time']}** - {touch['Action']} at **{touch['Touch_Price']:.2f}**")
-                else:
-                    st.markdown("**Fan Interactions:** — (No touches detected)")
-        else:
-            st.markdown("### 🌙 Overnight ES Analysis")  
-            st.info("ES overnight data unavailable - offset calculation failed at 2:55pm")
+        with col4:
+            offset = data.get('es_spx_offset', 0) or 0
+            st.markdown(create_metric_card(
+                "ES-SPX Offset",
+                f"{offset:+.2f}",
+                "2:30 PM calculation",
+                "🔗",
+                "neutral"
+            ), unsafe_allow_html=True)
         
-        st.markdown("### 📊 Trading Strategy Table")
+        # Overnight touches table
+        if not data['overnight_touches'].empty:
+            st.markdown("### 🌙 Overnight Fan Touches (ES → SPX)")
+            st.dataframe(
+                data['overnight_touches'][["Time", "SPX_Equiv_Price", "Fan_Top", "Fan_Bottom", "Touch_Type", "Bias", "Entry_Signal"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Time": st.column_config.TextColumn("Time", width="small"),
+                    "SPX_Equiv_Price": st.column_config.NumberColumn("SPX Equiv", width="medium", format="%.2f"),
+                    "Fan_Top": st.column_config.NumberColumn("Fan Top", width="medium", format="%.2f"),
+                    "Fan_Bottom": st.column_config.NumberColumn("Fan Bottom", width="medium", format="%.2f"),
+                    "Touch_Type": st.column_config.TextColumn("Touch", width="small"),
+                    "Bias": st.column_config.TextColumn("Bias", width="small"),
+                    "Entry_Signal": st.column_config.TextColumn("Entry Signal", width="large")
+                }
+            )
+        else:
+            st.info("No overnight fan touches detected (ES data may be unavailable)")
+        
+        st.markdown("### 📊 RTH Trading Strategy Table")
         
         if not data['strategy_df'].empty:
             st.dataframe(
@@ -1260,7 +892,6 @@ def render_spx_anchors_tab(controls: Dict):
                     "Time": st.column_config.TextColumn("Time", width="small"),
                     "Price": st.column_config.TextColumn("SPX Price", width="medium"),
                     "Bias": st.column_config.TextColumn("Bias", width="small"),
-                    "Strength": st.column_config.TextColumn("Strength", width="small"),
                     "Top": st.column_config.NumberColumn("Top", width="medium", format="%.2f"),
                     "Bottom": st.column_config.NumberColumn("Bottom", width="medium", format="%.2f"),
                     "Width": st.column_config.NumberColumn("Width", width="small", format="%.1f"),
@@ -1283,8 +914,13 @@ def render_bc_forecast_tab(controls: Dict):
     </div>
     """, unsafe_allow_html=True)
     
-    asia_start = fmt_ct(datetime.combine(controls["prev_day"], time(19, 0)))
-    europe_end = fmt_ct(datetime.combine(controls["proj_day"], time(7, 0)))
+    # Handle Friday to Monday gap for overnight session slots
+    if controls["prev_day"].weekday() == 4 and controls["proj_day"].weekday() == 0:  # Friday to Monday
+        asia_start = fmt_ct(datetime.combine(controls["prev_day"], time(19, 0)))
+        europe_end = fmt_ct(datetime.combine(controls["proj_day"], time(7, 0)))
+    else:
+        asia_start = fmt_ct(datetime.combine(controls["prev_day"], time(19, 0)))
+        europe_end = fmt_ct(datetime.combine(controls["proj_day"], time(7, 0)))
     
     session_slots = []
     current_slot = asia_start
@@ -1301,35 +937,13 @@ def render_bc_forecast_tab(controls: Dict):
         
         with bounce_col1:
             st.markdown("**Bounce #1**")
-            b1_time = st.selectbox(
-                "Time (30m slot)",
-                options=slot_options,
-                index=0,
-                key="b1_time"
-            )
-            b1_price = st.number_input(
-                "SPX Price",
-                value=6500.00,
-                step=0.25,
-                format="%.2f",
-                key="b1_price"
-            )
+            b1_time = st.selectbox("Time (30m slot)", options=slot_options, index=0, key="b1_time")
+            b1_price = st.number_input("SPX Price", value=6500.00, step=0.25, format="%.2f", key="b1_price")
         
         with bounce_col2:
             st.markdown("**Bounce #2**")
-            b2_time = st.selectbox(
-                "Time (30m slot)",
-                options=slot_options,
-                index=min(6, len(slot_options)-1),
-                key="b2_time"
-            )
-            b2_price = st.number_input(
-                "SPX Price",
-                value=6512.00,
-                step=0.25,
-                format="%.2f",
-                key="b2_price"
-            )
+            b2_time = st.selectbox("Time (30m slot)", options=slot_options, index=min(6, len(slot_options)-1), key="b2_time")
+            b2_price = st.number_input("SPX Price", value=6512.00, step=0.25, format="%.2f", key="b2_price")
         
         st.markdown("---")
         st.markdown("### 📋 Contract A (Required)")
@@ -1337,60 +951,18 @@ def render_bc_forecast_tab(controls: Dict):
         ca_col1, ca_col2 = st.columns(2)
         
         with ca_col1:
-            ca_symbol = st.text_input(
-                "Contract Symbol",
-                value="6525c",
-                key="ca_symbol"
-            )
-            ca_b1_price = st.number_input(
-                "Price at Bounce #1",
-                value=10.00,
-                step=0.05,
-                format="%.2f",
-                key="ca_b1_price"
-            )
-            ca_b2_price = st.number_input(
-                "Price at Bounce #2", 
-                value=12.50,
-                step=0.05,
-                format="%.2f",
-                key="ca_b2_price"
-            )
+            ca_symbol = st.text_input("Contract Symbol", value="6525c", key="ca_symbol")
+            ca_b1_price = st.number_input("Price at Bounce #1", value=10.00, step=0.05, format="%.2f", key="ca_b1_price")
+            ca_b2_price = st.number_input("Price at Bounce #2", value=12.50, step=0.05, format="%.2f", key="ca_b2_price")
         
         with ca_col2:
             st.markdown("**Exit Reference Points**")
-            ca_h1_time = st.selectbox(
-                "High after Bounce #1 - Time",
-                options=slot_options,
-                index=min(2, len(slot_options)-1),
-                key="ca_h1_time"
-            )
-            ca_h1_price = st.number_input(
-                "High after Bounce #1 - Price",
-                value=14.00,
-                step=0.05,
-                format="%.2f",
-                key="ca_h1_price"
-            )
-            ca_h2_time = st.selectbox(
-                "High after Bounce #2 - Time",
-                options=slot_options,
-                index=min(8, len(slot_options)-1),
-                key="ca_h2_time"
-            )
-            ca_h2_price = st.number_input(
-                "High after Bounce #2 - Price",
-                value=16.00,
-                step=0.05,
-                format="%.2f",
-                key="ca_h2_price"
-            )
+            ca_h1_time = st.selectbox("High after Bounce #1 - Time", options=slot_options, index=min(2, len(slot_options)-1), key="ca_h1_time")
+            ca_h1_price = st.number_input("High after Bounce #1 - Price", value=14.00, step=0.05, format="%.2f", key="ca_h1_price")
+            ca_h2_time = st.selectbox("High after Bounce #2 - Time", options=slot_options, index=min(8, len(slot_options)-1), key="ca_h2_time")
+            ca_h2_price = st.number_input("High after Bounce #2 - Price", value=16.00, step=0.05, format="%.2f", key="ca_h2_price")
         
-        submitted = st.form_submit_button(
-            "🚀 Generate NY Session Projections",
-            type="primary",
-            use_container_width=True
-        )
+        submitted = st.form_submit_button("🚀 Generate NY Session Projections", type="primary", use_container_width=True)
     
     if submitted:
         try:
@@ -1402,17 +974,14 @@ def render_bc_forecast_tab(controls: Dict):
                 return
             
             underlying_df, underlying_slope = project_contract_line(
-                b1_dt, st.session_state["b1_price"],
-                b2_dt, st.session_state["b2_price"],
+                b1_dt, st.session_state["b1_price"], b2_dt, st.session_state["b2_price"],
                 controls["proj_day"], "SPX_Projected"
             )
             
-            underlying_df.insert(0, "Slot", 
-                underlying_df["Time"].apply(lambda x: "⭐ 8:30" if x == "08:30" else ""))
+            underlying_df.insert(0, "Slot", underlying_df["Time"].apply(lambda x: "⭐ 8:30" if x == "08:30" else ""))
             
             ca_entry_df, ca_entry_slope = project_contract_line(
-                b1_dt, st.session_state["ca_b1_price"],
-                b2_dt, st.session_state["ca_b2_price"],
+                b1_dt, st.session_state["ca_b1_price"], b2_dt, st.session_state["ca_b2_price"],
                 controls["proj_day"], f"{st.session_state['ca_symbol']}_Entry"
             )
             
@@ -1420,19 +989,15 @@ def render_bc_forecast_tab(controls: Dict):
             ca_h2_dt = fmt_ct(datetime.strptime(st.session_state["ca_h2_time"], "%Y-%m-%d %H:%M"))
             
             ca_exit_df, ca_exit_slope = project_contract_line(
-                ca_h1_dt, st.session_state["ca_h1_price"],
-                ca_h2_dt, st.session_state["ca_h2_price"],
+                ca_h1_dt, st.session_state["ca_h1_price"], ca_h2_dt, st.session_state["ca_h2_price"],
                 controls["proj_day"], f"{st.session_state['ca_symbol']}_Exit"
             )
             
-            ca_expected_exit = calculate_expected_exit_time(
-                b1_dt, ca_h1_dt, b2_dt, ca_h2_dt, controls["proj_day"]
-            )
+            ca_expected_exit = calculate_expected_exit_time(b1_dt, ca_h1_dt, b2_dt, ca_h2_dt, controls["proj_day"])
             
             result_df = underlying_df.merge(ca_entry_df, on="Time").merge(ca_exit_df, on="Time")
             result_df[f"{st.session_state['ca_symbol']}_Spread"] = (
-                result_df[f"{st.session_state['ca_symbol']}_Exit"] - 
-                result_df[f"{st.session_state['ca_symbol']}_Entry"]
+                result_df[f"{st.session_state['ca_symbol']}_Exit"] - result_df[f"{st.session_state['ca_symbol']}_Entry"]
             )
             
             st.session_state["bc_results"] = {
@@ -1441,8 +1006,7 @@ def render_bc_forecast_tab(controls: Dict):
                 "ca_symbol": st.session_state['ca_symbol'],
                 "ca_entry_slope": ca_entry_slope,
                 "ca_exit_slope": ca_exit_slope,
-                "ca_expected_exit": ca_expected_exit,
-                "bounce_times": [b1_dt, b2_dt]
+                "ca_expected_exit": ca_expected_exit
             }
             
         except Exception as e:
@@ -1457,51 +1021,20 @@ def render_bc_forecast_tab(controls: Dict):
         metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
         
         with metric_col1:
-            st.markdown(create_metric_card(
-                "Underlying Slope",
-                f"{results['underlying_slope']:+.3f}",
-                "SPX points per 30m",
-                "📐",
-                "primary"
-            ), unsafe_allow_html=True)
+            st.markdown(create_metric_card("Underlying Slope", f"{results['underlying_slope']:+.3f}", "SPX points per 30m", "📐", "primary"), unsafe_allow_html=True)
         
         with metric_col2:
-            st.markdown(create_metric_card(
-                f"{results['ca_symbol']} Entry",
-                f"{results['ca_entry_slope']:+.3f}",
-                f"Exit: {results['ca_exit_slope']:+.3f}",
-                "📊",
-                "success"
-            ), unsafe_allow_html=True)
+            st.markdown(create_metric_card(f"{results['ca_symbol']} Entry", f"{results['ca_entry_slope']:+.3f}", f"Exit: {results['ca_exit_slope']:+.3f}", "📊", "success"), unsafe_allow_html=True)
         
         with metric_col3:
-            st.markdown(create_metric_card(
-                "Contracts",
-                "1",
-                "Single contract analysis",
-                "📋",
-                "neutral"
-            ), unsafe_allow_html=True)
+            st.markdown(create_metric_card("Contracts", "1", "Single contract analysis", "📋", "neutral"), unsafe_allow_html=True)
         
         with metric_col4:
-            st.markdown(create_metric_card(
-                "Expected Exit",
-                results['ca_expected_exit'],
-                f"Contract A timing",
-                "⏰",
-                "warning"
-            ), unsafe_allow_html=True)
+            st.markdown(create_metric_card("Expected Exit", results['ca_expected_exit'], f"Contract A timing", "⏰", "warning"), unsafe_allow_html=True)
         
         st.markdown("### 🎯 NY Session Projections")
-        st.dataframe(
-            results['table'],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Slot": st.column_config.TextColumn("", width="small"),
-                "Time": st.column_config.TextColumn("Time", width="small")
-            }
-        )
+        st.dataframe(results['table'], use_container_width=True, hide_index=True, 
+                    column_config={"Slot": st.column_config.TextColumn("", width="small"), "Time": st.column_config.TextColumn("Time", width="small")})
     
     else:
         st.info("👆 Fill out the form above and click 'Generate NY Session Projections'")
@@ -1533,60 +1066,26 @@ def render_plan_card_tab():
     plan_col1, plan_col2, plan_col3, plan_col4 = st.columns(4)
     
     with plan_col1:
-        st.markdown(create_metric_card(
-            "Anchor Close",
-            f"{anchors['anchor_close']:.2f}",
-            f"Prev day{anchors['anchor_label']}",
-            "⚓",
-            "primary"
-        ), unsafe_allow_html=True)
+        st.markdown(create_metric_card("Anchor Close", f"{anchors['anchor_close']:.2f}", f"3PM{anchors['anchor_label']}", "⚓", "primary"), unsafe_allow_html=True)
     
     with plan_col2:
         strategy_df = anchors['strategy_df']
         width_830 = strategy_df[strategy_df['Time'] == '08:30']['Width'].iloc[0] if not strategy_df.empty else 0
-        st.markdown(create_metric_card(
-            "Fan Width @ 8:30",
-            f"{width_830:.2f}",
-            "Key decision zone",
-            "📏",
-            "neutral"
-        ), unsafe_allow_html=True)
+        st.markdown(create_metric_card("Fan Width @ 8:30", f"{width_830:.2f}", "Key decision zone", "📏", "neutral"), unsafe_allow_html=True)
     
     with plan_col3:
-        bc_status = "ACTIVE" if bc else "NOT SET"
-        bc_type = "success" if bc else "warning"
-        bc_subtext = f"{len(bc['table'])} projections" if bc else "No BC forecast"
-        
-        st.markdown(create_metric_card(
-            "BC Forecast",
-            bc_status,
-            bc_subtext,
-            "🔮",
-            bc_type
-        ), unsafe_allow_html=True)
+        touch_count = len(anchors.get('overnight_touches', [])) 
+        st.markdown(create_metric_card("Overnight Touches", str(touch_count), "Fan interactions", "🌙", "success" if touch_count > 0 else "neutral"), unsafe_allow_html=True)
     
     with plan_col4:
-        readiness_score = 85 if (has_anchors and bc) else 65 if has_anchors else 25
+        readiness_score = 90 if (has_anchors and bc and touch_count > 0) else 75 if (has_anchors and bc) else 60 if has_anchors else 25
         readiness_type = "success" if readiness_score >= 80 else "warning" if readiness_score >= 60 else "danger"
-        
-        st.markdown(create_metric_card(
-            "Readiness",
-            f"{readiness_score}%",
-            "Plan completeness",
-            "🎯",
-            readiness_type
-        ), unsafe_allow_html=True)
+        st.markdown(create_metric_card("Readiness", f"{readiness_score}%", "Plan completeness", "🎯", readiness_type), unsafe_allow_html=True)
     
     plan_left, plan_right = st.columns(2)
     
     with plan_left:
-        st.markdown("""
-        <div class="enterprise-card">
-            <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
-                🎯 Primary Setup (SPX Anchors)
-            </h3>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="enterprise-card"><h3 style="margin-top: 0;">🎯 Primary Setup (SPX Anchors)</h3></div>""", unsafe_allow_html=True)
         
         row_830 = strategy_df[strategy_df['Time'] == '08:30']
         if not row_830.empty:
@@ -1598,17 +1097,22 @@ def render_plan_card_tab():
             - **Fan Bottom:** {setup['Bottom']:.2f}
             - **Entry Signal:** {setup['Entry_Signal']}
             """, unsafe_allow_html=True)
+            
+            # Overnight touches summary
+            overnight_touches = anchors.get('overnight_touches', pd.DataFrame())
+            if not overnight_touches.empty:
+                latest_touch = overnight_touches.iloc[-1]
+                st.markdown(f"""
+                **Latest Overnight Touch:**
+                - **Time:** {latest_touch['Time']} ({latest_touch['Touch_Type']})
+                - **SPX Equiv:** {latest_touch['SPX_Equiv_Price']:.2f}
+                - **Signal:** {latest_touch['Entry_Signal']}
+                """)
         else:
             st.info("8:30 AM data not available")
     
     with plan_right:
-        st.markdown("""
-        <div class="enterprise-card">
-            <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
-                💼 Contract Strategy (BC Forecast)
-            </h3>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="enterprise-card"><h3 style="margin-top: 0;">💼 Contract Strategy (BC Forecast)</h3></div>""", unsafe_allow_html=True)
         
         if bc:
             bc_table = bc['table']
@@ -1639,11 +1143,7 @@ def main():
         render_main_header()
         controls = render_sidebar_controls()
         
-        tab_anchors, tab_bc, tab_plan = st.tabs([
-            "🎯 SPX Anchors", 
-            "🔮 BC Forecast", 
-            "📝 Plan Card"
-        ])
+        tab_anchors, tab_bc, tab_plan = st.tabs(["🎯 SPX Anchors", "🔮 BC Forecast", "📝 Plan Card"])
         
         with tab_anchors:
             render_spx_anchors_tab(controls)
@@ -1659,8 +1159,7 @@ def main():
         st.markdown("""
         <div style="text-align: center; color: var(--text-tertiary); font-size: 0.8rem; padding: 16px;">
             <p><strong>SPX Prophet</strong> - Professional Trading Analytics Platform</p>
-            <p>⚠️ <strong>Risk Disclaimer:</strong> This software is for educational purposes only. 
-            Trading involves substantial risk of loss. Always consult with qualified financial professionals.</p>
+            <p>⚠️ <strong>Risk Disclaimer:</strong> Educational purposes only. Trading involves substantial risk.</p>
         </div>
         """, unsafe_allow_html=True)
         
