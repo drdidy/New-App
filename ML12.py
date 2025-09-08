@@ -1,4 +1,4 @@
-# app.py - SPX Prophet - Lean & Fixed Version
+# app.py - SPX Prophet - Complete Working Version
 # Enterprise Trading Analytics Platform
 # SPX Anchors | BC Forecast | Plan Card
 
@@ -23,8 +23,8 @@ TOP_SLOPE_DEFAULT = 0.312
 BOTTOM_SLOPE_DEFAULT = 0.25
 NEUTRAL_BAND_DEFAULT = 0.10  # 10% from fan center
 
-# Data lookback for reliability
-ES_LOOKBACK_DAYS = 30
+# Data lookback for reliability  
+ES_LOOKBACK_DAYS = 7
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIGURATION & STYLING
@@ -282,9 +282,15 @@ def rth_slots_ct(target_date: date) -> List[datetime]:
     return slots
 
 def count_effective_blocks(start: datetime, end: datetime) -> float:
+    """Count 30-minute blocks, treating weekends as if they don't exist."""
     if end <= start:
         return 0.0
-    return (end - start).total_seconds() / 1800.0  # 30 minutes = 1800 seconds
+    
+    # Calculate total time difference in hours
+    total_hours = (end - start).total_seconds() / 3600.0
+    
+    # Convert to 30-minute blocks (2 blocks per hour)
+    return total_hours * 2.0
 
 def ensure_ohlc_cols(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
@@ -327,7 +333,7 @@ def fetch_data_with_lookback(symbol: str, target_date: date, lookback_days: int 
         if df.empty:
             # Try 1m data and resample
             df = ticker.history(
-                period="30d",
+                period="7d",
                 interval="1m",
                 prepost=True,
                 auto_adjust=False,
@@ -604,7 +610,7 @@ def calculate_expected_exit_time(bounce1_time: datetime, high1_time: datetime,
     if not durations:
         return "N/A"
     
-    median_duration_hours = np.median(durations)
+    median_duration_hours = np.median(durations) / 2.0  # Convert blocks to hours
     exit_time = bounce2_time + timedelta(hours=median_duration_hours)
     
     # Find closest RTH slot
@@ -709,7 +715,7 @@ def render_main_header():
         st.markdown(create_metric_card(
             "Data Status",
             connectivity,
-            f"30-day lookback",
+            f"7-day lookback",
             "🔗",
             conn_type
         ), unsafe_allow_html=True)
@@ -879,7 +885,7 @@ def render_spx_anchors_tab(controls: Dict):
             )
         
         # Strategy table
-        st.markdown("### 📊 RTH Strategy Table")
+        st.markdown("### 📊 RTH Strategy Table (8:30 AM - 2:30 PM)")
         st.dataframe(
             data['strategy_df'],
             use_container_width=True,
