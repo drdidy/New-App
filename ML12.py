@@ -904,9 +904,9 @@ def render_bc_forecast_tab(controls: Dict):
     </div>
     """, unsafe_allow_html=True)
     
-    # Generate overnight slots
-    asia_start = fmt_ct(datetime.combine(controls["prev_day"], time(19, 0)))
-    europe_end = fmt_ct(datetime.combine(controls["proj_day"], time(7, 0)))
+    # Generate overnight slots - FIXED: Extended time range from 5 PM previous day to 8 AM forecast day
+    asia_start = fmt_ct(datetime.combine(controls["prev_day"], time(17, 0)))  # Changed from 19, 0 to 17, 0 (5 PM)
+    europe_end = fmt_ct(datetime.combine(controls["proj_day"], time(8, 0)))   # Changed from 7, 0 to 8, 0 (8 AM)
     
     session_slots = []
     current_slot = asia_start
