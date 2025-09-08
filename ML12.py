@@ -603,17 +603,17 @@ def get_spx_anchor_prevday(prev_day: date) -> Tuple[Optional[float], Optional[da
     return None, None, True
 
 def calculate_offset_at_255pm(prev_day: date) -> Optional[float]:
-    """Calculate ES-SPX offset using 2:55pm timing for both instruments."""
-    target_time = fmt_ct(datetime.combine(prev_day, time(14, 55)))  # 2:55 PM CT
+    """Calculate ES-SPX offset using 2:30pm timing for both instruments."""
+    target_time = fmt_ct(datetime.combine(prev_day, time(14, 30)))  # 2:30 PM CT
     
-    # Get SPX at 2:55pm
+    # Get SPX at 2:30pm
     spx_255 = None
     for interval in ["5m", "1m"]:
         spx_data = fetch_intraday("^GSPC", prev_day, prev_day, interval)
         if spx_data.empty:
             continue
         
-        # Find closest time <= 2:55pm
+        # Find closest time <= 2:30pm
         before_255 = spx_data.loc[:target_time]
         if not before_255.empty:
             spx_255 = float(before_255["Close"].iloc[-1])
@@ -622,7 +622,7 @@ def calculate_offset_at_255pm(prev_day: date) -> Optional[float]:
     if spx_255 is None:
         return None
     
-    # Get ES at 2:55pm  
+    # Get ES at 2:30pm  
     es_255 = None
     for interval in ["5m", "1m"]:
         es_data = fetch_intraday("ES=F", prev_day, prev_day, interval)
@@ -1135,7 +1135,7 @@ def render_spx_anchors_tab(controls: Dict):
                 overnight_touches = []
                 offset_used = None
                 
-                # Calculate 2:55pm offset
+                # Calculate 2:30pm offset
                 offset_255 = calculate_offset_at_255pm(controls["prev_day"])
                 if offset_255 is not None:
                     offset_used = offset_255
@@ -1231,7 +1231,7 @@ def render_spx_anchors_tab(controls: Dict):
             
             with col_left:
                 st.markdown(f"""
-                **ES→SPX Offset (2:55pm):** {data['offset_255']:+.2f}  
+                **ES→SPX Offset (2:30pm):** {data['offset_255']:+.2f}  
                 **Analysis Period:** Previous 5:00pm → 8:30am  
                 **Data Source:** ES=F converted to SPX equivalent
                 """)
