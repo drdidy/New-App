@@ -1,244 +1,199 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-TASTYTRADE API CAPABILITY TEST - STREAMLIT VERSION
-═══════════════════════════════════════════════════════════════════════════════
-Deploy this to Streamlit Cloud to test what data we can get from Tastytrade.
-
-requirements.txt needs:
-    streamlit
-    tastytrade
-    pytz
+TASTYTRADE API CAPABILITY TEST - OAUTH VERSION
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
 import streamlit as st
 import asyncio
 from datetime import datetime, timedelta
-import pytz
+import requests
 
 st.set_page_config(page_title="Tastytrade API Test", page_icon="🔬", layout="wide")
 
-st.title("🔬 Tastytrade API Capability Test")
+st.title("🔬 Tastytrade API Capability Test (OAuth)")
 st.markdown("---")
 
-# Credentials
-USERNAME = "okanlawondavid@gmail.com"
-PASSWORD = "Jivydado8492@10"
+# OAuth Credentials
+CLIENT_ID = "61d8c3a5-d259-4ac9-bf9c-a47ed1e6463f"
+CLIENT_SECRET = "a00eac3f462f488b4de1655ab43024aa393bbadf"
 
-def run_async(coro):
-    """Helper to run async code in Streamlit."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+# We need to get a refresh token first
+st.subheader("Step 1: Get Refresh Token")
 
-async def run_all_tests():
-    """Run all Tastytrade API tests."""
-    results = {}
+st.markdown("""
+The OAuth grant was created but we need the **refresh token**. 
+
+Go to: **my.tastytrade.com → API → Manage OAuth Grants**
+
+Click on your app "drdidy Personal OAuth2 App" and look for a way to:
+- **View** the refresh token, OR
+- **Regenerate/Create** a new grant that shows the token
+
+If you can't find it there, we need to do the OAuth authorization flow manually.
+""")
+
+st.markdown("---")
+
+# Manual OAuth Flow
+st.subheader("Step 2: Manual OAuth Authorization")
+
+redirect_uri = "https://localhost"
+auth_url = f"https://api.tastytrade.com/oauth/authorize?client_id={CLIENT_ID}&redirect_uri={redirect_uri}&response_type=code&scope=read"
+
+st.markdown(f"""
+**Option A: Browser Authorization Flow**
+
+1. Click this link (opens in new tab):
+   
+   [🔗 Authorize Tastytrade App]({auth_url})
+
+2. Log in and approve the app
+3. You'll be redirected to a URL like:
+   ```
+   https://localhost/?code=SOME_CODE_HERE
+   ```
+4. Copy that **code** and paste it below:
+""")
+
+auth_code = st.text_input("Paste the authorization code here:", placeholder="abc123xyz...")
+
+if auth_code:
+    st.subheader("Step 3: Exchange Code for Tokens")
     
-    # 1. SESSION TEST
-    st.subheader("1️⃣ Creating Session")
-    try:
-        from tastytrade import Session
-        session = Session(USERNAME, PASSWORD)
-        st.success(f"✅ Session created!")
-        st.code(f"Session Token: {session.session_token}")
-        st.code(f"Is Test: {session.is_test}")
-        results['session'] = session
-    except Exception as e:
-        st.error(f"❌ Session failed: {e}")
-        return results
-    
-    # 2. ACCOUNT TEST
-    st.subheader("2️⃣ Checking Accounts")
-    try:
-        from tastytrade import Account
-        accounts = await Account.a_get(session)
-        st.success(f"✅ Found {len(accounts)} account(s)")
-        for acc in accounts:
-            st.code(f"Account: {acc.account_number}")
-        results['accounts'] = accounts
-    except Exception as e:
-        st.error(f"❌ Account error: {e}")
-    
-    # 3. FUTURES TEST
-    st.subheader("3️⃣ Checking Futures Access")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**ES Futures (S&P 500)**")
-        from tastytrade.instruments import Future
-        es_symbols = ['/ESH25', '/ESM25', '/ESZ24']
-        for symbol in es_symbols:
+    if st.button("🔑 Get Tokens", type="primary"):
+        with st.spinner("Exchanging code for tokens..."):
             try:
-                future = await Future.get(session, symbol)
-                st.success(f"✅ {symbol}")
-                st.json({
-                    "symbol": future.symbol,
-                    "streamer_symbol": getattr(future, 'streamer_symbol', 'N/A'),
-                    "product_code": getattr(future, 'product_code', 'N/A'),
-                })
-                results['es_future'] = future
-                break
-            except Exception as e:
-                st.warning(f"❌ {symbol}: {str(e)[:100]}")
-    
-    with col2:
-        st.markdown("**VX Futures (VIX)**")
-        vx_symbols = ['/VXH25', '/VXG25', '/VXJ25']
-        for symbol in vx_symbols:
-            try:
-                future = await Future.get(session, symbol)
-                st.success(f"✅ {symbol}")
-                st.json({
-                    "symbol": future.symbol,
-                    "streamer_symbol": getattr(future, 'streamer_symbol', 'N/A'),
-                    "product_code": getattr(future, 'product_code', 'N/A'),
-                })
-                results['vx_future'] = future
-                break
-            except Exception as e:
-                st.warning(f"❌ {symbol}: {str(e)[:100]}")
-    
-    # 4. INDEX TEST
-    st.subheader("4️⃣ Checking Index/Equity Data")
-    from tastytrade.instruments import Equity
-    
-    test_symbols = ['SPY', 'QQQ', 'SPX', '$SPX.X', 'VIX', '$VIX.X', 'AAPL']
-    cols = st.columns(4)
-    
-    for i, symbol in enumerate(test_symbols):
-        with cols[i % 4]:
-            try:
-                equity = await Equity.get(session, symbol)
-                st.success(f"✅ {symbol}")
-                results[f'equity_{symbol}'] = equity
-            except Exception as e:
-                st.error(f"❌ {symbol}")
-    
-    # 5. OPTIONS TEST
-    st.subheader("5️⃣ Checking SPX Options Chain")
-    try:
-        from tastytrade.instruments import get_option_chain
-        chain = await get_option_chain(session, 'SPX')
-        expirations = list(chain.keys())[:5]
-        st.success(f"✅ SPX Options available - {len(chain)} expirations")
-        st.write("Next 5 expirations:", expirations)
-        
-        if expirations:
-            first_exp = expirations[0]
-            strikes = chain[first_exp][:3]
-            st.write(f"Sample strikes for {first_exp}:")
-            for strike in strikes:
-                st.code(f"Strike {strike.strike_price}: {strike.streamer_symbol}")
-        results['options'] = chain
-    except Exception as e:
-        st.error(f"❌ Options error: {e}")
-    
-    # 6. STREAMING TEST
-    st.subheader("6️⃣ Testing Real-Time Streaming")
-    try:
-        from tastytrade.streamer import DXLinkStreamer
-        
-        st.info("⏳ Connecting to DXLink streamer...")
-        
-        async with DXLinkStreamer(session) as streamer:
-            st.success("✅ Connected to streamer!")
-            
-            # Try to get a quote
-            test_symbols = ['SPY']
-            await streamer.subscribe_quote(test_symbols)
-            
-            st.info(f"⏳ Waiting for {test_symbols} quote (10 sec timeout)...")
-            
-            try:
-                quote = await asyncio.wait_for(streamer.get_event(), timeout=10.0)
-                st.success("✅ Received quote!")
-                st.json({
-                    "symbol": quote.event_symbol,
-                    "bid": quote.bid_price,
-                    "ask": quote.ask_price,
-                    "bid_size": quote.bid_size,
-                    "ask_size": quote.ask_size,
-                })
-                results['quote'] = quote
-            except asyncio.TimeoutError:
-                st.warning("⚠️ No quote received (market may be closed)")
+                # Exchange auth code for tokens
+                token_url = "https://api.tastytrade.com/oauth/token"
                 
-    except Exception as e:
-        st.error(f"❌ Streaming error: {e}")
-        st.code(str(e))
-    
-    # 7. CANDLES TEST
-    st.subheader("7️⃣ Testing Historical Candles")
-    try:
-        from tastytrade.streamer import DXLinkStreamer
-        
-        async with DXLinkStreamer(session) as streamer:
-            from_time = datetime.now() - timedelta(hours=24)
+                data = {
+                    "grant_type": "authorization_code",
+                    "code": auth_code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": CLIENT_ID,
+                    "client_secret": CLIENT_SECRET,
+                }
+                
+                response = requests.post(token_url, data=data)
+                
+                st.write(f"Response Status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    tokens = response.json()
+                    st.success("✅ Got tokens!")
+                    st.json(tokens)
+                    
+                    # Save for next step
+                    st.session_state['access_token'] = tokens.get('access_token')
+                    st.session_state['refresh_token'] = tokens.get('refresh_token')
+                    
+                    st.code(f"Access Token: {tokens.get('access_token', 'N/A')[:50]}...")
+                    st.code(f"Refresh Token: {tokens.get('refresh_token', 'N/A')}")
+                    
+                    st.warning("⚠️ SAVE THE REFRESH TOKEN! It doesn't expire and you'll need it.")
+                else:
+                    st.error(f"❌ Error: {response.text}")
+                    
+            except Exception as e:
+                st.error(f"❌ Exception: {e}")
+
+st.markdown("---")
+
+# If we have tokens, test the API
+st.subheader("Step 4: Test API with Tokens")
+
+refresh_token_input = st.text_input(
+    "Enter Refresh Token (if you have one):", 
+    value=st.session_state.get('refresh_token', ''),
+    type="password"
+)
+
+if refresh_token_input and st.button("🧪 Test API Access", type="primary"):
+    with st.spinner("Testing API..."):
+        try:
+            # First, get a fresh access token using refresh token
+            token_url = "https://api.tastytrade.com/oauth/token"
             
-            st.info(f"⏳ Requesting candles from {from_time}...")
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token_input,
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+            }
             
-            # Try SPY candles
-            await streamer.subscribe_candle('SPY', from_time, '30m')
+            response = requests.post(token_url, data=data)
             
-            candles = []
-            try:
-                for _ in range(5):
-                    candle = await asyncio.wait_for(streamer.get_event(), timeout=5.0)
-                    candles.append(candle)
-            except asyncio.TimeoutError:
-                pass
-            
-            if candles:
-                st.success(f"✅ Received {len(candles)} candles")
-                for c in candles[:3]:
-                    st.code(f"Time: {c.time} | O: {c.open} H: {c.high} L: {c.low} C: {c.close}")
-                results['candles'] = candles
+            if response.status_code == 200:
+                tokens = response.json()
+                access_token = tokens.get('access_token')
+                st.success("✅ Got access token from refresh token!")
+                
+                # Now test API calls
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                }
+                
+                # Test 1: Get customer info
+                st.markdown("**Testing Customer Info...**")
+                r = requests.get("https://api.tastytrade.com/customers/me", headers=headers)
+                if r.status_code == 200:
+                    st.success("✅ Customer info accessible!")
+                    st.json(r.json())
+                else:
+                    st.error(f"❌ Customer: {r.status_code} - {r.text[:200]}")
+                
+                # Test 2: Get accounts
+                st.markdown("**Testing Accounts...**")
+                r = requests.get("https://api.tastytrade.com/customers/me/accounts", headers=headers)
+                if r.status_code == 200:
+                    st.success("✅ Accounts accessible!")
+                    st.json(r.json())
+                else:
+                    st.error(f"❌ Accounts: {r.status_code} - {r.text[:200]}")
+                
+                # Test 3: Get futures
+                st.markdown("**Testing ES Futures...**")
+                r = requests.get("https://api.tastytrade.com/instruments/futures/ES", headers=headers)
+                if r.status_code == 200:
+                    st.success("✅ ES Futures accessible!")
+                    st.json(r.json())
+                else:
+                    st.error(f"❌ ES Futures: {r.status_code} - {r.text[:200]}")
+                
+                # Test 4: Get VX futures
+                st.markdown("**Testing VX Futures (VIX)...**")
+                r = requests.get("https://api.tastytrade.com/instruments/futures/VX", headers=headers)
+                if r.status_code == 200:
+                    st.success("✅ VX Futures accessible! 🎉")
+                    st.json(r.json())
+                else:
+                    st.error(f"❌ VX Futures: {r.status_code} - {r.text[:200]}")
+                
+                # Test 5: Get future products list
+                st.markdown("**Testing Future Products List...**")
+                r = requests.get("https://api.tastytrade.com/instruments/future-products", headers=headers)
+                if r.status_code == 200:
+                    st.success("✅ Future products accessible!")
+                    data = r.json()
+                    products = data.get('data', {}).get('items', [])
+                    st.write(f"Found {len(products)} future products")
+                    # Look for VX
+                    vx_products = [p for p in products if 'VX' in str(p.get('root-symbol', ''))]
+                    if vx_products:
+                        st.success("🎯 VX (VIX Futures) found!")
+                        st.json(vx_products[0])
+                else:
+                    st.error(f"❌ Future Products: {r.status_code} - {r.text[:200]}")
+                    
             else:
-                st.warning("⚠️ No candles received")
+                st.error(f"❌ Token refresh failed: {response.status_code} - {response.text}")
                 
-    except Exception as e:
-        st.error(f"❌ Candles error: {e}")
-        st.code(str(e))
-    
-    return results
-
-# Run button
-st.markdown("---")
-if st.button("🚀 Run All Tests", type="primary", use_container_width=True):
-    with st.spinner("Running tests..."):
-        results = run_async(run_all_tests())
-    
-    st.markdown("---")
-    st.subheader("📊 Summary")
-    
-    summary = []
-    if results.get('session'):
-        summary.append("✅ Session: Working")
-    if results.get('accounts'):
-        summary.append("✅ Accounts: Accessible")
-    if results.get('es_future'):
-        summary.append("✅ ES Futures: Available")
-    if results.get('vx_future'):
-        summary.append("✅ VX Futures: Available (VIX channel possible!)")
-    if results.get('options'):
-        summary.append("✅ SPX Options: Available (can replace Polygon)")
-    if results.get('quote'):
-        summary.append("✅ Real-time Quotes: Working")
-    if results.get('candles'):
-        summary.append("✅ Historical Candles: Working")
-    
-    for s in summary:
-        st.write(s)
-    
-    if len(summary) >= 5:
-        st.success("🎉 Tastytrade can likely replace Yahoo Finance + Polygon!")
-    else:
-        st.warning("⚠️ Some features unavailable - may still need other data sources")
+        except Exception as e:
+            st.error(f"❌ Exception: {e}")
+            import traceback
+            st.code(traceback.format_exc())
 
 st.markdown("---")
 st.caption("After testing, please change your Tastytrade password for security.")
