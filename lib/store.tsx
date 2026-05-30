@@ -8,42 +8,117 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { AppData, Debt, Transaction, ParsedEntry } from "./types";
-import { uid, todayISO } from "./format";
+import type {
+  AppData,
+  Budget,
+  Debt,
+  Member,
+  ThemeName,
+  Transaction,
+  ParsedEntry,
+} from "./types";
+import { uid, todayISO, monthKey } from "./format";
 
 const STORAGE_KEY = "money-coach-data-v1";
+const CURRENT_VERSION = 2;
 
-const EMPTY: AppData = {
-  transactions: [],
-  debts: [],
-  currency: "USD",
-};
+function freshData(): AppData {
+  return {
+    version: CURRENT_VERSION,
+    onboarded: false,
+    householdName: "",
+    members: [],
+    transactions: [],
+    debts: [],
+    budgets: [],
+    currency: "USD",
+    theme: "dark",
+  };
+}
+
+// Bring any older/partial saved blob up to the current shape so upgrades never
+// wipe a user's data.
+function migrate(raw: any): AppData {
+  const base = freshData();
+  if (!raw || typeof raw !== "object") return base;
+
+  const members: Member[] = Array.isArray(raw.members) ? raw.members : [];
+  // v1 had no members — create a default one and attribute existing items to it.
+  let defaultMemberId: string | undefined;
+  if (members.length === 0) {
+    defaultMemberId = uid();
+    members.push({
+      id: defaultMemberId,
+      name: "You",
+      emoji: "🦊",
+      color: "#5fe0a6",
+      monthlyIncome: raw.monthlyIncome,
+    });
+  }
+
+  const attribute = <T extends { memberId?: string }>(x: T): T =>
+    x.memberId ? x : { ...x, memberId: members[0]?.id };
+
+  const transactions: Transaction[] = (raw.transactions || []).map(attribute);
+  const debts: Debt[] = (raw.debts || []).map((d: Debt) => ({
+    ...attribute(d),
+    original: d.original ?? d.balance,
+  }));
+
+  const hadData = transactions.length > 0 || debts.length > 0;
+
+  return {
+    ...base,
+    version: CURRENT_VERSION,
+    // If they already had data, don't force them through onboarding.
+    onboarded: raw.onboarded ?? hadData,
+    householdName: raw.householdName ?? "",
+    members,
+    transactions,
+    debts,
+    budgets: Array.isArray(raw.budgets) ? raw.budgets : [],
+    currency: raw.currency || "USD",
+    theme: raw.theme === "light" ? "light" : "dark",
+    monthlyIncome: raw.monthlyIncome,
+  };
+}
 
 interface StoreContextValue {
   data: AppData;
   ready: boolean;
+  member: (id?: string) => Member | undefined;
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => void;
   deleteTransaction: (id: string) => void;
   addDebt: (d: Omit<Debt, "id" | "createdAt">) => void;
   updateDebt: (id: string, patch: Partial<Debt>) => void;
-  payDebt: (id: string, amount: number) => void;
+  payDebt: (id: string, amount: number, memberId?: string) => void;
   deleteDebt: (id: string) => void;
-  applyParsedEntries: (entries: ParsedEntry[]) => void;
-  setMonthlyIncome: (n: number) => void;
+  applyParsedEntries: (entries: ParsedEntry[], memberId?: string) => void;
+  // household / settings
+  addMember: (m: Omit<Member, "id">) => string;
+  updateMember: (id: string, patch: Partial<Member>) => void;
+  removeMember: (id: string) => void;
+  setBudget: (category: string, limit: number) => void;
+  removeBudget: (category: string) => void;
+  setCurrency: (c: string) => void;
+  setTheme: (t: ThemeName) => void;
+  setHouseholdName: (n: string) => void;
+  completeOnboarding: (init: Partial<AppData>) => void;
+  importData: (incoming: AppData) => void;
   resetAll: () => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<AppData>(EMPTY);
+  const [data, setData] = useState<AppData>(freshData);
   const [ready, setReady] = useState(false);
 
   // Load once on mount.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setData({ ...EMPTY, ...JSON.parse(raw) });
+      if (raw) setData(migrate(JSON.parse(raw)));
     } catch {
       /* ignore corrupt storage */
     }
@@ -59,6 +134,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       /* storage full or unavailable */
     }
   }, [data, ready]);
+
+  // Reflect theme on <html> so CSS variables switch instantly.
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = data.theme;
+    }
+  }, [data.theme]);
+
+  const member = useCallback(
+    (id?: string) => data.members.find((m) => m.id === id),
+    [data.members],
+  );
 
   const addTransaction = useCallback(
     (t: Omit<Transaction, "id" | "createdAt">) => {
@@ -83,7 +170,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const addDebt = useCallback((dbt: Omit<Debt, "id" | "createdAt">) => {
     setData((d) => ({
       ...d,
-      debts: [{ ...dbt, id: uid(), createdAt: Date.now() }, ...d.debts],
+      debts: [
+        { ...dbt, original: dbt.original ?? dbt.balance, id: uid(), createdAt: Date.now() },
+        ...d.debts,
+      ],
     }));
   }, []);
 
@@ -94,110 +184,204 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const payDebt = useCallback((id: string, amount: number) => {
-    setData((d) => ({
-      ...d,
-      debts: d.debts.map((x) =>
+  const payDebt = useCallback((id: string, amount: number, memberId?: string) => {
+    setData((d) => {
+      const target = d.debts.find((x) => x.id === id);
+      const debts = d.debts.map((x) =>
         x.id === id ? { ...x, balance: Math.max(0, x.balance - amount) } : x,
-      ),
-    }));
+      );
+      // Log an "I owe" repayment as an expense so it shows in cash flow.
+      let transactions = d.transactions;
+      if (target && target.direction === "i_owe") {
+        transactions = [
+          {
+            id: uid(),
+            type: "expense",
+            amount: Math.abs(amount),
+            category: "Debt payment",
+            description: `Payment to ${target.party}`,
+            date: todayISO(),
+            memberId: memberId ?? target.memberId,
+            createdAt: Date.now(),
+          },
+          ...transactions,
+        ];
+      }
+      return { ...d, debts, transactions };
+    });
   }, []);
 
   const deleteDebt = useCallback((id: string) => {
     setData((d) => ({ ...d, debts: d.debts.filter((x) => x.id !== id) }));
   }, []);
 
-  const setMonthlyIncome = useCallback((n: number) => {
-    setData((d) => ({ ...d, monthlyIncome: n }));
-  }, []);
-
   // Turn parsed entries from the LLM into stored transactions/debts. We merge
   // debts to the same party + direction instead of creating duplicates.
-  const applyParsedEntries = useCallback((entries: ParsedEntry[]) => {
-    setData((d) => {
-      let txns = d.transactions;
-      let debts = d.debts;
-      const now = Date.now();
+  const applyParsedEntries = useCallback(
+    (entries: ParsedEntry[], memberId?: string) => {
+      setData((d) => {
+        let txns = d.transactions;
+        let debts = d.debts;
+        const now = Date.now();
+        const owner = memberId ?? d.members[0]?.id;
 
-      for (const e of entries) {
-        if (e.kind === "expense" || e.kind === "income") {
-          txns = [
-            {
-              id: uid(),
-              type: e.kind,
-              amount: Math.abs(e.amount),
-              category: e.category || (e.kind === "income" ? "Income" : "Other"),
-              description: e.description || e.summary || "",
-              date: todayISO(),
-              createdAt: now,
-            },
-            ...txns,
-          ];
-        } else if (e.kind === "debt_i_owe" || e.kind === "debt_owed_to_me") {
-          const direction =
-            e.kind === "debt_i_owe" ? "i_owe" : "owed_to_me";
-          const party = (e.party || "Someone").trim();
-          const existing = debts.find(
-            (x) =>
-              x.direction === direction &&
-              x.party.toLowerCase() === party.toLowerCase(),
-          );
-          if (existing) {
-            debts = debts.map((x) =>
-              x.id === existing.id
-                ? { ...x, balance: x.balance + Math.abs(e.amount) }
-                : x,
-            );
-          } else {
-            debts = [
+        for (const e of entries) {
+          if (e.kind === "expense" || e.kind === "income") {
+            txns = [
               {
                 id: uid(),
-                direction,
-                party,
-                balance: Math.abs(e.amount),
-                apr: e.apr,
+                type: e.kind,
+                amount: Math.abs(e.amount),
+                category:
+                  e.category || (e.kind === "income" ? "Income" : "Other"),
+                description: e.description || e.summary || "",
+                date: todayISO(),
+                memberId: owner,
                 createdAt: now,
               },
-              ...debts,
+              ...txns,
+            ];
+          } else if (e.kind === "debt_i_owe" || e.kind === "debt_owed_to_me") {
+            const direction =
+              e.kind === "debt_i_owe" ? "i_owe" : "owed_to_me";
+            const party = (e.party || "Someone").trim();
+            const existing = debts.find(
+              (x) =>
+                x.direction === direction &&
+                x.party.toLowerCase() === party.toLowerCase(),
+            );
+            if (existing) {
+              debts = debts.map((x) =>
+                x.id === existing.id
+                  ? {
+                      ...x,
+                      balance: x.balance + Math.abs(e.amount),
+                      original: (x.original ?? 0) + Math.abs(e.amount),
+                    }
+                  : x,
+              );
+            } else {
+              debts = [
+                {
+                  id: uid(),
+                  direction,
+                  party,
+                  balance: Math.abs(e.amount),
+                  original: Math.abs(e.amount),
+                  apr: e.apr,
+                  memberId: owner,
+                  createdAt: now,
+                },
+                ...debts,
+              ];
+            }
+          } else if (e.kind === "debt_payment") {
+            const party = (e.party || "").trim().toLowerCase();
+            const match = debts.find(
+              (x) => x.direction === "i_owe" && x.party.toLowerCase() === party,
+            );
+            if (match) {
+              debts = debts.map((x) =>
+                x.id === match.id
+                  ? { ...x, balance: Math.max(0, x.balance - Math.abs(e.amount)) }
+                  : x,
+              );
+            }
+            txns = [
+              {
+                id: uid(),
+                type: "expense",
+                amount: Math.abs(e.amount),
+                category: "Debt payment",
+                description: e.summary || `Payment to ${e.party ?? ""}`,
+                date: todayISO(),
+                memberId: owner,
+                createdAt: now,
+              },
+              ...txns,
             ];
           }
-        } else if (e.kind === "debt_payment") {
-          // Reduce the matching "i owe" debt; also log it as an expense.
-          const party = (e.party || "").trim().toLowerCase();
-          const match = debts.find(
-            (x) => x.direction === "i_owe" && x.party.toLowerCase() === party,
-          );
-          if (match) {
-            debts = debts.map((x) =>
-              x.id === match.id
-                ? { ...x, balance: Math.max(0, x.balance - Math.abs(e.amount)) }
-                : x,
-            );
-          }
-          txns = [
-            {
-              id: uid(),
-              type: "expense",
-              amount: Math.abs(e.amount),
-              category: "Debt payment",
-              description: e.summary || `Payment to ${e.party ?? ""}`,
-              date: todayISO(),
-              createdAt: now,
-            },
-            ...txns,
-          ];
         }
-      }
-      return { ...d, transactions: txns, debts };
+        return { ...d, transactions: txns, debts };
+      });
+    },
+    [],
+  );
+
+  const addMember = useCallback((m: Omit<Member, "id">) => {
+    const id = uid();
+    setData((d) => ({ ...d, members: [...d.members, { ...m, id }] }));
+    return id;
+  }, []);
+
+  const updateMember = useCallback((id: string, patch: Partial<Member>) => {
+    setData((d) => ({
+      ...d,
+      members: d.members.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    }));
+  }, []);
+
+  const removeMember = useCallback((id: string) => {
+    setData((d) => {
+      if (d.members.length <= 1) return d; // never leave zero members
+      const fallback = d.members.find((m) => m.id !== id)?.id;
+      return {
+        ...d,
+        members: d.members.filter((m) => m.id !== id),
+        transactions: d.transactions.map((t) =>
+          t.memberId === id ? { ...t, memberId: fallback } : t,
+        ),
+        debts: d.debts.map((x) =>
+          x.memberId === id ? { ...x, memberId: fallback } : x,
+        ),
+      };
     });
   }, []);
 
-  const resetAll = useCallback(() => setData(EMPTY), []);
+  const setBudget = useCallback((category: string, limit: number) => {
+    setData((d) => {
+      const exists = d.budgets.some((b) => b.category === category);
+      const budgets = exists
+        ? d.budgets.map((b) => (b.category === category ? { ...b, limit } : b))
+        : [...d.budgets, { category, limit }];
+      return { ...d, budgets };
+    });
+  }, []);
 
-  const value = useMemo(
+  const removeBudget = useCallback((category: string) => {
+    setData((d) => ({
+      ...d,
+      budgets: d.budgets.filter((b) => b.category !== category),
+    }));
+  }, []);
+
+  const setCurrency = useCallback((c: string) => {
+    setData((d) => ({ ...d, currency: c }));
+  }, []);
+
+  const setTheme = useCallback((t: ThemeName) => {
+    setData((d) => ({ ...d, theme: t }));
+  }, []);
+
+  const setHouseholdName = useCallback((n: string) => {
+    setData((d) => ({ ...d, householdName: n }));
+  }, []);
+
+  const completeOnboarding = useCallback((init: Partial<AppData>) => {
+    setData((d) => ({ ...d, ...init, onboarded: true }));
+  }, []);
+
+  const importData = useCallback((incoming: AppData) => {
+    setData(migrate(incoming));
+  }, []);
+
+  const resetAll = useCallback(() => setData({ ...freshData(), theme: data.theme }), [data.theme]);
+
+  const value = useMemo<StoreContextValue>(
     () => ({
       data,
       ready,
+      member,
       addTransaction,
       deleteTransaction,
       addDebt,
@@ -205,12 +389,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       payDebt,
       deleteDebt,
       applyParsedEntries,
-      setMonthlyIncome,
+      addMember,
+      updateMember,
+      removeMember,
+      setBudget,
+      removeBudget,
+      setCurrency,
+      setTheme,
+      setHouseholdName,
+      completeOnboarding,
+      importData,
       resetAll,
     }),
     [
       data,
       ready,
+      member,
       addTransaction,
       deleteTransaction,
       addDebt,
@@ -218,7 +412,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       payDebt,
       deleteDebt,
       applyParsedEntries,
-      setMonthlyIncome,
+      addMember,
+      updateMember,
+      removeMember,
+      setBudget,
+      removeBudget,
+      setCurrency,
+      setTheme,
+      setHouseholdName,
+      completeOnboarding,
+      importData,
       resetAll,
     ],
   );
@@ -245,29 +448,41 @@ export interface MonthSummary {
   safeToSpend: number;
 }
 
-export function summarize(data: AppData): MonthSummary {
-  const month = new Date().toISOString().slice(0, 7); // YYYY-MM
+// Summarize the current month. Pass a memberId to scope to one person; omit it
+// for the whole household.
+export function summarize(data: AppData, memberId?: string): MonthSummary {
+  const month = monthKey();
   let income = 0;
   let expenses = 0;
   for (const t of data.transactions) {
+    if (memberId && t.memberId !== memberId) continue;
     if (!t.date.startsWith(month)) continue;
     if (t.type === "income") income += t.amount;
     else expenses += t.amount;
   }
-  const totalIOwe = data.debts
+
+  const debts = memberId
+    ? data.debts.filter((d) => d.memberId === memberId)
+    : data.debts;
+  const totalIOwe = debts
     .filter((d) => d.direction === "i_owe")
     .reduce((s, d) => s + d.balance, 0);
-  const totalOwedToMe = data.debts
+  const totalOwedToMe = debts
     .filter((d) => d.direction === "owed_to_me")
     .reduce((s, d) => s + d.balance, 0);
 
-  const baseIncome = income || data.monthlyIncome || 0;
-  // "Safe to spend" = this month's income minus what's already gone out minus
-  // the minimum debt payments still due this month.
-  const minDebtDue = data.debts
+  const baselineIncome =
+    income ||
+    (memberId
+      ? data.members.find((m) => m.id === memberId)?.monthlyIncome || 0
+      : data.members.reduce((s, m) => s + (m.monthlyIncome || 0), 0) ||
+        data.monthlyIncome ||
+        0);
+
+  const minDebtDue = debts
     .filter((d) => d.direction === "i_owe")
     .reduce((s, d) => s + (d.minPayment || 0), 0);
-  const safeToSpend = baseIncome - expenses - minDebtDue;
+  const safeToSpend = baselineIncome - expenses - minDebtDue;
 
   return {
     income,

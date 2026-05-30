@@ -8,9 +8,19 @@ is usually too tedious to keep up*. So here you don't fill in forms — you just
 - 🗣️ **Quick capture** — type or speak *"spent 40 on gas and I still owe James 200"*
   and Claude turns it into the right expense + debt entries. No forms.
 - 📷 **Snap a receipt** — photo → Claude reads the total and files it.
-- 🤝 **Debts & IOUs** — track what you owe and what's owed to you, with payoff info.
-- 💬 **AI Coach** — sees your real numbers and gives a debt-payoff plan
-  (avalanche vs snowball), spending advice, and gentle nudges.
+- 👫 **Household / two-person** — set up you + your partner; attribute spending
+  and debts to each person and see a combined view plus a per-person split.
+- 📊 **Insights** — animated donut of where money went, this-month-vs-last,
+  budget progress with over-limit warnings, top categories, and who-spent-what.
+- 🤝 **Debts & IOUs** — track what you owe and what's owed to you, with payoff
+  progress rings and a snowball/avalanche plan with an estimated debt-free date.
+- 💬 **AI Coach** — sees your household's real numbers (members, budgets,
+  trends) and gives an even-handed debt-payoff plan, advice, and gentle nudges.
+- ⚙️ **Settings** — manage members, monthly budgets, currency, a light/dark
+  theme, and back up / restore your data as a file.
+- 🎬 **Crafted UI** — onboarding flow, animated aurora background, glassmorphism,
+  count-up balances, confetti + haptics on logging, charts, and spring motion
+  (respects reduced-motion).
 - 🔒 **Private** — your financial data lives only on your device (browser
   localStorage). No account, no server database.
 

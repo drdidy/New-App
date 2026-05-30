@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore, summarize } from "@/lib/store";
+import { categoryBreakdown, monthOverMonth, budgetStatus } from "@/lib/insights";
 
 interface Msg {
   role: "user" | "assistant";
@@ -10,9 +11,9 @@ interface Msg {
 
 const STARTERS = [
   "Make me a plan to pay off my debts",
-  "Where am I overspending?",
-  "How much can I safely spend this week?",
-  "Who should I pay back first?",
+  "Where are we overspending?",
+  "How much can we safely spend this week?",
+  "Who should we pay back first?",
 ];
 
 export default function AdvisorPage() {
@@ -34,9 +35,27 @@ export default function AdvisorPage() {
     setInput("");
     setBusy(true);
 
+    const nameOf = (id?: string) =>
+      data.members.find((m) => m.id === id)?.name ?? null;
+
     const snapshot = {
+      household: data.householdName || null,
+      members: data.members.map((m) => ({
+        name: m.name,
+        monthlyIncome: m.monthlyIncome ?? null,
+      })),
       ...summarize(data),
       currency: data.currency,
+      budgets: budgetStatus(data).map((b) => ({
+        category: b.category,
+        spent: Math.round(b.spent),
+        limit: b.limit,
+        over: b.over,
+      })),
+      topCategories: categoryBreakdown(data)
+        .slice(0, 6)
+        .map((c) => ({ category: c.category, amount: Math.round(c.amount) })),
+      monthOverMonth: monthOverMonth(data),
       debts: data.debts.map((d) => ({
         party: d.party,
         direction: d.direction,
@@ -44,11 +63,17 @@ export default function AdvisorPage() {
         apr: d.apr ?? null,
         minPayment: d.minPayment ?? null,
         dueDate: d.dueDate ?? null,
+        whose: nameOf(d.memberId),
       })),
       recentExpenses: data.transactions
         .filter((t) => t.type === "expense")
-        .slice(0, 20)
-        .map((t) => ({ amount: t.amount, category: t.category, date: t.date })),
+        .slice(0, 24)
+        .map((t) => ({
+          amount: t.amount,
+          category: t.category,
+          date: t.date,
+          who: nameOf(t.memberId),
+        })),
     };
 
     try {
@@ -82,9 +107,9 @@ export default function AdvisorPage() {
       {msgs.length === 0 && (
         <>
           <div className="bubble coach" style={{ maxWidth: "100%" }}>
-            Hi — I&apos;m Coach. I can see your budget and debts, and I&apos;m here
-            to help you get on top of them one small step at a time. What&apos;s
-            weighing on you?
+            Hi — I&apos;m Coach. I can see {data.members.length > 1 ? "your household's" : "your"} budget and
+            debts, and I&apos;m here to help you get on top of them one small step
+            at a time. What&apos;s weighing on you?
           </div>
           <div className="suggest" style={{ marginTop: 12 }}>
             {STARTERS.map((s) => (

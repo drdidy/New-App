@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
-import BottomNav from "@/components/BottomNav";
+import AppShell from "@/components/AppShell";
 import SwRegister from "@/components/SwRegister";
 
 export const metadata: Metadata = {
@@ -15,12 +15,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0e1b17",
+  themeColor: "#0a1411",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
 };
+
+// Set the theme attribute before paint to avoid a flash of the wrong theme.
+const themeInit = `(function(){try{var d=JSON.parse(localStorage.getItem('money-coach-data-v1')||'{}');document.documentElement.dataset.theme=d.theme==='light'?'light':'dark';}catch(e){document.documentElement.dataset.theme='dark';}})();`;
 
 export default function RootLayout({
   children,
@@ -28,11 +31,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       <body>
         <StoreProvider>
-          <div className="app">{children}</div>
-          <BottomNav />
+          <AppShell>{children}</AppShell>
           <SwRegister />
         </StoreProvider>
       </body>
