@@ -1,4 +1,11 @@
-import type { AppData, Budget, Debt, Member, Transaction } from "./types";
+import type {
+  AppData,
+  Budget,
+  Debt,
+  Member,
+  RecurringBill,
+  Transaction,
+} from "./types";
 
 // Merge two copies of a household's data into one, so two phones editing
 // independently never lose each other's work.
@@ -22,6 +29,12 @@ export function mergeData(a: AppData, b: AppData): AppData {
   const debts = unionById(a.debts, b.debts, dead, (d) => d.createdAt);
   let members = unionById(a.members, b.members, dead, () => 0);
   const budgets = unionByKey(a.budgets, b.budgets, (x) => x.category, dead);
+  const recurringBills = unionById(
+    a.recurringBills,
+    b.recurringBills,
+    dead,
+    (x) => x.createdAt,
+  );
 
   // Never leave a household with zero members.
   if (members.length === 0) {
@@ -43,6 +56,7 @@ export function mergeData(a: AppData, b: AppData): AppData {
     transactions,
     debts,
     budgets,
+    recurringBills,
     tombstones,
     // Sync config is local-only; callers re-attach it after merging.
     syncCode: a.syncCode ?? b.syncCode,

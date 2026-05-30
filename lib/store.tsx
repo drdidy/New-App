@@ -14,6 +14,7 @@ import type {
   Budget,
   Debt,
   Member,
+  RecurringBill,
   ThemeName,
   Transaction,
   ParsedEntry,
@@ -35,8 +36,9 @@ function freshData(): AppData {
     transactions: [],
     debts: [],
     budgets: [],
+    recurringBills: [],
     currency: "USD",
-    theme: "dark",
+    theme: "light",
     tombstones: [],
     settingsUpdatedAt: 0,
     syncEnabled: false,
@@ -84,8 +86,9 @@ function migrate(raw: any): AppData {
     transactions,
     debts,
     budgets: Array.isArray(raw.budgets) ? raw.budgets : [],
+    recurringBills: Array.isArray(raw.recurringBills) ? raw.recurringBills : [],
     currency: raw.currency || "USD",
-    theme: raw.theme === "light" ? "light" : "dark",
+    theme: raw.theme === "dark" ? "dark" : "light",
     monthlyIncome: raw.monthlyIncome,
     tombstones: Array.isArray(raw.tombstones) ? raw.tombstones : [],
     settingsUpdatedAt: raw.settingsUpdatedAt || 0,
@@ -111,6 +114,10 @@ interface StoreContextValue {
   removeMember: (id: string) => void;
   setBudget: (category: string, limit: number) => void;
   removeBudget: (category: string) => void;
+  addBill: (b: Omit<RecurringBill, "id" | "createdAt">) => void;
+  updateBill: (id: string, patch: Partial<RecurringBill>) => void;
+  deleteBill: (id: string) => void;
+  markBillPaid: (id: string, month?: string) => void;
   setCurrency: (c: string) => void;
   setTheme: (t: ThemeName) => void;
   setHouseholdName: (n: string) => void;
@@ -156,6 +163,47 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       document.documentElement.dataset.theme = data.theme;
     }
   }, [data.theme]);
+
+  // Auto-log any recurring bills that are marked auto-log and are due (their
+  // due day has arrived this month and they haven't been logged yet).
+  useEffect(() => {
+    if (!ready) return;
+    const month = monthKey();
+    const now = new Date();
+    const today = now.getDate();
+    const daysInMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+    ).getDate();
+    setData((d) => {
+      const due = (d.recurringBills || []).filter((b) => {
+        if (!b.autoLog || b.lastPaidMonth === month) return false;
+        return today >= Math.min(b.dayOfMonth, daysInMonth);
+      });
+      if (due.length === 0) return d;
+      const dueIds = new Set(due.map((b) => b.id));
+      return {
+        ...d,
+        recurringBills: d.recurringBills.map((b) =>
+          dueIds.has(b.id) ? { ...b, lastPaidMonth: month } : b,
+        ),
+        transactions: [
+          ...due.map((b) => ({
+            id: uid(),
+            type: "expense" as const,
+            amount: Math.abs(b.amount),
+            category: b.category,
+            description: b.name,
+            date: todayISO(),
+            memberId: b.memberId,
+            createdAt: Date.now(),
+          })),
+          ...d.transactions,
+        ],
+      };
+    });
+  }, [ready]);
 
   // --- sync engine ---------------------------------------------------------
   const [syncState, setSyncState] = useState<SyncState>("idle");
@@ -458,6 +506,61 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const addBill = useCallback((b: Omit<RecurringBill, "id" | "createdAt">) => {
+    setData((d) => ({
+      ...d,
+      recurringBills: [
+        { ...b, id: uid(), createdAt: Date.now() },
+        ...(d.recurringBills || []),
+      ],
+    }));
+  }, []);
+
+  const updateBill = useCallback((id: string, patch: Partial<RecurringBill>) => {
+    setData((d) => ({
+      ...d,
+      recurringBills: (d.recurringBills || []).map((x) =>
+        x.id === id ? { ...x, ...patch } : x,
+      ),
+    }));
+  }, []);
+
+  const deleteBill = useCallback((id: string) => {
+    setData((d) => ({
+      ...d,
+      recurringBills: (d.recurringBills || []).filter((x) => x.id !== id),
+      tombstones: [...(d.tombstones || []), id],
+    }));
+  }, []);
+
+  // Mark a bill paid for a given month (default: now): logs the expense and
+  // records the month so it stops counting against safe-to-spend.
+  const markBillPaid = useCallback((id: string, month: string = monthKey()) => {
+    setData((d) => {
+      const bill = (d.recurringBills || []).find((x) => x.id === id);
+      if (!bill || bill.lastPaidMonth === month) return d;
+      return {
+        ...d,
+        recurringBills: d.recurringBills.map((x) =>
+          x.id === id ? { ...x, lastPaidMonth: month } : x,
+        ),
+        transactions: [
+          {
+            id: uid(),
+            type: "expense" as const,
+            amount: Math.abs(bill.amount),
+            category: bill.category,
+            description: bill.name,
+            date: todayISO(),
+            memberId: bill.memberId,
+            createdAt: Date.now(),
+          },
+          ...d.transactions,
+        ],
+      };
+    });
+  }, []);
+
   const setCurrency = useCallback((c: string) => {
     setData((d) => ({ ...d, currency: c, settingsUpdatedAt: Date.now() }));
   }, []);
@@ -511,6 +614,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeMember,
       setBudget,
       removeBudget,
+      addBill,
+      updateBill,
+      deleteBill,
+      markBillPaid,
       setCurrency,
       setTheme,
       setHouseholdName,
@@ -537,6 +644,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeMember,
       setBudget,
       removeBudget,
+      addBill,
+      updateBill,
+      deleteBill,
+      markBillPaid,
       setCurrency,
       setTheme,
       setHouseholdName,
@@ -568,7 +679,17 @@ export interface MonthSummary {
   net: number;
   totalIOwe: number;
   totalOwedToMe: number;
+  billsDue: number; // unpaid recurring bills still committed this month
   safeToSpend: number;
+}
+
+// Recurring bills not yet paid for the current month (optionally per-member).
+export function unpaidBills(data: AppData, memberId?: string) {
+  const month = monthKey();
+  return (data.recurringBills || []).filter(
+    (b) =>
+      b.lastPaidMonth !== month && (!memberId || b.memberId === memberId),
+  );
 }
 
 // Summarize the current month. Pass a memberId to scope to one person; omit it
@@ -605,7 +726,15 @@ export function summarize(data: AppData, memberId?: string): MonthSummary {
   const minDebtDue = debts
     .filter((d) => d.direction === "i_owe")
     .reduce((s, d) => s + (d.minPayment || 0), 0);
-  const safeToSpend = baselineIncome - expenses - minDebtDue;
+
+  // Bills not yet paid this month are committed money — subtract them so the
+  // headline "safe to spend" reflects what's genuinely free.
+  const billsDue = unpaidBills(data, memberId).reduce(
+    (s, b) => s + b.amount,
+    0,
+  );
+
+  const safeToSpend = baselineIncome - expenses - minDebtDue - billsDue;
 
   return {
     income,
@@ -613,6 +742,7 @@ export function summarize(data: AppData, memberId?: string): MonthSummary {
     net: income - expenses,
     totalIOwe,
     totalOwedToMe,
+    billsDue,
     safeToSpend,
   };
 }
