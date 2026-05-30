@@ -17,9 +17,11 @@ is usually too tedious to keep up*. So here you don't fill in forms — you just
 ## Tech
 
 - **Next.js (App Router) + React + TypeScript**
-- **Claude API** (`@anthropic-ai/sdk`, model `claude-opus-4-8`) for parsing,
-  receipt vision, and advice — all server-side so your API key never reaches the
-  browser.
+- **Claude API** (`@anthropic-ai/sdk`) for parsing, receipt vision, and advice —
+  all server-side so your API key never reaches the browser. Uses a **hybrid
+  model strategy** to stay cheap (~$2–5/month at daily use): **Haiku** for the
+  high-volume sentence/receipt parsing and **Sonnet** for the AI Coach's advice.
+  See `lib/anthropic.ts`.
 - Installable PWA (manifest + service worker) — works offline for viewing.
 
 ## Run it locally

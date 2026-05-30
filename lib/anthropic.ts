@@ -1,8 +1,22 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-// We default to the most capable model. Parsing is fast even on Opus; the
-// advisor benefits from the extra intelligence.
-export const MODEL = "claude-opus-4-8";
+// Hybrid model strategy — picked to keep this personal app cheap to run
+// (~$2-5/month at daily use) without sacrificing quality where it matters:
+//
+//   FAST  (Haiku)  — high-volume, simple extraction: turning a sentence or a
+//                    receipt photo into structured entries. Pennies per call.
+//   SMART (Sonnet) — the AI Coach's advice/plans: needs real reasoning, but
+//                    Sonnet is ~5x cheaper than Opus and more than capable.
+//   DEEP  (Opus)   — reserved; not used by default. Available if a feature
+//                    ever needs the very deepest reasoning.
+export const MODELS = {
+  fast: "claude-haiku-4-5-20251001",
+  smart: "claude-sonnet-4-6",
+  deep: "claude-opus-4-8",
+} as const;
+
+// Back-compat default (used anywhere a single model is expected).
+export const MODEL = MODELS.smart;
 
 let client: Anthropic | null = null;
 

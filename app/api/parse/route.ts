@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, MODEL, hasApiKey } from "@/lib/anthropic";
+import { getClient, MODELS, hasApiKey } from "@/lib/anthropic";
 
 export const runtime = "nodejs";
 
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const res: any = await getClient().messages.create({
-      model: MODEL,
+      model: MODELS.fast,
       max_tokens: 1024,
       thinking: { type: "disabled" },
       system: [

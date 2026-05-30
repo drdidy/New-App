@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, MODEL, hasApiKey } from "@/lib/anthropic";
+import { getClient, MODELS, hasApiKey } from "@/lib/anthropic";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,10 +43,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const res: any = await getClient().messages.create({
-      model: MODEL,
+      model: MODELS.smart,
       max_tokens: 1500,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "high" },
+      // A modest thinking budget lets Coach reason through a debt plan without
+      // running up cost. (Portable across Claude 4 models, unlike Opus-only
+      // effort controls.)
+      thinking: { type: "enabled", budget_tokens: 1024 },
       system: [
         { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },
       ],
