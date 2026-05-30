@@ -121,7 +121,7 @@ export default function DebtsPage() {
             const m = member(d.memberId);
             return (
               <div className="item" key={d.id}>
-                <Ring pct={paidPct} size={46} stroke={5} color="#f43f5e">
+                <Ring pct={paidPct} size={46} stroke={5} color="#bc5446">
                   <span className="ring-pct">{Math.round(paidPct)}%</span>
                 </Ring>
                 <div className="meta">
