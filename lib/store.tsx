@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -18,9 +19,12 @@ import type {
   ParsedEntry,
 } from "./types";
 import { uid, todayISO, monthKey } from "./format";
+import { mergeData, sanitizeForSync } from "./merge";
 
 const STORAGE_KEY = "money-coach-data-v1";
 const CURRENT_VERSION = 2;
+
+export type SyncState = "idle" | "syncing" | "ok" | "error" | "unconfigured";
 
 function freshData(): AppData {
   return {
@@ -33,6 +37,9 @@ function freshData(): AppData {
     budgets: [],
     currency: "USD",
     theme: "dark",
+    tombstones: [],
+    settingsUpdatedAt: 0,
+    syncEnabled: false,
   };
 }
 
@@ -80,6 +87,10 @@ function migrate(raw: any): AppData {
     currency: raw.currency || "USD",
     theme: raw.theme === "light" ? "light" : "dark",
     monthlyIncome: raw.monthlyIncome,
+    tombstones: Array.isArray(raw.tombstones) ? raw.tombstones : [],
+    settingsUpdatedAt: raw.settingsUpdatedAt || 0,
+    syncCode: raw.syncCode,
+    syncEnabled: Boolean(raw.syncEnabled),
   };
 }
 
@@ -106,6 +117,10 @@ interface StoreContextValue {
   completeOnboarding: (init: Partial<AppData>) => void;
   importData: (incoming: AppData) => void;
   resetAll: () => void;
+  // sync
+  setSync: (enabled: boolean, code?: string) => void;
+  syncNow: () => Promise<void>;
+  syncState: SyncState;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -142,6 +157,87 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [data.theme]);
 
+  // --- sync engine ---------------------------------------------------------
+  const [syncState, setSyncState] = useState<SyncState>("idle");
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const busyRef = useRef(false);
+  const lastPushedRef = useRef("");
+  const unconfiguredRef = useRef(false);
+
+  // Fold a remote copy into local state, preserving local-only sync config.
+  // Only updates state when something actually changed, to avoid render loops.
+  const applyRemote = useCallback((remote: AppData | null) => {
+    if (!remote) return;
+    setData((local) => {
+      const merged = mergeData(local, remote);
+      merged.syncCode = local.syncCode;
+      merged.syncEnabled = local.syncEnabled;
+      const before = JSON.stringify(sanitizeForSync(local));
+      const after = JSON.stringify(sanitizeForSync(merged));
+      return before === after ? local : merged;
+    });
+  }, []);
+
+  const syncNow = useCallback(async () => {
+    const d = dataRef.current;
+    if (!d.syncEnabled || !d.syncCode || busyRef.current) return;
+    if (unconfiguredRef.current) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    busyRef.current = true;
+    setSyncState("syncing");
+    try {
+      const payload = sanitizeForSync(dataRef.current);
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "push", code: d.syncCode, data: payload }),
+      });
+      const json = await res.json();
+      if (json.configured === false) {
+        unconfiguredRef.current = true;
+        setSyncState("unconfigured");
+        return;
+      }
+      if (!json.ok) {
+        setSyncState("error");
+        return;
+      }
+      applyRemote(json.data);
+      lastPushedRef.current = JSON.stringify(sanitizeForSync(dataRef.current));
+      setSyncState("ok");
+    } catch {
+      setSyncState("error");
+    } finally {
+      busyRef.current = false;
+    }
+  }, [applyRemote]);
+
+  // Push shortly after local changes (debounced).
+  useEffect(() => {
+    if (!ready || !data.syncEnabled || !data.syncCode) return;
+    const snapshot = JSON.stringify(sanitizeForSync(data));
+    if (snapshot === lastPushedRef.current) return;
+    const t = setTimeout(() => {
+      lastPushedRef.current = snapshot;
+      void syncNow();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [data, ready, syncNow]);
+
+  // Poll for the other phone's changes + on regaining focus.
+  useEffect(() => {
+    if (!ready || !data.syncEnabled || !data.syncCode) return;
+    void syncNow();
+    const id = setInterval(() => void syncNow(), 12000);
+    const onFocus = () => void syncNow();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [ready, data.syncEnabled, data.syncCode, syncNow]);
+
   const member = useCallback(
     (id?: string) => data.members.find((m) => m.id === id),
     [data.members],
@@ -164,6 +260,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({
       ...d,
       transactions: d.transactions.filter((t) => t.id !== id),
+      tombstones: [...(d.tombstones || []), id],
     }));
   }, []);
 
@@ -212,7 +309,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteDebt = useCallback((id: string) => {
-    setData((d) => ({ ...d, debts: d.debts.filter((x) => x.id !== id) }));
+    setData((d) => ({
+      ...d,
+      debts: d.debts.filter((x) => x.id !== id),
+      tombstones: [...(d.tombstones || []), id],
+    }));
   }, []);
 
   // Turn parsed entries from the LLM into stored transactions/debts. We merge
@@ -334,6 +435,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         debts: d.debts.map((x) =>
           x.memberId === id ? { ...x, memberId: fallback } : x,
         ),
+        tombstones: [...(d.tombstones || []), id],
       };
     });
   }, []);
@@ -352,23 +454,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({
       ...d,
       budgets: d.budgets.filter((b) => b.category !== category),
+      tombstones: [...(d.tombstones || []), "budget:" + category],
     }));
   }, []);
 
   const setCurrency = useCallback((c: string) => {
-    setData((d) => ({ ...d, currency: c }));
+    setData((d) => ({ ...d, currency: c, settingsUpdatedAt: Date.now() }));
   }, []);
 
   const setTheme = useCallback((t: ThemeName) => {
-    setData((d) => ({ ...d, theme: t }));
+    setData((d) => ({ ...d, theme: t, settingsUpdatedAt: Date.now() }));
   }, []);
 
   const setHouseholdName = useCallback((n: string) => {
-    setData((d) => ({ ...d, householdName: n }));
+    setData((d) => ({ ...d, householdName: n, settingsUpdatedAt: Date.now() }));
   }, []);
 
   const completeOnboarding = useCallback((init: Partial<AppData>) => {
-    setData((d) => ({ ...d, ...init, onboarded: true }));
+    setData((d) => ({
+      ...d,
+      ...init,
+      onboarded: true,
+      settingsUpdatedAt: Date.now(),
+    }));
+  }, []);
+
+  // --- multi-device sync -----------------------------------------------------
+  const setSync = useCallback((enabled: boolean, code?: string) => {
+    setData((d) => ({
+      ...d,
+      syncEnabled: enabled,
+      syncCode: code !== undefined ? code.trim() : d.syncCode,
+    }));
   }, []);
 
   const importData = useCallback((incoming: AppData) => {
@@ -400,6 +517,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       completeOnboarding,
       importData,
       resetAll,
+      setSync,
+      syncNow,
+      syncState,
     }),
     [
       data,
@@ -423,6 +543,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       completeOnboarding,
       importData,
       resetAll,
+      setSync,
+      syncNow,
+      syncState,
     ],
   );
 

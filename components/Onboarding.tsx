@@ -22,13 +22,24 @@ function blankMember(i: number): Draft {
 }
 
 export default function Onboarding() {
-  const { completeOnboarding } = useStore();
+  const { completeOnboarding, setSync } = useStore();
   const [step, setStep] = useState(0);
   const [household, setHousehold] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [people, setPeople] = useState<Draft[]>([blankMember(0), blankMember(1)]);
+  const [joining, setJoining] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
 
   const totalSteps = 4;
+
+  function joinHousehold() {
+    const c = joinCode.trim();
+    if (c.length < 4) return;
+    // Enable sync with the shared code, then mark onboarding done. The sync
+    // engine will pull the partner's household and merge it in.
+    setSync(true, c);
+    completeOnboarding({});
+  }
 
   function updatePerson(i: number, patch: Partial<Draft>) {
     setPeople((ps) => ps.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
@@ -59,6 +70,49 @@ export default function Onboarding() {
     step === 1 ||
     (step === 2 ? people.some((p) => p.name.trim()) : true);
 
+  if (joining) {
+    return (
+      <div className="onb">
+        <div className="onb-body">
+          <div className="onb-step">
+            <div className="onb-badge">🔗</div>
+            <h1 className="onb-title">Join your household</h1>
+            <p className="onb-text">
+              Enter the <strong>household code</strong> your partner set up on
+              their phone (you'll find it in their Settings → Sync). Your phones
+              will then share the same numbers.
+            </p>
+            <div className="field">
+              <input
+                autoFocus
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
+                placeholder="e.g. otter-maple-4821"
+                onKeyDown={(e) => e.key === "Enter" && joinHousehold()}
+              />
+            </div>
+            <p className="hint">
+              Sync needs the cloud add-on enabled on your app. If nothing appears
+              after joining, ask your partner to confirm sync is on.
+            </p>
+          </div>
+        </div>
+        <div className="onb-actions">
+          <button className="btn btn-ghost" onClick={() => setJoining(false)}>
+            Back
+          </button>
+          <button
+            className="btn btn-primary btn-block"
+            disabled={joinCode.trim().length < 4}
+            onClick={joinHousehold}
+          >
+            Join household →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="onb">
       <div className="onb-progress">
@@ -83,6 +137,9 @@ export default function Onboarding() {
               <li>💬 Get judgment-free advice on your real numbers</li>
               <li>🔒 Everything stays on your device</li>
             </ul>
+            <button className="onb-link" onClick={() => setJoining(true)}>
+              Joining your partner? Use a household code →
+            </button>
           </div>
         )}
 

@@ -9,6 +9,7 @@ import {
   MEMBER_EMOJIS,
 } from "@/lib/format";
 import Avatar from "@/components/Avatar";
+import SyncCard from "@/components/SyncCard";
 import type { AppData } from "@/lib/types";
 
 export default function SettingsPage() {
@@ -201,6 +202,9 @@ export default function SettingsPage() {
           </button>
         )}
       </div>
+
+      {/* Sync */}
+      <SyncCard />
 
       {/* Budgets */}
       <div className="card reveal d2">

@@ -1280,6 +1280,19 @@ html[data-theme="light"] .mini-input {
   position: sticky;
   bottom: 0;
 }
+.onb-link {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  background: none;
+  border: none;
+  color: var(--amber);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: center;
+}
 
 /* ============================ SETTINGS ============================ */
 .member-edit {
@@ -1332,6 +1345,36 @@ html[data-theme="light"] .mini-input {
 .btn-ghost.danger {
   color: var(--coral);
   border-color: rgba(255, 141, 107, 0.3);
+}
+
+/* ============================ SYNC ============================ */
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.sync-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.sync-dot.ok {
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green);
+}
+.sync-dot.syncing {
+  background: var(--amber);
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+.sync-dot.error {
+  background: var(--coral);
+}
+.sync-dot.unconfigured {
+  background: var(--blue);
 }
 
 /* ============================ CAPTURE WHO ============================ */

@@ -64,6 +64,18 @@ export interface AppData {
   currency: string; // ISO code, e.g. "USD"
   theme: ThemeName;
   monthlyIncome?: number; // legacy/global fallback
+
+  // --- multi-device sync (optional) ---
+  // Deleted item ids / budget categories, so deletions propagate across phones
+  // instead of reappearing on the next merge.
+  tombstones?: string[];
+  // Bumped whenever a *scalar* setting (currency/theme/name) changes, so the
+  // most recent wins during a merge.
+  settingsUpdatedAt?: number;
+  // Local-only: the shared household code + whether sync is on. These are never
+  // written into the shared cloud blob.
+  syncCode?: string;
+  syncEnabled?: boolean;
 }
 
 // The shape returned by /api/parse: normalized entries extracted from a single
