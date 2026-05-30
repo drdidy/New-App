@@ -1,33 +1,33 @@
 :root {
-  /* Warm, friendly, encouraging palette — cream paper, coral→peach accents,
-     plum + teal supporting hues. Light by default. */
-  --bg: #fbf6f1;
-  --bg-2: #f4ebe3;
-  --surface: rgba(255, 255, 255, 0.9);
+  /* Refined, professional palette — soft warm paper, clean white cards, deep
+     ink text, restrained terracotta + muted teal accents. Light by default. */
+  --bg: #f4f1ec;
+  --bg-2: #eae5dd;
+  --surface: #ffffff;
   --surface-solid: #ffffff;
-  --surface-2: #f7efe8;
-  --line: rgba(74, 52, 40, 0.1);
-  --line-strong: rgba(74, 52, 40, 0.17);
-  --text: #2b211c;
-  --muted: #8c7a6f;
-  /* "amber" = the primary action accent (now coral→peach). */
-  --amber: #fb7185;
-  --amber-2: #fb923c;
-  --amber-press: #f43f5e;
-  /* positive / money-in (teal — deliberately not the old forest green). */
-  --green: #0ea5a4;
-  --green-2: #0d9488;
-  /* negative / money-out. */
-  --coral: #f43f5e;
-  --coral-2: #fb7185;
-  --blue: #60a5fa;
-  --violet: #a855f7;
-  --radius: 22px;
-  --radius-sm: 14px;
+  --surface-2: #f2efe8;
+  --line: rgba(45, 38, 30, 0.1);
+  --line-strong: rgba(45, 38, 30, 0.15);
+  --text: #232019;
+  --muted: #847b6e;
+  /* "amber" = the primary action accent (muted terracotta). */
+  --amber: #c2663f;
+  --amber-2: #ad5631;
+  --amber-press: #97492a;
+  /* positive / money-in (muted teal). */
+  --green: #2e8b72;
+  --green-2: #246b58;
+  /* negative / money-out (muted brick). */
+  --coral: #bc5446;
+  --coral-2: #c76a4a;
+  --blue: #5e7fa6;
+  --violet: #7c6ba8;
+  --radius: 20px;
+  --radius-sm: 13px;
   --maxw: 560px;
-  --shadow-card: 0 1px 2px rgba(60, 40, 30, 0.05),
-    0 14px 30px -18px rgba(60, 40, 30, 0.22);
-  --shadow-pop: 0 14px 40px -10px rgba(60, 40, 30, 0.25);
+  --shadow-card: 0 1px 2px rgba(40, 30, 20, 0.04),
+    0 10px 24px -18px rgba(40, 30, 20, 0.18);
+  --shadow-pop: 0 14px 36px -12px rgba(40, 30, 20, 0.2);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -56,12 +56,12 @@ body::before {
   inset: -30vmax;
   z-index: -2;
   background:
-    radial-gradient(40vmax 40vmax at 16% 10%, rgba(251, 113, 133, 0.18), transparent 60%),
-    radial-gradient(38vmax 38vmax at 86% 18%, rgba(251, 146, 60, 0.16), transparent 60%),
-    radial-gradient(46vmax 46vmax at 74% 92%, rgba(168, 85, 247, 0.13), transparent 62%),
-    radial-gradient(40vmax 40vmax at 10% 90%, rgba(14, 165, 164, 0.1), transparent 60%);
-  filter: blur(8px) saturate(1.05);
-  animation: aurora 26s ease-in-out infinite alternate;
+    radial-gradient(42vmax 42vmax at 14% 8%, rgba(194, 102, 63, 0.07), transparent 60%),
+    radial-gradient(40vmax 40vmax at 88% 16%, rgba(173, 86, 49, 0.05), transparent 60%),
+    radial-gradient(46vmax 46vmax at 76% 94%, rgba(46, 139, 114, 0.05), transparent 62%);
+  filter: blur(12px) saturate(0.85);
+  opacity: 0.7;
+  animation: aurora 40s ease-in-out infinite alternate;
 }
 body::after {
   content: "";
@@ -167,60 +167,53 @@ main {
 
 /* Hero balance card — bold warm gradient centerpiece with white text. */
 .hero {
-  background: linear-gradient(135deg, #ff8a6b 0%, #ff7a90 48%, #ffab63 110%);
-  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  background: linear-gradient(165deg, #ffffff, #faf7f1);
+  border: 1px solid var(--line-strong);
   overflow: hidden;
-  box-shadow: 0 18px 40px -16px rgba(255, 138, 107, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: var(--shadow-card);
 }
 .hero::after {
   display: none;
 }
+/* Restrained accent: a soft terracotta wash in the top-right corner. */
 .hero::before {
   content: "";
   position: absolute;
-  width: 70%;
-  height: 150%;
-  top: -25%;
-  right: -15%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.28), transparent);
-  filter: blur(8px);
-  animation: floatGlow 9s ease-in-out infinite alternate;
+  width: 55%;
+  height: 130%;
+  top: -30%;
+  right: -12%;
+  background: radial-gradient(closest-side, rgba(194, 102, 63, 0.1), transparent);
   pointer-events: none;
-}
-@keyframes floatGlow {
-  from { transform: translate(0, 0); }
-  to { transform: translate(-14px, 16px); }
 }
 .hero .label {
   position: relative;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--amber);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-weight: 700;
+  z-index: 1;
 }
 .hero .big {
   position: relative;
-  font-size: 48px;
-  font-weight: 850;
-  letter-spacing: -0.04em;
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
   margin: 8px 0 2px;
   font-variant-numeric: tabular-nums;
-  color: #fff;
-  text-shadow: 0 6px 22px rgba(120, 20, 50, 0.28);
+  color: var(--text);
+  z-index: 1;
 }
-.hero .big.neg,
+.hero .big.neg {
+  color: var(--coral);
+}
 .hero .big.pos {
-  color: #fff;
+  color: var(--green);
 }
 .hero .h-sub {
   position: relative;
-  color: rgba(255, 255, 255, 0.88);
-}
-.hero .label,
-.hero .h-sub,
-.hero .big {
+  color: var(--muted);
   z-index: 1;
 }
 
@@ -312,26 +305,13 @@ main {
 .btn-primary {
   background: linear-gradient(135deg, var(--amber), var(--amber-2));
   color: #fff;
-  box-shadow: 0 8px 20px -6px rgba(251, 113, 133, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 16px -8px rgba(173, 86, 49, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .btn-primary:active {
   filter: brightness(0.96);
 }
-/* Sheen sweep across primary buttons. */
 .btn-primary::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -120%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  transform: skewX(-18deg);
-  animation: sheen 5s ease-in-out infinite;
-}
-@keyframes sheen {
-  0%, 60% { left: -120%; }
-  85%, 100% { left: 160%; }
+  display: none;
 }
 .btn-ghost {
   background: var(--surface-2);
@@ -764,6 +744,12 @@ html[data-theme="dark"] .field select {
 }
 html[data-theme="dark"] .nav {
   background: linear-gradient(180deg, rgba(23, 18, 27, 0.65), rgba(23, 18, 27, 0.94));
+}
+html[data-theme="dark"] .hero {
+  background: linear-gradient(165deg, var(--surface-solid), #1d1521);
+}
+html[data-theme="dark"] .hero .big {
+  color: var(--text);
 }
 html[data-theme="dark"] .gear,
 html[data-theme="dark"] .insight-chip,

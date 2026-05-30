@@ -92,11 +92,11 @@ export const CURRENCIES: { code: string; label: string }[] = [
 
 // Palette + emoji pool for new members.
 export const MEMBER_COLORS = [
-  "#5fe0a6",
-  "#f3c14e",
-  "#7fb6e8",
-  "#b08cff",
-  "#ff8d6b",
-  "#ff6f9d",
+  "#c2663f",
+  "#2e8b72",
+  "#7c6ba8",
+  "#5e7fa6",
+  "#bc5446",
+  "#a8743f",
 ];
 export const MEMBER_EMOJIS = ["🦊", "🐧", "🐻", "🦉", "🐬", "🦁", "🐨", "🦄"];
