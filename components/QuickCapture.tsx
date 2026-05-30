@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { ParsedEntry } from "@/lib/types";
+import Burst from "@/components/Burst";
 
 export default function QuickCapture() {
   const { applyParsedEntries, addTransaction } = useStore();
@@ -10,6 +11,7 @@ export default function QuickCapture() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [confirms, setConfirms] = useState<string[]>([]);
+  const [celebrate, setCelebrate] = useState(0);
   const [err, setErr] = useState("");
   const recogRef = useRef<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -34,6 +36,8 @@ export default function QuickCapture() {
         applyParsedEntries(entries);
         setConfirms(entries.map((e) => e.summary));
         setText("");
+        setCelebrate((n) => n + 1);
+        if (navigator.vibrate) navigator.vibrate(18);
         setTimeout(() => setConfirms([]), 6000);
       }
     } catch (e: any) {
@@ -98,6 +102,8 @@ export default function QuickCapture() {
           date: new Date().toISOString().slice(0, 10),
         });
         setConfirms([data.summary || `Logged ${data.amount}`]);
+        setCelebrate((n) => n + 1);
+        if (navigator.vibrate) navigator.vibrate(18);
         setTimeout(() => setConfirms([]), 6000);
       }
     } catch (e: any) {
@@ -109,6 +115,7 @@ export default function QuickCapture() {
 
   return (
     <div className="card capture">
+      {celebrate > 0 && <Burst key={celebrate} />}
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}

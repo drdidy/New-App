@@ -2,6 +2,7 @@
 
 import { useStore, summarize } from "@/lib/store";
 import { formatMoney, friendlyDate } from "@/lib/format";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
 import Link from "next/link";
 
@@ -39,10 +40,10 @@ export default function Home() {
       </p>
       <h1 className="h-title">Here&apos;s where you stand</h1>
 
-      <div className="card hero">
+      <div className="card hero reveal d1">
         <div className="label">Safe to spend this month</div>
         <div className={"big " + (safePos ? "pos" : "neg")}>
-          {formatMoney(s.safeToSpend, data.currency)}
+          <AnimatedNumber value={s.safeToSpend} currency={data.currency} />
         </div>
         <div className="h-sub" style={{ margin: "2px 0 0" }}>
           {safePos
@@ -51,7 +52,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="row" style={{ marginBottom: 14 }}>
+      <div className="row reveal d2" style={{ marginBottom: 14 }}>
         <div className="card stat">
           <div className="n in">{formatMoney(s.income, data.currency)}</div>
           <div className="k">In this month</div>
@@ -63,7 +64,7 @@ export default function Home() {
       </div>
 
       {(s.totalIOwe > 0 || s.totalOwedToMe > 0) && (
-        <div className="row" style={{ marginBottom: 14 }}>
+        <div className="row reveal d3" style={{ marginBottom: 14 }}>
           <div className="card stat">
             <div className="n out">{formatMoney(s.totalIOwe, data.currency)}</div>
             <div className="k">You owe</div>
@@ -77,7 +78,9 @@ export default function Home() {
         </div>
       )}
 
-      <QuickCapture />
+      <div className="reveal d4">
+        <QuickCapture />
+      </div>
 
       <div className="section-h">
         <h2>Recent activity</h2>

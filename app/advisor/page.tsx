@@ -102,7 +102,13 @@ export default function AdvisorPage() {
             {m.content}
           </div>
         ))}
-        {busy && <div className="typing">Coach is thinking…</div>}
+        {busy && (
+          <div className="typing" aria-label="Coach is thinking">
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 
