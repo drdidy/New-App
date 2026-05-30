@@ -2,23 +2,32 @@
 
 import { useState } from "react";
 import { useStore } from "@/lib/store";
-import { formatMoney } from "@/lib/format";
+import { payoffPlan } from "@/lib/insights";
+import { formatMoney, clampPct } from "@/lib/format";
 import type { DebtDirection } from "@/lib/types";
+import Ring from "@/components/Ring";
+import Avatar from "@/components/Avatar";
+import MemberPicker from "@/components/MemberPicker";
 
 export default function DebtsPage() {
-  const { data, ready, addDebt, payDebt, deleteDebt } = useStore();
+  const { data, ready, addDebt, payDebt, deleteDebt, member } = useStore();
   const [open, setOpen] = useState(false);
+  const [method, setMethod] = useState<"snowball" | "avalanche">("snowball");
   const [direction, setDirection] = useState<DebtDirection>("i_owe");
   const [party, setParty] = useState("");
   const [balance, setBalance] = useState("");
   const [apr, setApr] = useState("");
   const [minPayment, setMinPayment] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [who, setWho] = useState<string | undefined>(undefined);
 
   if (!ready) return null;
 
+  const multi = data.members.length > 1;
   const iOwe = data.debts.filter((d) => d.direction === "i_owe");
   const owedToMe = data.debts.filter((d) => d.direction === "owed_to_me");
+  const plan = payoffPlan(data, method);
+  const totalOwe = iOwe.reduce((s, d) => s + d.balance, 0);
 
   function save() {
     const bal = parseFloat(balance);
@@ -27,9 +36,11 @@ export default function DebtsPage() {
       direction,
       party: party.trim(),
       balance: bal,
+      original: bal,
       apr: apr ? parseFloat(apr) : undefined,
       minPayment: minPayment ? parseFloat(minPayment) : undefined,
       dueDate: dueDate || undefined,
+      memberId: who ?? data.members[0]?.id,
     });
     setParty("");
     setBalance("");
@@ -51,41 +62,89 @@ export default function DebtsPage() {
       <h1 className="h-title">Debts &amp; IOUs</h1>
       <p className="h-sub">Everything you owe and everything owed to you.</p>
 
+      {/* Payoff plan */}
+      {iOwe.length > 0 && (
+        <div className="card hero reveal" style={{ marginBottom: 16 }}>
+          <div className="plan-head">
+            <div>
+              <div className="label">Total you owe</div>
+              <div className="big neg" style={{ fontSize: 36 }}>
+                {formatMoney(totalOwe, data.currency)}
+              </div>
+            </div>
+          </div>
+          <div className="seg" style={{ marginTop: 6 }}>
+            <button
+              className={"seg-btn" + (method === "snowball" ? " on" : "")}
+              onClick={() => setMethod("snowball")}
+            >
+              ❄️ Snowball
+            </button>
+            <button
+              className={"seg-btn" + (method === "avalanche" ? " on" : "")}
+              onClick={() => setMethod("avalanche")}
+            >
+              🏔️ Avalanche
+            </button>
+          </div>
+          <p className="plan-note">
+            {method === "snowball"
+              ? "Pay the smallest balance first — quick wins keep you motivated."
+              : "Pay the highest interest first — saves you the most money overall."}
+            {plan.months
+              ? ` At your current minimums, you'd be debt-free in about ${plan.months} month${plan.months === 1 ? "" : "s"}.`
+              : ""}
+          </p>
+          <div className="plan-order">
+            {plan.order.map((d, i) => (
+              <div className="plan-step" key={d.id}>
+                <span className="plan-num">{i + 1}</span>
+                <span className="plan-party">{d.party}</span>
+                <span className="plan-amt">{formatMoney(d.balance, data.currency)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="section-h">
         <h2>You owe</h2>
-        <span className="pill owe">
-          {formatMoney(
-            iOwe.reduce((s, d) => s + d.balance, 0),
-            data.currency,
-          )}
-        </span>
+        <span className="pill owe">{formatMoney(totalOwe, data.currency)}</span>
       </div>
       <div className="card">
         {iOwe.length === 0 ? (
-          <div className="empty">Nothing here. Nice.</div>
+          <div className="empty">Nothing here. Nice. 🎉</div>
         ) : (
-          iOwe.map((d) => (
-            <div className="item" key={d.id}>
-              <div className="ic">💳</div>
-              <div className="meta">
-                <div className="t">{d.party}</div>
-                <div className="s">
-                  {d.apr ? `${d.apr}% APR` : "No interest"}
-                  {d.minPayment
-                    ? ` · min ${formatMoney(d.minPayment, data.currency)}`
-                    : ""}
-                  {d.dueDate ? ` · due ${d.dueDate}` : ""}
+          iOwe.map((d) => {
+            const original = d.original || d.balance;
+            const paidPct = clampPct(((original - d.balance) / original) * 100);
+            const m = member(d.memberId);
+            return (
+              <div className="item" key={d.id}>
+                <Ring pct={paidPct} size={46} stroke={5} color="#ff8d6b">
+                  <span className="ring-pct">{Math.round(paidPct)}%</span>
+                </Ring>
+                <div className="meta">
+                  <div className="t">{d.party}</div>
+                  <div className="s">
+                    {d.apr ? `${d.apr}% APR` : "No interest"}
+                    {d.minPayment
+                      ? ` · min ${formatMoney(d.minPayment, data.currency)}`
+                      : ""}
+                    {d.dueDate ? ` · due ${d.dueDate}` : ""}
+                    {multi && m ? ` · ${m.emoji}` : ""}
+                  </div>
                 </div>
+                <div className="amt out">{formatMoney(d.balance, data.currency)}</div>
+                <button className="x" onClick={() => quickPay(d.id)} aria-label="Pay">
+                  💵
+                </button>
+                <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
+                  ×
+                </button>
               </div>
-              <div className="amt out">{formatMoney(d.balance, data.currency)}</div>
-              <button className="x" onClick={() => quickPay(d.id)} aria-label="Pay">
-                💵
-              </button>
-              <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
-                ×
-              </button>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -102,22 +161,25 @@ export default function DebtsPage() {
         {owedToMe.length === 0 ? (
           <div className="empty">No one owes you right now.</div>
         ) : (
-          owedToMe.map((d) => (
-            <div className="item" key={d.id}>
-              <div className="ic">🙋</div>
-              <div className="meta">
-                <div className="t">{d.party}</div>
-                <div className="s">Owes you</div>
+          owedToMe.map((d) => {
+            const m = member(d.memberId);
+            return (
+              <div className="item" key={d.id}>
+                <div className="ic">🙋</div>
+                <div className="meta">
+                  <div className="t">{d.party}</div>
+                  <div className="s">Owes {multi && m ? m.name.split(" ")[0] : "you"}</div>
+                </div>
+                <div className="amt in">{formatMoney(d.balance, data.currency)}</div>
+                <button className="x" onClick={() => quickPay(d.id)} aria-label="Mark repaid">
+                  💵
+                </button>
+                <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
+                  ×
+                </button>
               </div>
-              <div className="amt in">{formatMoney(d.balance, data.currency)}</div>
-              <button className="x" onClick={() => quickPay(d.id)} aria-label="Mark repaid">
-                💵
-              </button>
-              <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
-                ×
-              </button>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -133,6 +195,12 @@ export default function DebtsPage() {
               <option value="owed_to_me">Someone owes me</option>
             </select>
           </div>
+          {multi && (
+            <div className="field">
+              <label>Whose is it?</label>
+              <MemberPicker members={data.members} value={who ?? data.members[0]?.id} onChange={setWho} size="sm" />
+            </div>
+          )}
           <div className="field">
             <label>Who / what</label>
             <input

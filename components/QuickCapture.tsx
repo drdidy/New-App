@@ -3,14 +3,18 @@
 import { useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { ParsedEntry } from "@/lib/types";
+import Burst from "@/components/Burst";
+import MemberPicker from "@/components/MemberPicker";
 
 export default function QuickCapture() {
-  const { applyParsedEntries, addTransaction } = useStore();
+  const { data, applyParsedEntries, addTransaction } = useStore();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [confirms, setConfirms] = useState<string[]>([]);
+  const [celebrate, setCelebrate] = useState(0);
   const [err, setErr] = useState("");
+  const [who, setWho] = useState<string | undefined>(data.members[0]?.id);
   const recogRef = useRef<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -31,9 +35,11 @@ export default function QuickCapture() {
       if (entries.length === 0) {
         setErr("I couldn't find anything to log there. Try being specific, like \"spent 20 on lunch\".");
       } else {
-        applyParsedEntries(entries);
+        applyParsedEntries(entries, who);
         setConfirms(entries.map((e) => e.summary));
         setText("");
+        setCelebrate((n) => n + 1);
+        if (navigator.vibrate) navigator.vibrate(18);
         setTimeout(() => setConfirms([]), 6000);
       }
     } catch (e: any) {
@@ -96,8 +102,11 @@ export default function QuickCapture() {
           category: data.category || "Other",
           description: data.merchant || "Receipt",
           date: new Date().toISOString().slice(0, 10),
+          memberId: who,
         });
         setConfirms([data.summary || `Logged ${data.amount}`]);
+        setCelebrate((n) => n + 1);
+        if (navigator.vibrate) navigator.vibrate(18);
         setTimeout(() => setConfirms([]), 6000);
       }
     } catch (e: any) {
@@ -109,6 +118,7 @@ export default function QuickCapture() {
 
   return (
     <div className="card capture">
+      {celebrate > 0 && <Burst key={celebrate} />}
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -117,6 +127,17 @@ export default function QuickCapture() {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
         }}
       />
+      {data.members.length > 1 && (
+        <div className="capture-who">
+          <span className="capture-who-label">For</span>
+          <MemberPicker
+            members={data.members}
+            value={who}
+            onChange={setWho}
+            size="sm"
+          />
+        </div>
+      )}
       <div className="capture-actions">
         <button
           className={"btn btn-mic" + (listening ? " live" : "")}
