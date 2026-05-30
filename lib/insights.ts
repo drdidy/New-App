@@ -1,5 +1,33 @@
-import type { AppData, Debt } from "./types";
+import type { AppData, Debt, RecurringBill } from "./types";
 import { monthKey, prevMonthKey } from "./format";
+
+export interface BillView {
+  bill: RecurringBill;
+  paid: boolean;
+  dueDay: number;
+  daysAway: number; // days until due this month (negative if past)
+}
+
+// Recurring bills for the current month, with paid status + due-day info,
+// sorted by due day.
+export function billsThisMonth(data: AppData, memberId?: string): BillView[] {
+  const month = monthKey();
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const today = now.getDate();
+  return (data.recurringBills || [])
+    .filter((b) => !memberId || b.memberId === memberId)
+    .map((b) => {
+      const dueDay = Math.min(b.dayOfMonth, daysInMonth);
+      return {
+        bill: b,
+        paid: b.lastPaidMonth === month,
+        dueDay,
+        daysAway: dueDay - today,
+      };
+    })
+    .sort((a, b) => a.dueDay - b.dueDay);
+}
 
 export interface CategorySlice {
   category: string;
@@ -165,6 +193,17 @@ export function quickInsights(data: AppData, currency: string, max = 3): string[
   if (soon) {
     out.push(
       `${soon.d.party} is due in ${soon.days} day${soon.days === 1 ? "" : "s"}.`,
+    );
+  }
+  // Unpaid recurring bill due within the week.
+  const billSoon = billsThisMonth(data)
+    .filter((b) => !b.paid && b.daysAway >= 0 && b.daysAway <= 6)
+    .sort((a, b) => a.daysAway - b.daysAway)[0];
+  if (billSoon) {
+    out.push(
+      billSoon.daysAway === 0
+        ? `${billSoon.bill.name} is due today.`
+        : `${billSoon.bill.name} is due in ${billSoon.daysAway} day${billSoon.daysAway === 1 ? "" : "s"}.`,
     );
   }
   return out.slice(0, max);

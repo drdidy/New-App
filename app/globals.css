@@ -1347,6 +1347,72 @@ html[data-theme="light"] .mini-input {
   border-color: rgba(255, 141, 107, 0.3);
 }
 
+/* ============================ BILLS ============================ */
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gear {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  transition: transform 0.15s var(--ease-spring);
+}
+.gear:active {
+  transform: scale(0.9) rotate(40deg);
+}
+.bill-pay {
+  background: linear-gradient(180deg, var(--amber), var(--amber-2));
+  color: #2a1c00;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 750;
+  padding: 8px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s var(--ease-spring), filter 0.2s;
+  box-shadow: 0 4px 12px -4px rgba(232, 154, 36, 0.6);
+}
+.bill-pay:active {
+  transform: scale(0.93);
+}
+.bill-paid {
+  color: var(--green);
+  font-weight: 800;
+  font-size: 16px;
+  padding: 0 6px;
+}
+.bills-progress-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+.toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--amber);
+}
+
 /* ============================ SYNC ============================ */
 .sync-status {
   display: flex;

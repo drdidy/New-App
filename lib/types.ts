@@ -51,6 +51,21 @@ export interface Budget {
   limit: number; // monthly cap
 }
 
+// A constant, recurring monthly bill (rent, utilities, subscriptions, etc.).
+// These are "committed" money: until paid for the month they're subtracted from
+// safe-to-spend, and when paid they become a normal expense transaction.
+export interface RecurringBill {
+  id: string;
+  name: string; // e.g. "Rent", "Netflix"
+  amount: number;
+  category: string; // e.g. "Rent", "Utilities", "Subscription"
+  dayOfMonth: number; // 1-31, when it's due
+  memberId?: string; // who it belongs to
+  autoLog?: boolean; // log it automatically on/after the due day
+  lastPaidMonth?: string; // "YYYY-MM" it was last paid/logged for
+  createdAt: number;
+}
+
 export type ThemeName = "dark" | "light";
 
 export interface AppData {
@@ -61,6 +76,7 @@ export interface AppData {
   transactions: Transaction[];
   debts: Debt[];
   budgets: Budget[];
+  recurringBills: RecurringBill[];
   currency: string; // ISO code, e.g. "USD"
   theme: ThemeName;
   monthlyIncome?: number; // legacy/global fallback

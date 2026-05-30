@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore, summarize } from "@/lib/store";
-import { categoryBreakdown, monthOverMonth, budgetStatus } from "@/lib/insights";
+import {
+  categoryBreakdown,
+  monthOverMonth,
+  budgetStatus,
+  billsThisMonth,
+} from "@/lib/insights";
 
 interface Msg {
   role: "user" | "assistant";
@@ -56,6 +61,14 @@ export default function AdvisorPage() {
         .slice(0, 6)
         .map((c) => ({ category: c.category, amount: Math.round(c.amount) })),
       monthOverMonth: monthOverMonth(data),
+      recurringBills: billsThisMonth(data).map((b) => ({
+        name: b.bill.name,
+        amount: b.bill.amount,
+        category: b.bill.category,
+        dueDay: b.dueDay,
+        paid: b.paid,
+        whose: nameOf(b.bill.memberId),
+      })),
       debts: data.debts.map((d) => ({
         party: d.party,
         direction: d.direction,

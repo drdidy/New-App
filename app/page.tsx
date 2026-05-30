@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useStore, summarize } from "@/lib/store";
-import { quickInsights } from "@/lib/insights";
+import { quickInsights, billsThisMonth } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
@@ -32,7 +32,7 @@ function greeting() {
 }
 
 export default function Home() {
-  const { data, ready, deleteTransaction, member } = useStore();
+  const { data, ready, deleteTransaction, markBillPaid, member } = useStore();
   const [view, setView] = useState<string | undefined>(undefined);
   if (!ready) return null;
 
@@ -42,6 +42,7 @@ export default function Home() {
   const recent = data.transactions
     .filter((t) => !view || t.memberId === view)
     .slice(0, 10);
+  const upcomingBills = billsThisMonth(data, view).filter((b) => !b.paid);
   const safePos = s.safeToSpend >= 0;
   const firstName = data.members[0]?.name?.split(" ")[0];
 
@@ -56,10 +57,15 @@ export default function Home() {
             {data.householdName ? data.householdName : "Here's where you stand"}
           </h1>
         </div>
-        <div className="avatars">
-          {data.members.map((m) => (
-            <Avatar key={m.id} member={m} size={34} />
-          ))}
+        <div className="head-right">
+          <div className="avatars">
+            {data.members.map((m) => (
+              <Avatar key={m.id} member={m} size={34} />
+            ))}
+          </div>
+          <Link href="/settings" className="gear" aria-label="Settings">
+            ⚙️
+          </Link>
         </div>
       </header>
 
@@ -127,6 +133,39 @@ export default function Home() {
       <div className="reveal d4">
         <QuickCapture />
       </div>
+
+      {upcomingBills.length > 0 && (
+        <>
+          <div className="section-h">
+            <h2>Bills due this month</h2>
+            <Link href="/bills">Manage →</Link>
+          </div>
+          <div className="card">
+            {upcomingBills.slice(0, 4).map((b) => (
+              <div className="item" key={b.bill.id}>
+                <div className="ic">🧾</div>
+                <div className="meta">
+                  <div className="t">{b.bill.name}</div>
+                  <div className="s">
+                    Due {b.dueDay}
+                    {b.daysAway >= 0 && b.daysAway <= 6
+                      ? b.daysAway === 0
+                        ? " · today"
+                        : ` · in ${b.daysAway}d`
+                      : ""}
+                  </div>
+                </div>
+                <div className="amt out">
+                  {formatMoney(b.bill.amount, data.currency)}
+                </div>
+                <button className="bill-pay" onClick={() => markBillPaid(b.bill.id)}>
+                  Mark paid
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="section-h">
         <h2>Recent activity</h2>
