@@ -12,14 +12,14 @@ import Donut from "@/components/Donut";
 import Avatar from "@/components/Avatar";
 
 const CHART_COLORS = [
-  "#5fe0a6",
-  "#f3c14e",
-  "#7fb6e8",
-  "#b08cff",
-  "#ff8d6b",
-  "#ff6f9d",
-  "#4fd1c5",
-  "#c0a35e",
+  "#fb7185",
+  "#fb923c",
+  "#a855f7",
+  "#0ea5a4",
+  "#f43f5e",
+  "#60a5fa",
+  "#f59e0b",
+  "#ec4899",
 ];
 
 export default function InsightsPage() {

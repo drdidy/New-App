@@ -1,28 +1,33 @@
 :root {
-  /* Calm, confidence-building money palette — deep green ink + warm amber. */
-  --bg: #0a1411;
-  --bg-2: #0e1b17;
-  --surface: rgba(28, 48, 40, 0.55);
-  --surface-solid: #152620;
-  --surface-2: rgba(38, 62, 52, 0.6);
-  --line: rgba(120, 180, 150, 0.14);
-  --line-strong: rgba(120, 180, 150, 0.28);
-  --text: #f2f7f3;
-  --muted: #9cb7a9;
-  --amber: #f3c14e;
-  --amber-2: #e89a24;
-  --amber-press: #d49d36;
-  --green: #5fe0a6;
-  --green-2: #2fc28c;
-  --coral: #ff8d6b;
-  --coral-2: #ff6f7e;
-  --blue: #7fb6e8;
-  --violet: #b08cff;
+  /* Warm, friendly, encouraging palette — cream paper, coral→peach accents,
+     plum + teal supporting hues. Light by default. */
+  --bg: #fbf6f1;
+  --bg-2: #f4ebe3;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-solid: #ffffff;
+  --surface-2: #f7efe8;
+  --line: rgba(74, 52, 40, 0.1);
+  --line-strong: rgba(74, 52, 40, 0.17);
+  --text: #2b211c;
+  --muted: #8c7a6f;
+  /* "amber" = the primary action accent (now coral→peach). */
+  --amber: #fb7185;
+  --amber-2: #fb923c;
+  --amber-press: #f43f5e;
+  /* positive / money-in (teal — deliberately not the old forest green). */
+  --green: #0ea5a4;
+  --green-2: #0d9488;
+  /* negative / money-out. */
+  --coral: #f43f5e;
+  --coral-2: #fb7185;
+  --blue: #60a5fa;
+  --violet: #a855f7;
   --radius: 22px;
   --radius-sm: 14px;
   --maxw: 560px;
-  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.4), 0 14px 30px -16px rgba(0, 0, 0, 0.7);
-  --shadow-pop: 0 10px 40px -8px rgba(0, 0, 0, 0.6);
+  --shadow-card: 0 1px 2px rgba(60, 40, 30, 0.05),
+    0 14px 30px -18px rgba(60, 40, 30, 0.22);
+  --shadow-pop: 0 14px 40px -10px rgba(60, 40, 30, 0.25);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -51,11 +56,11 @@ body::before {
   inset: -30vmax;
   z-index: -2;
   background:
-    radial-gradient(40vmax 40vmax at 18% 12%, rgba(95, 224, 166, 0.16), transparent 60%),
-    radial-gradient(38vmax 38vmax at 85% 22%, rgba(243, 193, 78, 0.14), transparent 60%),
-    radial-gradient(46vmax 46vmax at 70% 92%, rgba(176, 140, 255, 0.12), transparent 62%),
-    radial-gradient(40vmax 40vmax at 12% 88%, rgba(47, 194, 140, 0.12), transparent 60%);
-  filter: blur(8px) saturate(1.1);
+    radial-gradient(40vmax 40vmax at 16% 10%, rgba(251, 113, 133, 0.18), transparent 60%),
+    radial-gradient(38vmax 38vmax at 86% 18%, rgba(251, 146, 60, 0.16), transparent 60%),
+    radial-gradient(46vmax 46vmax at 74% 92%, rgba(168, 85, 247, 0.13), transparent 62%),
+    radial-gradient(40vmax 40vmax at 10% 90%, rgba(14, 165, 164, 0.1), transparent 60%);
+  filter: blur(8px) saturate(1.05);
   animation: aurora 26s ease-in-out infinite alternate;
 }
 body::after {
@@ -129,10 +134,7 @@ main {
   font-weight: 800;
   letter-spacing: -0.03em;
   margin: 4px 0 2px;
-  background: linear-gradient(180deg, #ffffff, #c9ddd2);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
 }
 .h-sub {
   color: var(--muted);
@@ -163,23 +165,26 @@ main {
   pointer-events: none;
 }
 
-/* Hero balance card — gradient border ring + glow. */
+/* Hero balance card — bold warm gradient centerpiece with white text. */
 .hero {
-  background:
-    linear-gradient(160deg, rgba(36, 64, 52, 0.85), rgba(18, 32, 26, 0.85)) padding-box,
-    linear-gradient(140deg, rgba(95, 224, 166, 0.5), rgba(243, 193, 78, 0.4), rgba(176, 140, 255, 0.35)) border-box;
-  border: 1.5px solid transparent;
+  background: linear-gradient(145deg, #fb7185 0%, #fb8a5c 52%, #c77dff 120%);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
   overflow: hidden;
+  box-shadow: 0 18px 40px -16px rgba(251, 113, 133, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.hero::after {
+  display: none;
 }
 .hero::before {
   content: "";
   position: absolute;
-  width: 60%;
-  height: 140%;
-  top: -20%;
-  right: -10%;
-  background: radial-gradient(closest-side, rgba(95, 224, 166, 0.25), transparent);
-  filter: blur(10px);
+  width: 70%;
+  height: 150%;
+  top: -25%;
+  right: -15%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.28), transparent);
+  filter: blur(8px);
   animation: floatGlow 9s ease-in-out infinite alternate;
   pointer-events: none;
 }
@@ -189,11 +194,11 @@ main {
 }
 .hero .label {
   position: relative;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-weight: 600;
+  font-weight: 700;
 }
 .hero .big {
   position: relative;
@@ -202,19 +207,21 @@ main {
   letter-spacing: -0.04em;
   margin: 8px 0 2px;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  text-shadow: 0 6px 22px rgba(120, 20, 50, 0.28);
 }
-.hero .big.neg {
-  background: linear-gradient(180deg, #ffb59c, var(--coral-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+.hero .big.neg,
 .hero .big.pos {
-  background: linear-gradient(180deg, #b6ffe0, var(--green-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #fff;
+}
+.hero .h-sub {
+  position: relative;
+  color: rgba(255, 255, 255, 0.88);
+}
+.hero .label,
+.hero .h-sub,
+.hero .big {
+  z-index: 1;
 }
 
 .row {
@@ -247,23 +254,17 @@ main {
   font-weight: 600;
 }
 .stat .n.out {
-  background: linear-gradient(180deg, #ffb59c, var(--coral));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--coral);
 }
 .stat .n.in {
-  background: linear-gradient(180deg, #b6ffe0, var(--green-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--green-2);
 }
 
 /* Quick capture */
 .capture textarea {
   width: 100%;
   resize: none;
-  background: rgba(10, 20, 17, 0.5);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -279,8 +280,8 @@ main {
 }
 .capture textarea:focus {
   outline: none;
-  border-color: rgba(243, 193, 78, 0.7);
-  box-shadow: 0 0 0 4px rgba(243, 193, 78, 0.14);
+  border-color: rgba(251, 113, 133, 0.7);
+  box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.14);
 }
 .capture .hint {
   color: var(--muted);
@@ -309,9 +310,9 @@ main {
   transform: translateY(1px) scale(0.975);
 }
 .btn-primary {
-  background: linear-gradient(180deg, var(--amber), var(--amber-2));
-  color: #2a1c00;
-  box-shadow: 0 6px 18px -6px rgba(232, 154, 36, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: linear-gradient(135deg, var(--amber), var(--amber-2));
+  color: #fff;
+  box-shadow: 0 8px 20px -6px rgba(251, 113, 133, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .btn-primary:active {
   filter: brightness(0.96);
@@ -383,8 +384,8 @@ main {
 }
 .confirm {
   position: relative;
-  background: linear-gradient(90deg, rgba(95, 224, 166, 0.16), rgba(95, 224, 166, 0.04));
-  border: 1px solid rgba(95, 224, 166, 0.3);
+  background: linear-gradient(90deg, rgba(14, 165, 164, 0.16), rgba(14, 165, 164, 0.04));
+  border: 1px solid rgba(14, 165, 164, 0.3);
   border-radius: 12px;
   padding: 11px 13px;
   font-size: 14px;
@@ -531,14 +532,14 @@ main {
   font-variant-numeric: tabular-nums;
 }
 .pill.owe {
-  background: rgba(255, 141, 107, 0.16);
+  background: rgba(244, 63, 94, 0.16);
   color: var(--coral);
-  border: 1px solid rgba(255, 141, 107, 0.25);
+  border: 1px solid rgba(244, 63, 94, 0.25);
 }
 .pill.owed {
-  background: rgba(95, 224, 166, 0.16);
+  background: rgba(14, 165, 164, 0.16);
   color: var(--green);
-  border: 1px solid rgba(95, 224, 166, 0.25);
+  border: 1px solid rgba(14, 165, 164, 0.25);
 }
 
 /* Bottom navigation */
@@ -547,7 +548,7 @@ main {
   bottom: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(180deg, rgba(10, 20, 17, 0.6), rgba(10, 20, 17, 0.92));
+  background: linear-gradient(180deg, rgba(251, 246, 241, 0.72), rgba(251, 246, 241, 0.96));
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-top: 1px solid var(--line);
@@ -584,7 +585,7 @@ main {
   width: 46px;
   height: 32px;
   border-radius: 999px;
-  background: radial-gradient(closest-side, rgba(243, 193, 78, 0.22), transparent);
+  background: radial-gradient(closest-side, rgba(251, 113, 133, 0.22), transparent);
   animation: navGlow 0.4s var(--ease-spring) both;
 }
 @keyframes navGlow {
@@ -622,8 +623,8 @@ main {
 }
 .bubble.me {
   align-self: flex-end;
-  background: linear-gradient(180deg, var(--amber), var(--amber-2));
-  color: #2a1c00;
+  background: linear-gradient(135deg, var(--amber), var(--amber-2));
+  color: #fff;
   border-bottom-right-radius: 6px;
   font-weight: 550;
 }
@@ -667,7 +668,7 @@ main {
 }
 .chat-input input {
   flex: 1;
-  background: rgba(10, 20, 17, 0.7);
+  background: var(--surface-2);
   backdrop-filter: blur(14px);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
@@ -679,8 +680,8 @@ main {
 }
 .chat-input input:focus {
   outline: none;
-  border-color: rgba(243, 193, 78, 0.7);
-  box-shadow: 0 0 0 4px rgba(243, 193, 78, 0.14);
+  border-color: rgba(251, 113, 133, 0.7);
+  box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.14);
 }
 
 /* Animated typing indicator */
@@ -722,7 +723,7 @@ main {
 }
 .field input,
 .field select {
-  background: rgba(10, 20, 17, 0.5);
+  background: var(--surface-2);
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   color: var(--text);
@@ -734,42 +735,40 @@ main {
 .field input:focus,
 .field select:focus {
   outline: none;
-  border-color: rgba(243, 193, 78, 0.7);
-  box-shadow: 0 0 0 4px rgba(243, 193, 78, 0.14);
+  border-color: rgba(251, 113, 133, 0.7);
+  box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.14);
 }
 
-/* ============================ LIGHT THEME ============================ */
-html[data-theme="light"] {
-  --bg: #eef3ee;
-  --bg-2: #e3ece5;
-  --surface: rgba(255, 255, 255, 0.72);
-  --surface-solid: #ffffff;
-  --surface-2: rgba(255, 255, 255, 0.6);
-  --line: rgba(20, 60, 45, 0.12);
-  --line-strong: rgba(20, 60, 45, 0.22);
-  --text: #16241d;
-  --muted: #5c7468;
-  --amber-2: #c9821a;
-  --green-2: #1f9d70;
+/* ===================== DARK THEME (warm, not green) ===================== */
+html[data-theme="dark"] {
+  --bg: #17121b;
+  --bg-2: #1f1722;
+  --surface: rgba(44, 33, 46, 0.6);
+  --surface-solid: #261b29;
+  --surface-2: rgba(58, 43, 60, 0.55);
+  --line: rgba(255, 220, 230, 0.1);
+  --line-strong: rgba(255, 220, 230, 0.18);
+  --text: #f6eef2;
+  --muted: #b6a2ac;
+  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.4),
+    0 14px 30px -16px rgba(0, 0, 0, 0.7);
 }
-html[data-theme="light"] body::before {
-  opacity: 0.55;
+html[data-theme="dark"] .card::after {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
 }
-html[data-theme="light"] .h-title {
-  background: linear-gradient(180deg, #16241d, #2f5142);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+html[data-theme="dark"] .capture textarea,
+html[data-theme="dark"] .chat-input input,
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field select {
+  background: rgba(10, 8, 12, 0.4);
 }
-html[data-theme="light"] .card::after {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), transparent);
+html[data-theme="dark"] .nav {
+  background: linear-gradient(180deg, rgba(23, 18, 27, 0.65), rgba(23, 18, 27, 0.94));
 }
-html[data-theme="light"] .capture textarea,
-html[data-theme="light"] .chat-input input,
-html[data-theme="light"] .field input,
-html[data-theme="light"] .field select,
-html[data-theme="light"] .mini-input {
-  background: rgba(255, 255, 255, 0.8);
+html[data-theme="dark"] .gear,
+html[data-theme="dark"] .insight-chip,
+html[data-theme="dark"] .card {
+  /* glass reads fine on warm-dark; nothing extra needed */
 }
 
 /* ============================ BOOT ============================ */
@@ -1128,8 +1127,8 @@ html[data-theme="light"] .mini-input {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: linear-gradient(180deg, var(--amber), var(--amber-2));
-  color: #2a1c00;
+  background: linear-gradient(135deg, var(--amber), var(--amber-2));
+  color: #fff;
   font-weight: 800;
   font-size: 13px;
   display: grid;
@@ -1176,14 +1175,14 @@ html[data-theme="light"] .mini-input {
   height: 72px;
   border-radius: 22px;
   background:
-    linear-gradient(160deg, rgba(95, 224, 166, 0.25), rgba(243, 193, 78, 0.18)) padding-box,
-    linear-gradient(140deg, rgba(95, 224, 166, 0.6), rgba(243, 193, 78, 0.5)) border-box;
+    linear-gradient(160deg, rgba(251, 113, 133, 0.28), rgba(251, 146, 60, 0.2)) padding-box,
+    linear-gradient(140deg, rgba(251, 113, 133, 0.6), rgba(199, 125, 255, 0.5)) border-box;
   border: 1.5px solid transparent;
   display: grid;
   place-items: center;
   font-size: 36px;
   margin-bottom: 20px;
-  box-shadow: 0 12px 30px -10px rgba(95, 224, 166, 0.4);
+  box-shadow: 0 12px 30px -10px rgba(251, 113, 133, 0.4);
   animation: floatGlow 4s ease-in-out infinite alternate;
 }
 .onb-title {
@@ -1266,8 +1265,8 @@ html[data-theme="light"] .mini-input {
   transform: scale(1.15);
 }
 .onb-tip {
-  background: linear-gradient(90deg, rgba(243, 193, 78, 0.14), transparent);
-  border: 1px solid rgba(243, 193, 78, 0.3);
+  background: linear-gradient(90deg, rgba(251, 113, 133, 0.14), transparent);
+  border: 1px solid rgba(251, 113, 133, 0.3);
   border-radius: 14px;
   padding: 14px 16px;
   font-size: 14px;
@@ -1340,11 +1339,11 @@ html[data-theme="light"] .mini-input {
 .member-income:focus,
 .mini-input:focus {
   outline: none;
-  border-color: rgba(243, 193, 78, 0.6);
+  border-color: rgba(251, 113, 133, 0.6);
 }
 .btn-ghost.danger {
   color: var(--coral);
-  border-color: rgba(255, 141, 107, 0.3);
+  border-color: rgba(244, 63, 94, 0.3);
 }
 
 /* ============================ BILLS ============================ */
@@ -1369,8 +1368,8 @@ html[data-theme="light"] .mini-input {
   transform: scale(0.9) rotate(40deg);
 }
 .bill-pay {
-  background: linear-gradient(180deg, var(--amber), var(--amber-2));
-  color: #2a1c00;
+  background: linear-gradient(135deg, var(--amber), var(--amber-2));
+  color: #fff;
   border: none;
   border-radius: 10px;
   font-family: inherit;
@@ -1380,7 +1379,7 @@ html[data-theme="light"] .mini-input {
   cursor: pointer;
   white-space: nowrap;
   transition: transform 0.15s var(--ease-spring), filter 0.2s;
-  box-shadow: 0 4px 12px -4px rgba(232, 154, 36, 0.6);
+  box-shadow: 0 4px 12px -4px rgba(251, 113, 133, 0.6);
 }
 .bill-pay:active {
   transform: scale(0.93);

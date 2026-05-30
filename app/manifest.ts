@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Your private, AI-powered budgeting and debt coach. Just talk to it.",
     start_url: "/",
     display: "standalone",
-    background_color: "#0e1b17",
-    theme_color: "#0e1b17",
+    background_color: "#fbf6f1",
+    theme_color: "#fbf6f1",
     orientation: "portrait",
     icons: [
       {

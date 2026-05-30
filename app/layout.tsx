@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a1411",
+  themeColor: "#fbf6f1",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -23,7 +23,8 @@ export const viewport: Viewport = {
 };
 
 // Set the theme attribute before paint to avoid a flash of the wrong theme.
-const themeInit = `(function(){try{var d=JSON.parse(localStorage.getItem('money-coach-data-v1')||'{}');document.documentElement.dataset.theme=d.theme==='light'?'light':'dark';}catch(e){document.documentElement.dataset.theme='dark';}})();`;
+// Light is the default.
+const themeInit = `(function(){try{var d=JSON.parse(localStorage.getItem('money-coach-data-v1')||'{}');document.documentElement.dataset.theme=d.theme==='dark'?'dark':'light';}catch(e){document.documentElement.dataset.theme='light';}})();`;
 
 export default function RootLayout({
   children,
@@ -31,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-theme="dark">
+    <html lang="en" data-theme="light">
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
