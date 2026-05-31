@@ -16,10 +16,11 @@ export default function QuickCapture() {
   const [err, setErr] = useState("");
   const [who, setWho] = useState<string | undefined>(data.members[0]?.id);
   const recogRef = useRef<any>(null);
+  const finalRef = useRef("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function submit() {
-    const value = text.trim();
+  async function submit(override?: string) {
+    const value = (typeof override === "string" ? override : text).trim();
     if (!value || busy) return;
     setBusy(true);
     setErr("");
@@ -54,7 +55,9 @@ export default function QuickCapture() {
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
     if (!SR) {
-      setErr("Voice input isn't supported in this browser. Try typing instead.");
+      setErr(
+        "Voice typing isn't supported in this browser (it doesn't work in Safari/iOS). Try typing, or use your keyboard's mic key 🎤.",
+      );
       return;
     }
     if (listening) {
@@ -65,17 +68,39 @@ export default function QuickCapture() {
     recog.lang = "en-US";
     recog.interimResults = true;
     recog.continuous = false;
+    finalRef.current = "";
     recog.onresult = (ev: any) => {
       let t = "";
       for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+      finalRef.current = t;
       setText(t);
     };
-    recog.onerror = () => setListening(false);
-    recog.onend = () => setListening(false);
+    recog.onerror = (ev: any) => {
+      setListening(false);
+      if (ev?.error === "not-allowed" || ev?.error === "service-not-allowed") {
+        setErr("Microphone access was blocked. Allow the mic for this site in your browser settings.");
+      } else if (ev?.error === "no-speech") {
+        setErr("I didn't catch anything — tap 🎤 and speak right after.");
+      } else if (ev?.error !== "aborted") {
+        setErr("Voice input had a problem. Try typing instead.");
+      }
+    };
+    recog.onend = () => {
+      setListening(false);
+      // Auto-log what was dictated, so speaking actually records it.
+      const v = finalRef.current.trim();
+      finalRef.current = "";
+      if (v) submit(v);
+    };
     recogRef.current = recog;
     setListening(true);
     setErr("");
-    recog.start();
+    try {
+      recog.start();
+    } catch {
+      setListening(false);
+      setErr("Couldn't start the mic. Try typing instead.");
+    }
   }
 
   async function onReceipt(e: React.ChangeEvent<HTMLInputElement>) {
@@ -156,7 +181,7 @@ export default function QuickCapture() {
         >
           📷
         </button>
-        <button className="btn btn-primary" onClick={submit} disabled={busy}>
+        <button className="btn btn-primary" onClick={() => submit()} disabled={busy}>
           {busy ? "Thinking…" : "Log it"}
         </button>
       </div>
