@@ -7,10 +7,18 @@ import SwRegister from "@/components/SwRegister";
 export const metadata: Metadata = {
   title: "Money Coach",
   description: "Your private, AI-powered budgeting and debt coach.",
+  applicationName: "Money Coach",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Coach",
+    statusBarStyle: "default",
+    title: "Money Coach",
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180" }],
   },
 };
 
