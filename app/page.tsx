@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useStore, summarize } from "@/lib/store";
-import { quickInsights, billsThisMonth } from "@/lib/insights";
+import { quickInsights, billsThisMonth, pace } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
@@ -43,6 +43,7 @@ export default function Home() {
     .filter((t) => !view || t.memberId === view)
     .slice(0, 10);
   const upcomingBills = billsThisMonth(data, view).filter((b) => !b.paid);
+  const p = pace(data, s.safeToSpend);
   const safePos = s.safeToSpend >= 0;
   const firstName = data.members[0]?.name?.split(" ")[0];
 
@@ -103,6 +104,21 @@ export default function Home() {
           <div className="k">Out this month</div>
         </div>
       </div>
+
+      {safePos && (
+        <div className="card reveal d2 pace">
+          <div className="pace-num">{formatMoney(p.dailyAllowance, data.currency)}</div>
+          <div>
+            <div style={{ fontWeight: 650, fontSize: 15 }}>a day to stay on track</div>
+            <div className="pace-sub">
+              {p.daysLeft} day{p.daysLeft === 1 ? "" : "s"} left ·{" "}
+              {p.forecastLeftover >= 0
+                ? `on pace to finish ${formatMoney(p.forecastLeftover, data.currency)} ahead`
+                : `on pace to overspend by ${formatMoney(-p.forecastLeftover, data.currency)}`}
+            </div>
+          </div>
+        </div>
+      )}
 
       {(s.totalIOwe > 0 || s.totalOwedToMe > 0) && (
         <div className="row reveal d3" style={{ marginBottom: 14 }}>

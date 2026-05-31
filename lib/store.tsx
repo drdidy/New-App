@@ -13,6 +13,7 @@ import type {
   AppData,
   Budget,
   Debt,
+  Goal,
   Member,
   RecurringBill,
   ThemeName,
@@ -37,6 +38,7 @@ function freshData(): AppData {
     debts: [],
     budgets: [],
     recurringBills: [],
+    goals: [],
     currency: "USD",
     theme: "light",
     tombstones: [],
@@ -87,6 +89,7 @@ function migrate(raw: any): AppData {
     debts,
     budgets: Array.isArray(raw.budgets) ? raw.budgets : [],
     recurringBills: Array.isArray(raw.recurringBills) ? raw.recurringBills : [],
+    goals: Array.isArray(raw.goals) ? raw.goals : [],
     currency: raw.currency || "USD",
     theme: raw.theme === "dark" ? "dark" : "light",
     monthlyIncome: raw.monthlyIncome,
@@ -118,6 +121,10 @@ interface StoreContextValue {
   updateBill: (id: string, patch: Partial<RecurringBill>) => void;
   deleteBill: (id: string) => void;
   markBillPaid: (id: string, month?: string) => void;
+  addGoal: (g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => void;
+  updateGoal: (id: string, patch: Partial<Goal>) => void;
+  deleteGoal: (id: string) => void;
+  contributeGoal: (id: string, amount: number, memberId?: string) => void;
   setCurrency: (c: string) => void;
   setTheme: (t: ThemeName) => void;
   setHouseholdName: (n: string) => void;
@@ -561,6 +568,59 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addGoal = useCallback((g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => {
+    setData((d) => ({
+      ...d,
+      goals: [
+        { saved: 0, ...g, id: uid(), createdAt: Date.now() },
+        ...(d.goals || []),
+      ],
+    }));
+  }, []);
+
+  const updateGoal = useCallback((id: string, patch: Partial<Goal>) => {
+    setData((d) => ({
+      ...d,
+      goals: (d.goals || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }));
+  }, []);
+
+  const deleteGoal = useCallback((id: string) => {
+    setData((d) => ({
+      ...d,
+      goals: (d.goals || []).filter((x) => x.id !== id),
+      tombstones: [...(d.tombstones || []), id],
+    }));
+  }, []);
+
+  // Move money into a goal. Logs it as a "Savings" expense so cash flow reflects
+  // that the money is no longer free to spend, and grows the goal balance.
+  const contributeGoal = useCallback((id: string, amount: number, memberId?: string) => {
+    setData((d) => {
+      const goal = (d.goals || []).find((x) => x.id === id);
+      if (!goal || amount <= 0) return d;
+      return {
+        ...d,
+        goals: d.goals.map((x) =>
+          x.id === id ? { ...x, saved: x.saved + amount } : x,
+        ),
+        transactions: [
+          {
+            id: uid(),
+            type: "expense" as const,
+            amount: Math.abs(amount),
+            category: "Savings",
+            description: `Saved toward ${goal.name}`,
+            date: todayISO(),
+            memberId: memberId ?? goal.memberId,
+            createdAt: Date.now(),
+          },
+          ...d.transactions,
+        ],
+      };
+    });
+  }, []);
+
   const setCurrency = useCallback((c: string) => {
     setData((d) => ({ ...d, currency: c, settingsUpdatedAt: Date.now() }));
   }, []);
@@ -618,6 +678,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateBill,
       deleteBill,
       markBillPaid,
+      addGoal,
+      updateGoal,
+      deleteGoal,
+      contributeGoal,
       setCurrency,
       setTheme,
       setHouseholdName,
@@ -648,6 +712,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateBill,
       deleteBill,
       markBillPaid,
+      addGoal,
+      updateGoal,
+      deleteGoal,
+      contributeGoal,
       setCurrency,
       setTheme,
       setHouseholdName,

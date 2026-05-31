@@ -2,6 +2,7 @@ import type {
   AppData,
   Budget,
   Debt,
+  Goal,
   Member,
   RecurringBill,
   Transaction,
@@ -35,6 +36,7 @@ export function mergeData(a: AppData, b: AppData): AppData {
     dead,
     (x) => x.createdAt,
   );
+  const goals = unionById(a.goals, b.goals, dead, (x) => x.createdAt);
 
   // Never leave a household with zero members.
   if (members.length === 0) {
@@ -57,6 +59,7 @@ export function mergeData(a: AppData, b: AppData): AppData {
     debts,
     budgets,
     recurringBills,
+    goals,
     tombstones,
     // Sync config is local-only; callers re-attach it after merging.
     syncCode: a.syncCode ?? b.syncCode,

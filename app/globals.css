@@ -1332,6 +1332,91 @@ html[data-theme="dark"] .card {
   border-color: rgba(244, 63, 94, 0.3);
 }
 
+/* ============================ MONEY PLAN ============================ */
+.alloc-bar {
+  display: flex;
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2);
+  margin-bottom: 16px;
+  gap: 2px;
+}
+.alloc-bar span {
+  height: 100%;
+  animation: growBar 0.8s var(--ease-spring) both;
+  transform-origin: left;
+}
+.alloc-list {
+  display: flex;
+  flex-direction: column;
+}
+.alloc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  font-size: 15px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.alloc-row:last-child {
+  border-bottom: none;
+}
+.alloc-row span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-weight: 550;
+}
+.alloc-row span i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.alloc-row.total {
+  font-weight: 750;
+}
+.alloc-row.total span:first-child {
+  color: var(--text);
+  font-weight: 750;
+}
+.alloc-row span:last-child {
+  font-weight: 700;
+}
+.alloc-row.leftover {
+  font-weight: 800;
+  margin-top: 4px;
+  border-top: 1.5px solid var(--line-strong);
+  padding-top: 12px;
+}
+.alloc-row.leftover span {
+  font-weight: 800 !important;
+}
+.alloc-row.leftover.pos span:last-child { color: var(--green); }
+.alloc-row.leftover.neg span:last-child { color: var(--coral); }
+
+/* Daily pace card on Home. */
+.pace {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.pace-num {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+}
+.pace-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 /* ============================ BILLS ============================ */
 .head-right {
   display: flex;

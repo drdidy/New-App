@@ -7,6 +7,8 @@ import {
   monthOverMonth,
   budgetStatus,
   billsThisMonth,
+  moneyPlan,
+  pace,
 } from "@/lib/insights";
 
 interface Msg {
@@ -15,10 +17,10 @@ interface Msg {
 }
 
 const STARTERS = [
+  "Build me a monthly budget plan",
+  "Do my weekly check-in",
   "Make me a plan to pay off my debts",
   "Where are we overspending?",
-  "How much can we safely spend this week?",
-  "Who should we pay back first?",
 ];
 
 export default function AdvisorPage() {
@@ -43,14 +45,23 @@ export default function AdvisorPage() {
     const nameOf = (id?: string) =>
       data.members.find((m) => m.id === id)?.name ?? null;
 
+    const sum = summarize(data);
     const snapshot = {
       household: data.householdName || null,
       members: data.members.map((m) => ({
         name: m.name,
         monthlyIncome: m.monthlyIncome ?? null,
       })),
-      ...summarize(data),
+      ...sum,
       currency: data.currency,
+      moneyPlan: moneyPlan(data),
+      pace: pace(data, sum.safeToSpend),
+      goals: (data.goals || []).map((g) => ({
+        name: g.name,
+        target: g.target,
+        saved: g.saved,
+        monthlyContribution: g.monthlyContribution ?? null,
+      })),
       budgets: budgetStatus(data).map((b) => ({
         category: b.category,
         spent: Math.round(b.spent),
