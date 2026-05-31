@@ -51,6 +51,21 @@ export interface Budget {
   limit: number; // monthly cap
 }
 
+// A savings goal / pot (emergency fund, holiday, new laptop…). `saved` grows as
+// the household contributes; `monthlyContribution` is the planned amount that
+// the money-plan allocates each month.
+export interface Goal {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  target: number;
+  saved: number;
+  monthlyContribution?: number;
+  memberId?: string;
+  createdAt: number;
+}
+
 // A constant, recurring monthly bill (rent, utilities, subscriptions, etc.).
 // These are "committed" money: until paid for the month they're subtracted from
 // safe-to-spend, and when paid they become a normal expense transaction.
@@ -77,6 +92,7 @@ export interface AppData {
   debts: Debt[];
   budgets: Budget[];
   recurringBills: RecurringBill[];
+  goals: Goal[];
   currency: string; // ISO code, e.g. "USD"
   theme: ThemeName;
   monthlyIncome?: number; // legacy/global fallback

@@ -1,6 +1,73 @@
 import type { AppData, Debt, RecurringBill } from "./types";
 import { monthKey, prevMonthKey } from "./format";
 
+// The household's monthly income baseline: this month's logged income if any,
+// otherwise the sum of members' stated monthly incomes (or legacy single value).
+export function baselineIncome(data: AppData): number {
+  const month = monthKey();
+  const logged = data.transactions
+    .filter((t) => t.type === "income" && t.date.startsWith(month))
+    .reduce((s, t) => s + t.amount, 0);
+  if (logged > 0) return logged;
+  const members = data.members.reduce((s, m) => s + (m.monthlyIncome || 0), 0);
+  return members || data.monthlyIncome || 0;
+}
+
+export interface MoneyPlan {
+  income: number;
+  bills: number; // fixed recurring bills
+  debtMin: number; // minimum debt payments
+  savings: number; // planned goal contributions
+  budgeted: number; // category spending budgets
+  allocated: number;
+  leftover: number; // income - allocated (negative = over-allocated)
+}
+
+// Zero-based "give every dollar a job" view of the month.
+export function moneyPlan(data: AppData): MoneyPlan {
+  const income = baselineIncome(data);
+  const bills = (data.recurringBills || []).reduce((s, b) => s + b.amount, 0);
+  const debtMin = data.debts
+    .filter((d) => d.direction === "i_owe")
+    .reduce((s, d) => s + (d.minPayment || 0), 0);
+  const savings = (data.goals || []).reduce(
+    (s, g) => s + (g.monthlyContribution || 0),
+    0,
+  );
+  const budgeted = data.budgets.reduce((s, b) => s + b.limit, 0);
+  const allocated = bills + debtMin + savings + budgeted;
+  return { income, bills, debtMin, savings, budgeted, allocated, leftover: income - allocated };
+}
+
+export interface Pace {
+  daysLeft: number;
+  dailyAllowance: number; // safe-to-spend spread over the rest of the month
+  projectedSpend: number; // end-of-month spend at the current rate
+  forecastLeftover: number; // income - projected spend
+}
+
+// Turns the headline "safe to spend" into a daily allowance + a month-end
+// forecast based on the current spending pace.
+export function pace(data: AppData, safeToSpend: number): Pace {
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const day = now.getDate();
+  const daysLeft = Math.max(1, daysInMonth - day + 1);
+
+  const month = monthKey();
+  const monthExpenses = data.transactions
+    .filter((t) => t.type === "expense" && t.date.startsWith(month))
+    .reduce((s, t) => s + t.amount, 0);
+  const projectedSpend = day > 0 ? (monthExpenses / day) * daysInMonth : monthExpenses;
+
+  return {
+    daysLeft,
+    dailyAllowance: Math.max(0, safeToSpend) / daysLeft,
+    projectedSpend,
+    forecastLeftover: baselineIncome(data) - projectedSpend,
+  };
+}
+
 export interface BillView {
   bill: RecurringBill;
   paid: boolean;
