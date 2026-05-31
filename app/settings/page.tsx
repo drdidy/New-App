@@ -19,6 +19,8 @@ export default function SettingsPage() {
     setHouseholdName,
     setCurrency,
     setTheme,
+    setPayCycle,
+    setReminders,
     addMember,
     updateMember,
     removeMember,
@@ -132,6 +134,46 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+        <div className="field">
+          <label>Pay schedule</label>
+          <select
+            value={data.payCycle?.type || "monthly"}
+            onChange={(e) =>
+              setPayCycle({ type: e.target.value as any, anchor: data.payCycle?.anchor })
+            }
+          >
+            <option value="monthly">Monthly</option>
+            <option value="semimonthly">Twice a month</option>
+            <option value="biweekly">Every 2 weeks</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
+        {data.payCycle?.type !== "monthly" && (
+          <div className="field">
+            <label>Your next (or last) payday</label>
+            <input
+              type="date"
+              value={data.payCycle?.anchor || ""}
+              onChange={(e) =>
+                setPayCycle({ type: data.payCycle.type, anchor: e.target.value || undefined })
+              }
+            />
+          </div>
+        )}
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(data.remindersEnabled)}
+            onChange={async (e) => {
+              const on = e.target.checked;
+              if (on && typeof Notification !== "undefined" && Notification.permission === "default") {
+                try { await Notification.requestPermission(); } catch {}
+              }
+              setReminders(on);
+            }}
+          />
+          <span>Weekly check-in reminders</span>
+        </label>
       </div>
 
       {/* Members */}

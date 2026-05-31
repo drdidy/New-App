@@ -8,6 +8,7 @@ import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
 import MemberPicker from "@/components/MemberPicker";
 import Avatar from "@/components/Avatar";
+import CheckInBanner from "@/components/CheckInBanner";
 import Link from "next/link";
 
 const CATEGORY_ICON: Record<string, string> = {
@@ -70,6 +71,8 @@ export default function Home() {
         </div>
       </header>
 
+      <CheckInBanner />
+
       {multi && (
         <div className="reveal d1" style={{ marginBottom: 14 }}>
           <MemberPicker
@@ -111,7 +114,7 @@ export default function Home() {
           <div>
             <div style={{ fontWeight: 650, fontSize: 15 }}>a day to stay on track</div>
             <div className="pace-sub">
-              {p.daysLeft} day{p.daysLeft === 1 ? "" : "s"} left ·{" "}
+              {p.daysLeft} day{p.daysLeft === 1 ? "" : "s"} {p.periodLabel} ·{" "}
               {p.forecastLeftover >= 0
                 ? `on pace to finish ${formatMoney(p.forecastLeftover, data.currency)} ahead`
                 : `on pace to overspend by ${formatMoney(-p.forecastLeftover, data.currency)}`}

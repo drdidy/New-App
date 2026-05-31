@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useStore } from "@/lib/store";
-import { payoffPlan } from "@/lib/insights";
+import { payoffPlan, simulatePayoff } from "@/lib/insights";
 import { formatMoney, clampPct } from "@/lib/format";
 import type { DebtDirection } from "@/lib/types";
 import Ring from "@/components/Ring";
@@ -20,6 +20,7 @@ export default function DebtsPage() {
   const [minPayment, setMinPayment] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [who, setWho] = useState<string | undefined>(undefined);
+  const [extra, setExtra] = useState(0);
 
   if (!ready) return null;
 
@@ -28,6 +29,16 @@ export default function DebtsPage() {
   const owedToMe = data.debts.filter((d) => d.direction === "owed_to_me");
   const plan = payoffPlan(data, method);
   const totalOwe = iOwe.reduce((s, d) => s + d.balance, 0);
+
+  const base = simulatePayoff(data, method, 0);
+  const sim = simulatePayoff(data, method, extra);
+  const monthsSaved =
+    base.months != null && sim.months != null ? base.months - sim.months : null;
+  const interestSaved = base.totalInterest - sim.totalInterest;
+  const freeDate =
+    sim.months != null
+      ? new Date(new Date().getFullYear(), new Date().getMonth() + sim.months, 1)
+      : null;
 
   function save() {
     const bal = parseFloat(balance);
@@ -104,6 +115,55 @@ export default function DebtsPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* What-if simulator */}
+      {iOwe.length > 0 && (
+        <div className="card reveal" style={{ marginBottom: 16 }}>
+          <div className="card-h">What if you paid extra?</div>
+          <div className="whatif-val">
+            <span className="h-sub" style={{ margin: 0 }}>Extra per month</span>
+            <span className="whatif-amount">{formatMoney(extra, data.currency)}</span>
+          </div>
+          <input
+            type="range"
+            className="slider"
+            min={0}
+            max={2000}
+            step={25}
+            value={extra}
+            onChange={(e) => setExtra(parseInt(e.target.value, 10))}
+          />
+          <div className="whatif-result">
+            <div className="whatif-stat">
+              <div className="v">
+                {freeDate
+                  ? freeDate.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+                  : "—"}
+              </div>
+              <div className="l">Debt-free</div>
+            </div>
+            <div className="whatif-stat">
+              <div className="v pos">
+                {monthsSaved && monthsSaved > 0 ? `${monthsSaved} mo` : "—"}
+              </div>
+              <div className="l">Sooner</div>
+            </div>
+            <div className="whatif-stat">
+              <div className="v pos">
+                {interestSaved > 1 ? formatMoney(interestSaved, data.currency) : "—"}
+              </div>
+              <div className="l">Interest saved</div>
+            </div>
+          </div>
+          {extra > 0 && monthsSaved != null && monthsSaved > 0 && (
+            <p className="plan-note" style={{ marginBottom: 0 }}>
+              Putting an extra {formatMoney(extra, data.currency)}/mo toward your debts
+              clears them <strong>{monthsSaved} month{monthsSaved === 1 ? "" : "s"} sooner</strong>
+              {interestSaved > 1 ? ` and saves about ${formatMoney(interestSaved, data.currency)} in interest.` : "."}
+            </p>
+          )}
         </div>
       )}
 

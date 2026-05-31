@@ -41,18 +41,19 @@ export function moneyPlan(data: AppData): MoneyPlan {
 
 export interface Pace {
   daysLeft: number;
-  dailyAllowance: number; // safe-to-spend spread over the rest of the month
+  periodLabel: string; // e.g. "left this month" / "until payday May 28"
+  dailyAllowance: number; // safe-to-spend spread over the rest of the period
   projectedSpend: number; // end-of-month spend at the current rate
   forecastLeftover: number; // income - projected spend
 }
 
-// Turns the headline "safe to spend" into a daily allowance + a month-end
-// forecast based on the current spending pace.
+// Turns the headline "safe to spend" into a daily allowance (over the current
+// pay period) plus a month-end forecast based on the current spending pace.
 export function pace(data: AppData, safeToSpend: number): Pace {
+  const cycle = cycleInfo(data);
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const day = now.getDate();
-  const daysLeft = Math.max(1, daysInMonth - day + 1);
 
   const month = monthKey();
   const monthExpenses = data.transactions
@@ -61,8 +62,9 @@ export function pace(data: AppData, safeToSpend: number): Pace {
   const projectedSpend = day > 0 ? (monthExpenses / day) * daysInMonth : monthExpenses;
 
   return {
-    daysLeft,
-    dailyAllowance: Math.max(0, safeToSpend) / daysLeft,
+    daysLeft: cycle.daysLeft,
+    periodLabel: cycle.label,
+    dailyAllowance: Math.max(0, safeToSpend) / cycle.daysLeft,
     projectedSpend,
     forecastLeftover: baselineIncome(data) - projectedSpend,
   };
@@ -193,6 +195,165 @@ export function monthOverMonth(data: AppData): {
   const changePct =
     lastMonth > 0 ? ((thisMonth - lastMonth) / lastMonth) * 100 : null;
   return { thisMonth, lastMonth, changePct };
+}
+
+// --- accounts / net worth ---------------------------------------------------
+
+export function cashOnHand(data: AppData): number {
+  return (data.accounts || []).reduce((s, a) => s + a.balance, 0);
+}
+
+export function netWorth(data: AppData): number {
+  const owedToMe = data.debts
+    .filter((d) => d.direction === "owed_to_me")
+    .reduce((s, d) => s + d.balance, 0);
+  const iOwe = data.debts
+    .filter((d) => d.direction === "i_owe")
+    .reduce((s, d) => s + d.balance, 0);
+  return cashOnHand(data) + owedToMe - iOwe;
+}
+
+// --- trends ------------------------------------------------------------------
+
+export interface MonthTotal {
+  month: string; // "YYYY-MM"
+  label: string; // short month label, e.g. "May"
+  income: number;
+  expense: number;
+}
+
+// Income vs expense for the last `n` months (oldest → newest).
+export function monthlyTotals(data: AppData, n = 6): MonthTotal[] {
+  const now = new Date();
+  const out: MonthTotal[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = d.toISOString().slice(0, 7);
+    out.push({
+      month: key,
+      label: d.toLocaleDateString(undefined, { month: "short" }),
+      income: 0,
+      expense: 0,
+    });
+  }
+  const idx = new Map(out.map((m, i) => [m.month, i]));
+  for (const t of data.transactions) {
+    const key = t.date.slice(0, 7);
+    const i = idx.get(key);
+    if (i === undefined) continue;
+    if (t.type === "income") out[i].income += t.amount;
+    else out[i].expense += t.amount;
+  }
+  return out;
+}
+
+// --- pay cycle ---------------------------------------------------------------
+
+export interface CycleInfo {
+  daysLeft: number; // days remaining in the current period (incl. today)
+  label: string; // e.g. "left this month" / "until payday May 28"
+  end: Date;
+}
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+// The current budgeting period based on the household's pay cycle.
+export function cycleInfo(data: AppData): CycleInfo {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const pc = data.payCycle || { type: "monthly" };
+
+  if (pc.type === "monthly" || !pc.anchor) {
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const daysLeft = Math.max(1, Math.round((end.getTime() - today.getTime()) / 86400000) + 1);
+    return { daysLeft, label: "left this month", end };
+  }
+
+  const len = pc.type === "weekly" ? 7 : pc.type === "biweekly" ? 14 : 15;
+  const anchor = new Date(pc.anchor + "T00:00:00");
+  // Walk forward from the anchor in steps of `len` to the next payday > today.
+  let next = new Date(anchor);
+  if (pc.type === "semimonthly") {
+    // Paydays on the anchor day and ~15 days later, each month.
+    const day = anchor.getDate();
+    const candidates = [
+      new Date(now.getFullYear(), now.getMonth(), day),
+      new Date(now.getFullYear(), now.getMonth(), Math.min(day + 15, 28)),
+      new Date(now.getFullYear(), now.getMonth() + 1, day),
+    ];
+    next = candidates.find((c) => c.getTime() > today.getTime()) || candidates[2];
+  } else {
+    while (next.getTime() <= today.getTime()) next = addDays(next, len);
+  }
+  const daysLeft = Math.max(1, Math.round((next.getTime() - today.getTime()) / 86400000));
+  return {
+    daysLeft,
+    label: `until payday ${next.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+    end: next,
+  };
+}
+
+// --- what-if debt simulator --------------------------------------------------
+
+export interface PayoffSim {
+  months: number | null; // null = never clears at this payment level
+  totalInterest: number;
+}
+
+// Simulate paying off all "I owe" debts with the given method + extra/month,
+// accruing monthly interest. Used by the what-if slider.
+export function simulatePayoff(
+  data: AppData,
+  method: "snowball" | "avalanche",
+  extraPerMonth: number,
+  maxMonths = 720,
+): PayoffSim {
+  const bal = data.debts
+    .filter((d) => d.direction === "i_owe" && d.balance > 0)
+    .map((d) => ({ balance: d.balance, apr: d.apr || 0, min: d.minPayment || 0 }));
+  if (bal.length === 0) return { months: 0, totalInterest: 0 };
+
+  const order = [...bal].sort((a, b) =>
+    method === "snowball" ? a.balance - b.balance : b.apr - a.apr,
+  );
+
+  let months = 0;
+  let totalInterest = 0;
+  while (bal.some((d) => d.balance > 0.01) && months < maxMonths) {
+    months++;
+    // Accrue interest.
+    for (const d of bal) {
+      if (d.balance > 0) {
+        const i = d.balance * (d.apr / 100 / 12);
+        d.balance += i;
+        totalInterest += i;
+      }
+    }
+    let pool =
+      bal.reduce((s, d) => s + (d.balance > 0 ? d.min : 0), 0) + extraPerMonth;
+    // Minimums first.
+    for (const d of bal) {
+      if (d.balance > 0 && pool > 0) {
+        const pay = Math.min(d.min, d.balance, pool);
+        d.balance -= pay;
+        pool -= pay;
+      }
+    }
+    // Funnel the rest by method order.
+    for (const d of order) {
+      if (pool <= 0) break;
+      if (d.balance > 0) {
+        const pay = Math.min(pool, d.balance);
+        d.balance -= pay;
+        pool -= pay;
+      }
+    }
+  }
+  return { months: months >= maxMonths ? null : months, totalInterest };
 }
 
 export interface PayoffPlan {

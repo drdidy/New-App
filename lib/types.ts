@@ -81,6 +81,36 @@ export interface RecurringBill {
   createdAt: number;
 }
 
+// A real-money account the household holds (checking, savings, cash…). These
+// are assets; credit cards / loans live under Debts. Net worth = accounts +
+// owed-to-you − you-owe.
+export type AccountType = "checking" | "savings" | "cash" | "investment" | "other";
+
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  balance: number;
+  emoji: string;
+  color: string;
+  memberId?: string;
+  createdAt: number;
+}
+
+// How the household gets paid — drives the "until payday" pace + period.
+export type PayCycleType = "monthly" | "semimonthly" | "biweekly" | "weekly";
+
+export interface PayCycle {
+  type: PayCycleType;
+  anchor?: string; // ISO date of a known payday (for biweekly/weekly/semimonthly)
+}
+
+// A monthly net-worth snapshot, recorded automatically so we can chart a trend.
+export interface NetWorthPoint {
+  month: string; // "YYYY-MM"
+  value: number;
+}
+
 export type ThemeName = "dark" | "light";
 
 export interface AppData {
@@ -93,9 +123,15 @@ export interface AppData {
   budgets: Budget[];
   recurringBills: RecurringBill[];
   goals: Goal[];
+  accounts: Account[];
+  netWorthHistory: NetWorthPoint[];
+  payCycle: PayCycle;
   currency: string; // ISO code, e.g. "USD"
   theme: ThemeName;
   monthlyIncome?: number; // legacy/global fallback
+  // reminders / weekly check-in
+  remindersEnabled?: boolean;
+  lastCheckIn?: number; // epoch ms of the last weekly check-in
 
   // --- multi-device sync (optional) ---
   // Deleted item ids / budget categories, so deletions propagate across phones

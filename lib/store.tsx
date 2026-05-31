@@ -10,11 +10,13 @@ import {
   useState,
 } from "react";
 import type {
+  Account,
   AppData,
   Budget,
   Debt,
   Goal,
   Member,
+  PayCycle,
   RecurringBill,
   ThemeName,
   Transaction,
@@ -39,6 +41,9 @@ function freshData(): AppData {
     budgets: [],
     recurringBills: [],
     goals: [],
+    accounts: [],
+    netWorthHistory: [],
+    payCycle: { type: "monthly" },
     currency: "USD",
     theme: "light",
     tombstones: [],
@@ -90,9 +95,14 @@ function migrate(raw: any): AppData {
     budgets: Array.isArray(raw.budgets) ? raw.budgets : [],
     recurringBills: Array.isArray(raw.recurringBills) ? raw.recurringBills : [],
     goals: Array.isArray(raw.goals) ? raw.goals : [],
+    accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
+    netWorthHistory: Array.isArray(raw.netWorthHistory) ? raw.netWorthHistory : [],
+    payCycle: raw.payCycle && raw.payCycle.type ? raw.payCycle : { type: "monthly" },
     currency: raw.currency || "USD",
     theme: raw.theme === "dark" ? "dark" : "light",
     monthlyIncome: raw.monthlyIncome,
+    remindersEnabled: Boolean(raw.remindersEnabled),
+    lastCheckIn: raw.lastCheckIn,
     tombstones: Array.isArray(raw.tombstones) ? raw.tombstones : [],
     settingsUpdatedAt: raw.settingsUpdatedAt || 0,
     syncCode: raw.syncCode,
@@ -125,6 +135,12 @@ interface StoreContextValue {
   updateGoal: (id: string, patch: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
   contributeGoal: (id: string, amount: number, memberId?: string) => void;
+  addAccount: (a: Omit<Account, "id" | "createdAt">) => void;
+  updateAccount: (id: string, patch: Partial<Account>) => void;
+  deleteAccount: (id: string) => void;
+  setPayCycle: (pc: PayCycle) => void;
+  setReminders: (enabled: boolean) => void;
+  markCheckIn: () => void;
   setCurrency: (c: string) => void;
   setTheme: (t: ThemeName) => void;
   setHouseholdName: (n: string) => void;
@@ -211,6 +227,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
     });
   }, [ready]);
+
+  // Record (or refresh) the current month's net-worth snapshot so we can chart
+  // a trend over time. Net worth = accounts + owed-to-you − you-owe.
+  useEffect(() => {
+    if (!ready) return;
+    const month = monthKey();
+    setData((d) => {
+      const nw =
+        (d.accounts || []).reduce((s, a) => s + a.balance, 0) +
+        d.debts.filter((x) => x.direction === "owed_to_me").reduce((s, x) => s + x.balance, 0) -
+        d.debts.filter((x) => x.direction === "i_owe").reduce((s, x) => s + x.balance, 0);
+      const hist = d.netWorthHistory || [];
+      const existing = hist.find((p) => p.month === month);
+      if (existing && existing.value === nw) return d;
+      const next = existing
+        ? hist.map((p) => (p.month === month ? { ...p, value: nw } : p))
+        : [...hist, { month, value: nw }];
+      return { ...d, netWorthHistory: next };
+    });
+  }, [ready, data.accounts, data.debts]);
 
   // --- sync engine ---------------------------------------------------------
   const [syncState, setSyncState] = useState<SyncState>("idle");
@@ -621,6 +657,40 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addAccount = useCallback((a: Omit<Account, "id" | "createdAt">) => {
+    setData((d) => ({
+      ...d,
+      accounts: [{ ...a, id: uid(), createdAt: Date.now() }, ...(d.accounts || [])],
+    }));
+  }, []);
+
+  const updateAccount = useCallback((id: string, patch: Partial<Account>) => {
+    setData((d) => ({
+      ...d,
+      accounts: (d.accounts || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }));
+  }, []);
+
+  const deleteAccount = useCallback((id: string) => {
+    setData((d) => ({
+      ...d,
+      accounts: (d.accounts || []).filter((x) => x.id !== id),
+      tombstones: [...(d.tombstones || []), id],
+    }));
+  }, []);
+
+  const setPayCycle = useCallback((pc: PayCycle) => {
+    setData((d) => ({ ...d, payCycle: pc, settingsUpdatedAt: Date.now() }));
+  }, []);
+
+  const setReminders = useCallback((enabled: boolean) => {
+    setData((d) => ({ ...d, remindersEnabled: enabled, settingsUpdatedAt: Date.now() }));
+  }, []);
+
+  const markCheckIn = useCallback(() => {
+    setData((d) => ({ ...d, lastCheckIn: Date.now() }));
+  }, []);
+
   const setCurrency = useCallback((c: string) => {
     setData((d) => ({ ...d, currency: c, settingsUpdatedAt: Date.now() }));
   }, []);
@@ -682,6 +752,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateGoal,
       deleteGoal,
       contributeGoal,
+      addAccount,
+      updateAccount,
+      deleteAccount,
+      setPayCycle,
+      setReminders,
+      markCheckIn,
       setCurrency,
       setTheme,
       setHouseholdName,
@@ -716,6 +792,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateGoal,
       deleteGoal,
       contributeGoal,
+      addAccount,
+      updateAccount,
+      deleteAccount,
+      setPayCycle,
+      setReminders,
+      markCheckIn,
       setCurrency,
       setTheme,
       setHouseholdName,

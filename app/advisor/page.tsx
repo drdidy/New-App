@@ -9,6 +9,8 @@ import {
   billsThisMonth,
   moneyPlan,
   pace,
+  netWorth,
+  cashOnHand,
 } from "@/lib/insights";
 
 interface Msg {
@@ -34,6 +36,16 @@ export default function AdvisorPage() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, busy]);
 
+  // If we arrived here from the weekly check-in banner, kick it off.
+  useEffect(() => {
+    if (!ready) return;
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("mc-checkin") === "1") {
+      sessionStorage.removeItem("mc-checkin");
+      send("Do my weekly check-in");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   async function send(text: string) {
     const value = text.trim();
     if (!value || busy) return;
@@ -56,6 +68,8 @@ export default function AdvisorPage() {
       currency: data.currency,
       moneyPlan: moneyPlan(data),
       pace: pace(data, sum.safeToSpend),
+      netWorth: netWorth(data),
+      cashOnHand: cashOnHand(data),
       goals: (data.goals || []).map((g) => ({
         name: g.name,
         target: g.target,
