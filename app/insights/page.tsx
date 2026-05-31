@@ -1,15 +1,28 @@
 "use client";
 
+import { useState } from "react";
 import { useStore, summarize } from "@/lib/store";
 import {
   categoryBreakdown,
   budgetStatus,
   memberSplit,
   monthOverMonth,
+  netWorth,
+  cashOnHand,
+  monthlyTotals,
 } from "@/lib/insights";
-import { formatMoney, monthLabel, monthKey } from "@/lib/format";
+import { formatMoney, formatMoneyShort, monthLabel, monthKey, MEMBER_COLORS } from "@/lib/format";
 import Donut from "@/components/Donut";
+import Sparkline from "@/components/Sparkline";
 import Avatar from "@/components/Avatar";
+
+const ACCOUNT_EMOJI: Record<string, string> = {
+  checking: "🏦",
+  savings: "🐷",
+  cash: "💵",
+  investment: "📈",
+  other: "💼",
+};
 
 const CHART_COLORS = [
   "#c2663f",
@@ -23,7 +36,11 @@ const CHART_COLORS = [
 ];
 
 export default function InsightsPage() {
-  const { data, ready, member } = useStore();
+  const { data, ready, member, addAccount, updateAccount, deleteAccount } = useStore();
+  const [acctOpen, setAcctOpen] = useState(false);
+  const [aName, setAName] = useState("");
+  const [aType, setAType] = useState<"checking" | "savings" | "cash" | "investment" | "other">("checking");
+  const [aBalance, setABalance] = useState("");
   if (!ready) return null;
 
   const s = summarize(data);
@@ -32,6 +49,25 @@ export default function InsightsPage() {
   const splits = memberSplit(data).filter((x) => x.expenses > 0);
   const mom = monthOverMonth(data);
   const hasData = data.transactions.length > 0;
+
+  const nw = netWorth(data);
+  const cash = cashOnHand(data);
+  const trend = monthlyTotals(data, 6);
+  const nwHist = (data.netWorthHistory || []).slice(-6);
+  const maxFlow = Math.max(1, ...trend.map((m) => Math.max(m.income, m.expense)));
+
+  function saveAccount() {
+    const bal = parseFloat(aBalance);
+    if (!aName.trim() || isNaN(bal)) return;
+    addAccount({
+      name: aName.trim(),
+      type: aType,
+      balance: bal,
+      emoji: ACCOUNT_EMOJI[aType],
+      color: MEMBER_COLORS[(data.accounts?.length || 0) % MEMBER_COLORS.length],
+    });
+    setAName(""); setABalance(""); setAcctOpen(false);
+  }
 
   const slices = cats.slice(0, 7).map((c, i) => ({
     label: c.category,
@@ -43,6 +79,101 @@ export default function InsightsPage() {
     <main>
       <h1 className="h-title">Insights</h1>
       <p className="h-sub">Your money for {monthLabel(monthKey())}, at a glance.</p>
+
+      {/* Net worth + accounts */}
+      <div className="card reveal">
+        <div className="card-h">Net worth</div>
+        <div className={"big " + (nw >= 0 ? "pos" : "neg")} style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.03em" }}>
+          {formatMoney(nw, data.currency)}
+        </div>
+        <div className="h-sub" style={{ marginTop: 2, marginBottom: 14 }}>
+          {formatMoney(cash, data.currency)} in accounts · {formatMoney(s.totalIOwe, data.currency)} owed
+        </div>
+
+        {nwHist.length >= 2 && (
+          <Sparkline
+            values={nwHist.map((p) => p.value)}
+            labels={nwHist.map((p) => monthLabel(p.month).slice(0, 3))}
+            color={nw >= 0 ? "#2e8b72" : "#bc5446"}
+          />
+        )}
+
+        {(data.accounts || []).map((a) => (
+          <div className="item" key={a.id}>
+            <div className="ic">{a.emoji}</div>
+            <div className="meta">
+              <div className="t">{a.name}</div>
+              <div className="s" style={{ textTransform: "capitalize" }}>{a.type}</div>
+            </div>
+            <button
+              className="amt"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text)", fontVariantNumeric: "tabular-nums" }}
+              onClick={() => {
+                const v = prompt(`New balance for ${a.name}:`, String(a.balance));
+                if (v != null && !isNaN(parseFloat(v))) updateAccount(a.id, { balance: parseFloat(v) });
+              }}
+            >
+              {formatMoney(a.balance, data.currency)}
+            </button>
+            <button className="x" onClick={() => deleteAccount(a.id)} aria-label="Delete account">×</button>
+          </div>
+        ))}
+
+        {acctOpen ? (
+          <div style={{ marginTop: 12 }}>
+            <div className="field">
+              <label>Account name</label>
+              <input value={aName} onChange={(e) => setAName(e.target.value)} placeholder="Main checking" autoFocus />
+            </div>
+            <div className="row">
+              <div className="field">
+                <label>Type</label>
+                <select value={aType} onChange={(e) => setAType(e.target.value as any)}>
+                  <option value="checking">Checking</option>
+                  <option value="savings">Savings</option>
+                  <option value="cash">Cash</option>
+                  <option value="investment">Investment</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Balance</label>
+                <input value={aBalance} onChange={(e) => setABalance(e.target.value)} inputMode="decimal" placeholder="0" />
+              </div>
+            </div>
+            <div className="capture-actions">
+              <button className="btn btn-ghost" onClick={() => setAcctOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveAccount}>Add account</button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn btn-ghost btn-block" style={{ marginTop: 12 }} onClick={() => setAcctOpen(true)}>
+            + Add an account
+          </button>
+        )}
+      </div>
+
+      {/* 6-month trend */}
+      {trend.some((m) => m.income > 0 || m.expense > 0) && (
+        <div className="card reveal d1">
+          <div className="card-h">Last 6 months</div>
+          <div className="trend">
+            {trend.map((m) => (
+              <div className="trend-col" key={m.month}>
+                <div className="trend-bars">
+                  <span className="trend-bar in" style={{ height: `${(m.income / maxFlow) * 100}%` }} title={`In ${formatMoney(m.income, data.currency)}`} />
+                  <span className="trend-bar out" style={{ height: `${(m.expense / maxFlow) * 100}%` }} title={`Out ${formatMoney(m.expense, data.currency)}`} />
+                </div>
+                <div className="trend-label">{m.label}</div>
+              </div>
+            ))}
+          </div>
+          <div className="trend-legend">
+            <span><i style={{ background: "var(--green)" }} /> In</span>
+            <span><i style={{ background: "var(--coral)" }} /> Out</span>
+          </div>
+        </div>
+      )}
 
       {!hasData ? (
         <div className="card empty-card reveal">

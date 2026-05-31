@@ -1,9 +1,11 @@
 import type {
+  Account,
   AppData,
   Budget,
   Debt,
   Goal,
   Member,
+  NetWorthPoint,
   RecurringBill,
   Transaction,
 } from "./types";
@@ -37,6 +39,15 @@ export function mergeData(a: AppData, b: AppData): AppData {
     (x) => x.createdAt,
   );
   const goals = unionById(a.goals, b.goals, dead, (x) => x.createdAt);
+  const accounts = unionById(a.accounts, b.accounts, dead, (x) => x.createdAt);
+  // Net-worth history: one point per month, prefer the most recent writer.
+  const nwMap = new Map<string, NetWorthPoint>();
+  for (const p of [...(a.netWorthHistory || []), ...(b.netWorthHistory || [])]) {
+    nwMap.set(p.month, p);
+  }
+  const netWorthHistory = [...nwMap.values()].sort((x, y) =>
+    x.month.localeCompare(y.month),
+  );
 
   // Never leave a household with zero members.
   if (members.length === 0) {
@@ -53,6 +64,9 @@ export function mergeData(a: AppData, b: AppData): AppData {
     currency: scalarSrc.currency,
     theme: scalarSrc.theme,
     monthlyIncome: scalarSrc.monthlyIncome,
+    payCycle: scalarSrc.payCycle || { type: "monthly" },
+    remindersEnabled: scalarSrc.remindersEnabled,
+    lastCheckIn: Math.max(a.lastCheckIn || 0, b.lastCheckIn || 0) || undefined,
     settingsUpdatedAt: Math.max(a.settingsUpdatedAt || 0, b.settingsUpdatedAt || 0),
     members,
     transactions,
@@ -60,6 +74,8 @@ export function mergeData(a: AppData, b: AppData): AppData {
     budgets,
     recurringBills,
     goals,
+    accounts,
+    netWorthHistory,
     tombstones,
     // Sync config is local-only; callers re-attach it after merging.
     syncCode: a.syncCode ?? b.syncCode,
