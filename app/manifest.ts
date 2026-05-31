@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Money Coach",
     // short_name is what Android/iOS show under the home-screen icon — keep it
     // short so launchers don't truncate it.
-    short_name: "MoneyCoach",
+    short_name: "Budget",
     description:
       "Your private, AI-powered budgeting, bills and debt coach. Just talk to it.",
     start_url: "/",
