@@ -1,25 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#d2723f"/>
-      <stop offset="0.52" stop-color="#e08a3c"/>
-      <stop offset="1" stop-color="#c75a4a"/>
+    <linearGradient id="bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#092b26"/>
+      <stop offset="0.62" stop-color="#134f43"/>
+      <stop offset="1" stop-color="#0b332d"/>
     </linearGradient>
-    <radialGradient id="hl" cx="0.3" cy="0.24" r="0.85">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#g)"/>
-  <rect width="512" height="512" fill="url(#hl)"/>
-  <g transform="translate(256 256) scale(0.74) translate(-256 -256)">
-    <g fill="none" stroke="#ffffff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M120 340 L206 286 L296 312 L392 174 M392 174 L342 174 M392 174 L392 224"/>
-    </g>
-    <g fill="#ffffff">
-      <circle cx="120" cy="340" r="16"/>
-      <circle cx="206" cy="286" r="16"/>
-      <circle cx="296" cy="312" r="16"/>
-    </g>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="translate(256 256) scale(0.82) translate(-256 -256)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M148 352 V164 L256 314 L364 164 V352" stroke="#fff4df" stroke-width="58"/>
+    <path d="M156 386 H356" stroke="#d2723f" stroke-width="26"/>
   </g>
 </svg>

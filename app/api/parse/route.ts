@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClient, MODELS, hasApiKey } from "@/lib/anthropic";
+import { contentLengthOk, rateLimit, requestIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,17 @@ Rules:
 - Today's currency is US Dollars. Do not include currency symbols in numbers.`;
 
 export async function POST(req: NextRequest) {
+  if (!contentLengthOk(req, 20_000)) {
+    return NextResponse.json({ error: "That note is too large." }, { status: 413 });
+  }
+  const limited = rateLimit(`parse:${requestIp(req)}`, 40, 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+    );
+  }
+
   if (!hasApiKey()) {
     return NextResponse.json(
       { error: "Server is missing ANTHROPIC_API_KEY." },

@@ -9,6 +9,22 @@ import Ring from "@/components/Ring";
 import Avatar from "@/components/Avatar";
 import MemberPicker from "@/components/MemberPicker";
 
+const STRATEGIES = [
+  { title: "Snowball", body: "Pay the smallest balance first for fast wins and motivation." },
+  { title: "Avalanche", body: "Pay the highest APR first to reduce interest cost." },
+  { title: "Hybrid", body: "Clear one small debt, then switch extra money to the highest APR." },
+  { title: "Minimum shield", body: "Automate minimums first so fees and credit damage do not pile on." },
+  { title: "Negotiate", body: "Ask lenders for hardship plans, APR reductions, or payment dates that match payday." },
+];
+
+const CURB_IDEAS = [
+  "Freeze new borrowing while the payoff plan is active.",
+  "Move one flexible category down by 10% and send the difference to debt.",
+  "Use receipts to spot grocery subcategories that are quietly inflating.",
+  "Route windfalls and refunds to the current target debt before spending them.",
+  "Keep a small emergency buffer so surprise costs do not become new debt.",
+];
+
 export default function DebtsPage() {
   const { data, ready, addDebt, payDebt, deleteDebt, member } = useStore();
   const [open, setOpen] = useState(false);
@@ -164,6 +180,26 @@ export default function DebtsPage() {
               {interestSaved > 1 ? ` and saves about ${formatMoney(interestSaved, data.currency)} in interest.` : "."}
             </p>
           )}
+        </div>
+      )}
+
+      {iOwe.length > 0 && (
+        <div className="card reveal" style={{ marginBottom: 16 }}>
+          <div className="card-h">Ways to attack the debt</div>
+          <div className="strategy-grid">
+            {STRATEGIES.map((s) => (
+              <div className="strategy" key={s.title}>
+                <div className="strategy-title">{s.title}</div>
+                <div className="strategy-body">{s.body}</div>
+              </div>
+            ))}
+          </div>
+          <div className="card-h" style={{ marginTop: 14 }}>Curb new debt</div>
+          <ul className="advice-list">
+            {CURB_IDEAS.map((idea) => (
+              <li key={idea}>{idea}</li>
+            ))}
+          </ul>
         </div>
       )}
 

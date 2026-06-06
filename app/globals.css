@@ -1687,6 +1687,53 @@ input[type="range"].slider::-moz-range-thumb {
   flex: 1;
 }
 
+.line-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.line-items span {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+  background: var(--surface-2);
+}
+
+.strategy-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.strategy {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface-2);
+}
+.strategy-title {
+  font-weight: 750;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.strategy-body,
+.advice-list {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.advice-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.advice-list li + li {
+  margin-top: 5px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

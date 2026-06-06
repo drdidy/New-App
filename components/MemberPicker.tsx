@@ -24,6 +24,8 @@ export default function MemberPicker({
           className={"seg-btn" + (value === undefined ? " on" : "")}
           onClick={() => onChange(undefined)}
           type="button"
+          role="tab"
+          aria-selected={value === undefined}
         >
           {allLabel}
         </button>
@@ -34,6 +36,9 @@ export default function MemberPicker({
           className={"seg-btn" + (value === m.id ? " on" : "")}
           onClick={() => onChange(m.id)}
           type="button"
+          role="tab"
+          aria-selected={value === m.id}
+          aria-label={`Choose ${m.name}`}
           style={
             value === m.id
               ? { borderColor: m.color + "aa", boxShadow: `0 0 0 3px ${m.color}22` }

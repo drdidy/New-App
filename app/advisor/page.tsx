@@ -21,8 +21,8 @@ interface Msg {
 const STARTERS = [
   "Build me a monthly budget plan",
   "Do my weekly check-in",
-  "Make me a plan to pay off my debts",
-  "Where are we overspending?",
+  "Compare debt payoff strategies",
+  "Find grocery line-item patterns",
 ];
 
 export default function AdvisorPage() {
@@ -111,6 +111,11 @@ export default function AdvisorPage() {
           category: t.category,
           date: t.date,
           who: nameOf(t.memberId),
+          lineItems: t.lineItems?.slice(0, 20).map((item) => ({
+            name: item.name,
+            amount: item.amount,
+            category: item.category,
+          })),
         })),
     };
 
@@ -139,7 +144,8 @@ export default function AdvisorPage() {
     <main>
       <h1 className="h-title">Your Money Coach</h1>
       <p className="h-sub">
-        Private, judgment-free advice based on your real numbers.
+        Judgment-free advice based on your real numbers. Coach sends a compact
+        snapshot to Claude through the server; your API key stays private.
       </p>
 
       {msgs.length === 0 && (

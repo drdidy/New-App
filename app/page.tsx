@@ -210,6 +210,14 @@ export default function Home() {
                     {t.category} · {friendlyDate(t.date)}
                     {multi && m ? ` · ${m.emoji} ${m.name.split(" ")[0]}` : ""}
                   </div>
+                  {t.lineItems?.length ? (
+                    <div className="line-items">
+                      <span>{t.lineItems.length} receipt items</span>
+                      {t.lineItems.slice(0, 3).map((item, i) => (
+                        <span key={i}>{item.category}: {item.name}</span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className={"amt " + (t.type === "income" ? "in" : "out")}>
                   {t.type === "income" ? "+" : "−"}

@@ -25,6 +25,15 @@ export interface Transaction {
   date: string; // ISO date (YYYY-MM-DD)
   memberId?: string; // who this belongs to
   createdAt: number; // epoch ms
+  updatedAt?: number; // epoch ms; used by sync conflict resolution
+  lineItems?: ReceiptLineItem[]; // optional receipt/category breakdown
+}
+
+export interface ReceiptLineItem {
+  name: string;
+  amount: number;
+  category: string;
+  quantity?: number;
 }
 
 // A debt is money owed *by* the household (a liability) or *to* the household
@@ -43,6 +52,7 @@ export interface Debt {
   memberId?: string; // whose debt (optional; defaults to household)
   note?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // A monthly spending limit for a category. Drives budget progress + alerts.
@@ -64,6 +74,7 @@ export interface Goal {
   monthlyContribution?: number;
   memberId?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // A constant, recurring monthly bill (rent, utilities, subscriptions, etc.).
@@ -79,6 +90,7 @@ export interface RecurringBill {
   autoLog?: boolean; // log it automatically on/after the due day
   lastPaidMonth?: string; // "YYYY-MM" it was last paid/logged for
   createdAt: number;
+  updatedAt?: number;
 }
 
 // A real-money account the household holds (checking, savings, cash…). These
@@ -95,6 +107,7 @@ export interface Account {
   color: string;
   memberId?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 // How the household gets paid — drives the "until payday" pace + period.

@@ -29,17 +29,17 @@ export function mergeData(a: AppData, b: AppData): AppData {
   const dead = new Set(tombstones);
 
   const transactions = unionById(a.transactions, b.transactions, dead, txnTime);
-  const debts = unionById(a.debts, b.debts, dead, (d) => d.createdAt);
+  const debts = unionById(a.debts, b.debts, dead, recordTime);
   let members = unionById(a.members, b.members, dead, () => 0);
   const budgets = unionByKey(a.budgets, b.budgets, (x) => x.category, dead);
   const recurringBills = unionById(
     a.recurringBills,
     b.recurringBills,
     dead,
-    (x) => x.createdAt,
+    recordTime,
   );
-  const goals = unionById(a.goals, b.goals, dead, (x) => x.createdAt);
-  const accounts = unionById(a.accounts, b.accounts, dead, (x) => x.createdAt);
+  const goals = unionById(a.goals, b.goals, dead, recordTime);
+  const accounts = unionById(a.accounts, b.accounts, dead, recordTime);
   // Net-worth history: one point per month, prefer the most recent writer.
   const nwMap = new Map<string, NetWorthPoint>();
   for (const p of [...(a.netWorthHistory || []), ...(b.netWorthHistory || [])]) {
@@ -84,7 +84,11 @@ export function mergeData(a: AppData, b: AppData): AppData {
 }
 
 function txnTime(t: Transaction): number {
-  return t.createdAt;
+  return t.updatedAt || t.createdAt;
+}
+
+function recordTime<T extends { createdAt: number; updatedAt?: number }>(x: T): number {
+  return x.updatedAt || x.createdAt;
 }
 
 function unionById<T extends { id: string }>(

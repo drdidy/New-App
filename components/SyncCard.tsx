@@ -6,13 +6,15 @@ import { useStore } from "@/lib/store";
 const WORDS = [
   "otter", "maple", "river", "cocoa", "ember", "pebble", "willow", "mango",
   "harbor", "cedar", "olive", "sunny", "ginger", "violet", "comet",
+  "orchard", "silver", "meadow", "copper", "jasper",
 ];
 
 function suggestCode() {
   const a = WORDS[Math.floor(Math.random() * WORDS.length)];
   const b = WORDS[Math.floor(Math.random() * WORDS.length)];
-  const n = Math.floor(1000 + Math.random() * 9000);
-  return `${a}-${b}-${n}`;
+  const c = WORDS[Math.floor(Math.random() * WORDS.length)];
+  const n = Math.random().toString(36).slice(2, 8);
+  return `${a}-${b}-${c}-${n}`;
 }
 
 export default function SyncCard() {
@@ -25,7 +27,7 @@ export default function SyncCard() {
 
   function connect() {
     const c = code.trim();
-    if (c.length < 4) return;
+    if (c.length < 16) return;
     setSync(true, c);
     setEditing(false);
   }
@@ -71,7 +73,7 @@ export default function SyncCard() {
                     className="mini-input"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    placeholder="e.g. otter-maple-4821"
+                    placeholder="e.g. otter-maple-river-k4p9x2"
                   />
                   <button
                     className="btn btn-ghost"
@@ -93,7 +95,7 @@ export default function SyncCard() {
               </div>
               <p className="hint" style={{ marginTop: 10 }}>
                 On the second phone, install the app, open Settings → Sync, and
-                enter this exact code to join.
+                enter this exact code to join. Treat it like a password for your budget.
               </p>
             </>
           )}

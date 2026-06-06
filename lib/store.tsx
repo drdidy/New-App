@@ -52,6 +52,10 @@ function freshData(): AppData {
   };
 }
 
+function touch<T extends { createdAt?: number; updatedAt?: number }>(x: T, now = Date.now()): T {
+  return { ...x, updatedAt: now };
+}
+
 // Bring any older/partial saved blob up to the current shape so upgrades never
 // wipe a user's data.
 function migrate(raw: any): AppData {
@@ -75,11 +79,22 @@ function migrate(raw: any): AppData {
   const attribute = <T extends { memberId?: string }>(x: T): T =>
     x.memberId ? x : { ...x, memberId: members[0]?.id };
 
-  const transactions: Transaction[] = (raw.transactions || []).map(attribute);
+  const transactions: Transaction[] = (raw.transactions || []).map((t: Transaction) =>
+    touch(attribute(t), t.updatedAt || t.createdAt || Date.now()),
+  );
   const debts: Debt[] = (raw.debts || []).map((d: Debt) => ({
-    ...attribute(d),
+    ...touch(attribute(d), d.updatedAt || d.createdAt || Date.now()),
     original: d.original ?? d.balance,
   }));
+  const recurringBills: RecurringBill[] = (Array.isArray(raw.recurringBills) ? raw.recurringBills : []).map(
+    (b: RecurringBill) => touch(attribute(b), b.updatedAt || b.createdAt || Date.now()),
+  );
+  const goals: Goal[] = (Array.isArray(raw.goals) ? raw.goals : []).map((g: Goal) =>
+    touch(attribute(g), g.updatedAt || g.createdAt || Date.now()),
+  );
+  const accounts: Account[] = (Array.isArray(raw.accounts) ? raw.accounts : []).map((a: Account) =>
+    touch(attribute(a), a.updatedAt || a.createdAt || Date.now()),
+  );
 
   const hadData = transactions.length > 0 || debts.length > 0;
 
@@ -93,9 +108,9 @@ function migrate(raw: any): AppData {
     transactions,
     debts,
     budgets: Array.isArray(raw.budgets) ? raw.budgets : [],
-    recurringBills: Array.isArray(raw.recurringBills) ? raw.recurringBills : [],
-    goals: Array.isArray(raw.goals) ? raw.goals : [],
-    accounts: Array.isArray(raw.accounts) ? raw.accounts : [],
+    recurringBills,
+    goals,
+    accounts,
     netWorthHistory: Array.isArray(raw.netWorthHistory) ? raw.netWorthHistory : [],
     payCycle: raw.payCycle && raw.payCycle.type ? raw.payCycle : { type: "monthly" },
     currency: raw.currency || "USD",
@@ -149,6 +164,7 @@ interface StoreContextValue {
   resetAll: () => void;
   // sync
   setSync: (enabled: boolean, code?: string) => void;
+  joinSync: (code: string) => Promise<{ ok: boolean; error?: string }>;
   syncNow: () => Promise<void>;
   syncState: SyncState;
 }
@@ -206,10 +222,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
       if (due.length === 0) return d;
       const dueIds = new Set(due.map((b) => b.id));
+      const nowMs = Date.now();
       return {
         ...d,
         recurringBills: d.recurringBills.map((b) =>
-          dueIds.has(b.id) ? { ...b, lastPaidMonth: month } : b,
+          dueIds.has(b.id) ? { ...b, lastPaidMonth: month, updatedAt: nowMs } : b,
         ),
         transactions: [
           ...due.map((b) => ({
@@ -220,7 +237,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: b.name,
             date: todayISO(),
             memberId: b.memberId,
-            createdAt: Date.now(),
+            createdAt: nowMs,
+            updatedAt: nowMs,
           })),
           ...d.transactions,
         ],
@@ -336,10 +354,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addTransaction = useCallback(
     (t: Omit<Transaction, "id" | "createdAt">) => {
+      const now = Date.now();
       setData((d) => ({
         ...d,
         transactions: [
-          { ...t, id: uid(), createdAt: Date.now() },
+          { ...t, id: uid(), createdAt: now, updatedAt: now },
           ...d.transactions,
         ],
       }));
@@ -356,31 +375,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addDebt = useCallback((dbt: Omit<Debt, "id" | "createdAt">) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
       debts: [
-        { ...dbt, original: dbt.original ?? dbt.balance, id: uid(), createdAt: Date.now() },
+        { ...dbt, original: dbt.original ?? dbt.balance, id: uid(), createdAt: now, updatedAt: now },
         ...d.debts,
       ],
     }));
   }, []);
 
   const updateDebt = useCallback((id: string, patch: Partial<Debt>) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
-      debts: d.debts.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      debts: d.debts.map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
     }));
   }, []);
 
   const payDebt = useCallback((id: string, amount: number, memberId?: string) => {
     setData((d) => {
       const target = d.debts.find((x) => x.id === id);
+      const now = Date.now();
       const debts = d.debts.map((x) =>
-        x.id === id ? { ...x, balance: Math.max(0, x.balance - amount) } : x,
+        x.id === id ? { ...x, balance: Math.max(0, x.balance - amount), updatedAt: now } : x,
       );
-      // Log an "I owe" repayment as an expense so it shows in cash flow.
+      // Log repayments so cash flow and net worth do not silently drift.
       let transactions = d.transactions;
-      if (target && target.direction === "i_owe") {
+      if (target?.direction === "i_owe") {
         transactions = [
           {
             id: uid(),
@@ -390,7 +412,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: `Payment to ${target.party}`,
             date: todayISO(),
             memberId: memberId ?? target.memberId,
-            createdAt: Date.now(),
+            createdAt: now,
+            updatedAt: now,
+          },
+          ...transactions,
+        ];
+      } else if (target?.direction === "owed_to_me") {
+        transactions = [
+          {
+            id: uid(),
+            type: "income",
+            amount: Math.abs(amount),
+            category: "Debt repayment",
+            description: `Repayment from ${target.party}`,
+            date: todayISO(),
+            memberId: memberId ?? target.memberId,
+            createdAt: now,
+            updatedAt: now,
           },
           ...transactions,
         ];
@@ -430,6 +468,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 date: todayISO(),
                 memberId: owner,
                 createdAt: now,
+                updatedAt: now,
               },
               ...txns,
             ];
@@ -449,6 +488,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                       ...x,
                       balance: x.balance + Math.abs(e.amount),
                       original: (x.original ?? 0) + Math.abs(e.amount),
+                      updatedAt: now,
                     }
                   : x,
               );
@@ -463,6 +503,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                   apr: e.apr,
                   memberId: owner,
                   createdAt: now,
+                  updatedAt: now,
                 },
                 ...debts,
               ];
@@ -475,7 +516,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             if (match) {
               debts = debts.map((x) =>
                 x.id === match.id
-                  ? { ...x, balance: Math.max(0, x.balance - Math.abs(e.amount)) }
+                  ? { ...x, balance: Math.max(0, x.balance - Math.abs(e.amount)), updatedAt: now }
                   : x,
               );
             }
@@ -489,6 +530,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 date: todayISO(),
                 memberId: owner,
                 createdAt: now,
+                updatedAt: now,
               },
               ...txns,
             ];
@@ -537,7 +579,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const budgets = exists
         ? d.budgets.map((b) => (b.category === category ? { ...b, limit } : b))
         : [...d.budgets, { category, limit }];
-      return { ...d, budgets };
+      return {
+        ...d,
+        budgets,
+        tombstones: (d.tombstones || []).filter((x) => x !== "budget:" + category),
+      };
     });
   }, []);
 
@@ -550,20 +596,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addBill = useCallback((b: Omit<RecurringBill, "id" | "createdAt">) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
       recurringBills: [
-        { ...b, id: uid(), createdAt: Date.now() },
+        { ...b, id: uid(), createdAt: now, updatedAt: now },
         ...(d.recurringBills || []),
       ],
     }));
   }, []);
 
   const updateBill = useCallback((id: string, patch: Partial<RecurringBill>) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
       recurringBills: (d.recurringBills || []).map((x) =>
-        x.id === id ? { ...x, ...patch } : x,
+        x.id === id ? { ...x, ...patch, updatedAt: now } : x,
       ),
     }));
   }, []);
@@ -582,10 +630,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => {
       const bill = (d.recurringBills || []).find((x) => x.id === id);
       if (!bill || bill.lastPaidMonth === month) return d;
+      const now = Date.now();
       return {
         ...d,
         recurringBills: d.recurringBills.map((x) =>
-          x.id === id ? { ...x, lastPaidMonth: month } : x,
+          x.id === id ? { ...x, lastPaidMonth: month, updatedAt: now } : x,
         ),
         transactions: [
           {
@@ -596,7 +645,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: bill.name,
             date: todayISO(),
             memberId: bill.memberId,
-            createdAt: Date.now(),
+            createdAt: now,
+            updatedAt: now,
           },
           ...d.transactions,
         ],
@@ -605,19 +655,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addGoal = useCallback((g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
       goals: [
-        { saved: 0, ...g, id: uid(), createdAt: Date.now() },
+        { saved: 0, ...g, id: uid(), createdAt: now, updatedAt: now },
         ...(d.goals || []),
       ],
     }));
   }, []);
 
   const updateGoal = useCallback((id: string, patch: Partial<Goal>) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
-      goals: (d.goals || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      goals: (d.goals || []).map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
     }));
   }, []);
 
@@ -635,10 +687,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => {
       const goal = (d.goals || []).find((x) => x.id === id);
       if (!goal || amount <= 0) return d;
+      const now = Date.now();
       return {
         ...d,
         goals: d.goals.map((x) =>
-          x.id === id ? { ...x, saved: x.saved + amount } : x,
+          x.id === id ? { ...x, saved: x.saved + amount, updatedAt: now } : x,
         ),
         transactions: [
           {
@@ -649,7 +702,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: `Saved toward ${goal.name}`,
             date: todayISO(),
             memberId: memberId ?? goal.memberId,
-            createdAt: Date.now(),
+            createdAt: now,
+            updatedAt: now,
           },
           ...d.transactions,
         ],
@@ -658,16 +712,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addAccount = useCallback((a: Omit<Account, "id" | "createdAt">) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
-      accounts: [{ ...a, id: uid(), createdAt: Date.now() }, ...(d.accounts || [])],
+      accounts: [{ ...a, id: uid(), createdAt: now, updatedAt: now }, ...(d.accounts || [])],
     }));
   }, []);
 
   const updateAccount = useCallback((id: string, patch: Partial<Account>) => {
+    const now = Date.now();
     setData((d) => ({
       ...d,
-      accounts: (d.accounts || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      accounts: (d.accounts || []).map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
     }));
   }, []);
 
@@ -721,8 +777,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const joinSync = useCallback(async (code: string) => {
+    const clean = code.trim();
+    if (clean.length < 12) {
+      return { ok: false, error: "Use the full household code from Settings." };
+    }
+    setSyncState("syncing");
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pull", code: clean }),
+      });
+      const json = await res.json();
+      if (json.configured === false) {
+        setSyncState("unconfigured");
+        return { ok: false, error: "Cloud sync is not configured on this app yet." };
+      }
+      if (!res.ok || !json.ok) {
+        setSyncState("error");
+        return { ok: false, error: json.error || "Could not join that household." };
+      }
+      if (!json.data) {
+        setSyncState("error");
+        return { ok: false, error: "No household was found for that code." };
+      }
+      setData((local) => ({
+        ...mergeData(local, migrate(json.data)),
+        onboarded: true,
+        syncEnabled: true,
+        syncCode: clean,
+      }));
+      lastPushedRef.current = JSON.stringify(sanitizeForSync(json.data));
+      setSyncState("ok");
+      return { ok: true };
+    } catch {
+      setSyncState("error");
+      return { ok: false, error: "Could not reach sync. Try again." };
+    }
+  }, []);
+
   const importData = useCallback((incoming: AppData) => {
-    setData(migrate(incoming));
+    setData(() => {
+      const next = migrate(incoming);
+      next.syncCode = undefined;
+      next.syncEnabled = false;
+      return next;
+    });
   }, []);
 
   const resetAll = useCallback(() => setData({ ...freshData(), theme: data.theme }), [data.theme]);
@@ -765,6 +866,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       importData,
       resetAll,
       setSync,
+      joinSync,
       syncNow,
       syncState,
     }),
@@ -805,6 +907,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       importData,
       resetAll,
       setSync,
+      joinSync,
       syncNow,
       syncState,
     ],
@@ -876,6 +979,16 @@ export function summarize(data: AppData, memberId?: string): MonthSummary {
   const minDebtDue = debts
     .filter((d) => d.direction === "i_owe")
     .reduce((s, d) => s + (d.minPayment || 0), 0);
+  const debtPaidThisMonth = data.transactions
+    .filter(
+      (t) =>
+        t.type === "expense" &&
+        t.category === "Debt payment" &&
+        t.date.startsWith(month) &&
+        (!memberId || t.memberId === memberId),
+    )
+    .reduce((s, t) => s + t.amount, 0);
+  const unpaidDebtMin = Math.max(0, minDebtDue - debtPaidThisMonth);
 
   // Bills not yet paid this month are committed money — subtract them so the
   // headline "safe to spend" reflects what's genuinely free.
@@ -884,7 +997,7 @@ export function summarize(data: AppData, memberId?: string): MonthSummary {
     0,
   );
 
-  const safeToSpend = baselineIncome - expenses - minDebtDue - billsDue;
+  const safeToSpend = baselineIncome - expenses - unpaidDebtMin - billsDue;
 
   return {
     income,

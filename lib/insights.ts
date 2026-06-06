@@ -104,6 +104,16 @@ export interface CategorySlice {
   pct: number; // share of total expenses, 0-100
 }
 
+function expenseParts(t: { category: string; amount: number; lineItems?: { category: string; amount: number }[] }) {
+  const items = (t.lineItems || []).filter((x) => x.amount > 0);
+  if (items.length === 0) return [{ category: t.category, amount: t.amount }];
+  const parts = items.map((x) => ({ category: x.category || t.category, amount: x.amount }));
+  const itemTotal = parts.reduce((s, x) => s + x.amount, 0);
+  const remainder = Math.round((t.amount - itemTotal) * 100) / 100;
+  if (remainder > 0.01) parts.push({ category: t.category, amount: remainder });
+  return parts;
+}
+
 // Expense totals by category for a month (default: current), highest first.
 export function categoryBreakdown(
   data: AppData,
@@ -116,8 +126,10 @@ export function categoryBreakdown(
     if (t.type !== "expense") continue;
     if (memberId && t.memberId !== memberId) continue;
     if (!t.date.startsWith(month)) continue;
-    totals.set(t.category, (totals.get(t.category) || 0) + t.amount);
-    sum += t.amount;
+    for (const part of expenseParts(t)) {
+      totals.set(part.category, (totals.get(part.category) || 0) + part.amount);
+      sum += part.amount;
+    }
   }
   return [...totals.entries()]
     .map(([category, amount]) => ({
@@ -142,7 +154,9 @@ export function budgetStatus(data: AppData): BudgetStatus[] {
   for (const t of data.transactions) {
     if (t.type !== "expense") continue;
     if (!t.date.startsWith(month)) continue;
-    spentByCat.set(t.category, (spentByCat.get(t.category) || 0) + t.amount);
+    for (const part of expenseParts(t)) {
+      spentByCat.set(part.category, (spentByCat.get(part.category) || 0) + part.amount);
+    }
   }
   return data.budgets
     .map((b) => {
@@ -228,7 +242,7 @@ export function monthlyTotals(data: AppData, n = 6): MonthTotal[] {
   const out: MonthTotal[] = [];
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = d.toISOString().slice(0, 7);
+    const key = monthKey(d);
     out.push({
       month: key,
       label: d.toLocaleDateString(undefined, { month: "short" }),

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { ParsedEntry } from "@/lib/types";
+import { todayISO } from "@/lib/format";
 import Burst from "@/components/Burst";
 import MemberPicker from "@/components/MemberPicker";
 
@@ -121,15 +122,30 @@ export default function QuickCapture() {
       if (!data.found) {
         setErr("I couldn't read a total on that one. Try a clearer photo, or just type it.");
       } else {
+        const items = Array.isArray(data.items)
+          ? data.items
+              .filter((x: any) => x && typeof x.name === "string" && Number(x.amount) > 0)
+              .slice(0, 80)
+              .map((x: any) => ({
+                name: String(x.name).slice(0, 80),
+                amount: Math.abs(Number(x.amount)),
+                category: String(x.category || "Other").slice(0, 40),
+                quantity: x.quantity ? Number(x.quantity) : undefined,
+              }))
+          : undefined;
         addTransaction({
           type: "expense",
           amount: Math.abs(data.amount),
           category: data.category || "Other",
           description: data.merchant || "Receipt",
-          date: new Date().toISOString().slice(0, 10),
+          date: todayISO(),
           memberId: who,
+          lineItems: items && items.length > 0 ? items : undefined,
         });
-        setConfirms([data.summary || `Logged ${data.amount}`]);
+        setConfirms([
+          data.summary || `Logged ${data.amount}`,
+          ...(items && items.length > 0 ? [`Captured ${items.length} receipt item${items.length === 1 ? "" : "s"}`] : []),
+        ]);
         setCelebrate((n) => n + 1);
         if (navigator.vibrate) navigator.vibrate(18);
         setTimeout(() => setConfirms([]), 6000);

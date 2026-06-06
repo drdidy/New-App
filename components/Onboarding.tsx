@@ -22,23 +22,26 @@ function blankMember(i: number): Draft {
 }
 
 export default function Onboarding() {
-  const { completeOnboarding, setSync } = useStore();
+  const { completeOnboarding, joinSync } = useStore();
   const [step, setStep] = useState(0);
   const [household, setHousehold] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [people, setPeople] = useState<Draft[]>([blankMember(0), blankMember(1)]);
   const [joining, setJoining] = useState(false);
   const [joinCode, setJoinCode] = useState("");
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinError, setJoinError] = useState("");
 
   const totalSteps = 4;
 
-  function joinHousehold() {
+  async function joinHousehold() {
     const c = joinCode.trim();
-    if (c.length < 4) return;
-    // Enable sync with the shared code, then mark onboarding done. The sync
-    // engine will pull the partner's household and merge it in.
-    setSync(true, c);
-    completeOnboarding({});
+    if (c.length < 16 || joinBusy) return;
+    setJoinBusy(true);
+    setJoinError("");
+    const result = await joinSync(c);
+    setJoinBusy(false);
+    if (!result.ok) setJoinError(result.error || "Could not join that household.");
   }
 
   function updatePerson(i: number, patch: Partial<Draft>) {
@@ -87,10 +90,11 @@ export default function Onboarding() {
                 autoFocus
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="e.g. otter-maple-4821"
-                onKeyDown={(e) => e.key === "Enter" && joinHousehold()}
+                placeholder="e.g. otter-maple-river-k4p9x2"
+                onKeyDown={(e) => e.key === "Enter" && void joinHousehold()}
               />
             </div>
+            {joinError && <p className="err">{joinError}</p>}
             <p className="hint">
               Sync needs the cloud add-on enabled on your app. If nothing appears
               after joining, ask your partner to confirm sync is on.
@@ -103,8 +107,8 @@ export default function Onboarding() {
           </button>
           <button
             className="btn btn-primary btn-block"
-            disabled={joinCode.trim().length < 4}
-            onClick={joinHousehold}
+            disabled={joinCode.trim().length < 16 || joinBusy}
+            onClick={() => void joinHousehold()}
           >
             Join household →
           </button>

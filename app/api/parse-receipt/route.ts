@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClient, MODELS, hasApiKey } from "@/lib/anthropic";
+import { contentLengthOk, rateLimit, requestIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -11,23 +12,51 @@ const SCHEMA = {
     amount: { type: "number" },
     merchant: { type: "string" },
     category: { type: "string" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          amount: { type: "number" },
+          category: { type: "string" },
+          quantity: { type: "number" },
+        },
+        required: ["name", "amount", "category"],
+      },
+    },
     summary: { type: "string" },
   },
   required: ["found", "amount", "summary"],
 };
 
-const SYSTEM = `You read a photo of a receipt, bank transfer, or payment screenshot and extract the single most important expense.
+const SYSTEM = `You read a photo of a receipt, bank transfer, or payment screenshot and extract the most important expense plus readable line items.
 
 Return:
 - found: true if you can see a clear total amount, else false.
 - amount: the grand total actually paid (a positive number, no currency symbol).
 - merchant: the store / payee name if visible.
-- category: a short Title-Case spending category (Groceries, Dining, Transport, Utilities, Shopping, etc.).
-- summary: a one-line confirmation, e.g. "Walmart — $42.50 (Groceries)".
+- category: a short Title-Case spending category for the overall receipt.
+- items: readable line items with name, amount, quantity if visible, and a practical spending category.
+- summary: a one-line confirmation, e.g. "Walmart - $42.50 (Groceries)".
 
-If the image is not a receipt or you cannot read a total, set found=false and amount=0.`;
+For grocery receipts, use helpful line-item categories like Produce, Meat & Seafood, Dairy, Pantry, Snacks, Drinks, Household, Personal Care, Pet, Baby, Alcohol, Prepared Food, Tax/Fee, Other.
+If the receipt is long, return the clearest visible items and do not invent unreadable names.
+If the image is not a receipt or you cannot read a total, set found=false, amount=0, and items=[].`;
 
 export async function POST(req: NextRequest) {
+  if (!contentLengthOk(req, 7_000_000)) {
+    return NextResponse.json({ error: "That image is too large." }, { status: 413 });
+  }
+  const limited = rateLimit(`receipt:${requestIp(req)}`, 12, 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many receipt scans. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+    );
+  }
+
   if (!hasApiKey()) {
     return NextResponse.json(
       { error: "Server is missing ANTHROPIC_API_KEY." },
@@ -54,11 +83,14 @@ export async function POST(req: NextRequest) {
   }
   const mediaType = match[1] === "image/jpg" ? "image/jpeg" : match[1];
   const base64 = match[3];
+  if (base64.length > 6_500_000) {
+    return NextResponse.json({ error: "That image is too large." }, { status: 413 });
+  }
 
   try {
     const res: any = await getClient().messages.create({
       model: MODELS.fast,
-      max_tokens: 512,
+      max_tokens: 1200,
       thinking: { type: "disabled" },
       system: [
         { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },
@@ -71,7 +103,7 @@ export async function POST(req: NextRequest) {
               type: "image",
               source: { type: "base64", media_type: mediaType, data: base64 },
             },
-            { type: "text", text: "Extract the expense from this image." },
+            { type: "text", text: "Extract the total and readable line items from this image." },
           ],
         },
       ],
@@ -79,7 +111,7 @@ export async function POST(req: NextRequest) {
     } as any);
 
     const block = res.content.find((b: any) => b.type === "text");
-    const parsed = JSON.parse(block?.text || '{"found":false,"amount":0}');
+    const parsed = JSON.parse(block?.text || '{"found":false,"amount":0,"items":[]}');
     return NextResponse.json(parsed);
   } catch (err: any) {
     console.error("receipt error", err?.message);
