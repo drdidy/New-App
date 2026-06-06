@@ -162,7 +162,7 @@ export default function QuickCapture() {
         id="quick-capture"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={'Examples: "spent 42 on groceries", "paid Visa 75", "paycheck 2200"'}
+        placeholder="Try: spent 42 on groceries, paid Visa 75, paycheck 2200"
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
         }}
@@ -209,7 +209,7 @@ export default function QuickCapture() {
         hidden
       />
       <p className="hint">
-        AI capture sends this note or receipt image for analysis. You can always type manually.
+        Only the note or receipt you choose is analyzed. You can always type manually.
       </p>
       {confirms.length > 0 && (
         <div className="confirms">

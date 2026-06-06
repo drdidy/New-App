@@ -3,7 +3,7 @@
 // A tiny, dependency-free confetti burst. Render it (keyed) when you want a
 // celebratory pop — e.g. right after the user logs an expense. It cleans up
 // after the animation, so just bump the `fire` key to retrigger.
-const COLORS = ["#f3c14e", "#5fe0a6", "#ff8d6b", "#b08cff", "#7fb6e8"];
+const COLORS = ["#e3bf74", "#84d6a5", "#ef8b7d", "#bca7ff", "#8dbbff"];
 const PIECES = 14;
 
 export default function Burst() {

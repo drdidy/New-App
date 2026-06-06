@@ -12,7 +12,7 @@ export interface Member {
   id: string;
   name: string;
   emoji: string; // avatar glyph, e.g. "🦊"
-  color: string; // accent hue used in charts/avatars, e.g. "#5fe0a6"
+  color: string; // accent hue used in charts/avatars, e.g. "#8dbbff"
   monthlyIncome?: number; // optional self-reported baseline
   updatedAt?: number; // epoch ms; used by sync conflict resolution
 }

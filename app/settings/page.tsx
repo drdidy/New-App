@@ -91,17 +91,23 @@ export default function SettingsPage() {
   return (
     <main>
       <h1 className="h-title">You &amp; settings</h1>
-      <p className="h-sub">Your household, budgets, and data — all in your control.</p>
+      <p className="h-sub">
+        Your private profile, optional household sharing, budgets, and data controls.
+      </p>
 
-      {/* Household */}
+      {/* Profile */}
       <div className="card reveal">
-        <div className="card-h">Household</div>
+        <div className="card-h">Profile &amp; household</div>
+        <p className="h-sub" style={{ marginBottom: 12 }}>
+          This browser has its own profile. Other users only see this plan if they
+          use the same device, restore the same backup, or join the same sync code.
+        </p>
         <div className="field">
-          <label>Household name</label>
+          <label>Profile or household name</label>
           <input
             value={data.householdName || ""}
             onChange={(e) => setHouseholdName(e.target.value)}
-            placeholder="The Smith Household"
+            placeholder="David's Money Plan"
           />
         </div>
         <div className="field">
@@ -178,7 +184,11 @@ export default function SettingsPage() {
 
       {/* Members */}
       <div className="card reveal d1">
-        <div className="card-h">People</div>
+        <div className="card-h">People in this plan</div>
+        <p className="h-sub" style={{ marginBottom: 12 }}>
+          Add people only when their spending should be part of this profile. For
+          separate users, create separate profiles instead of adding everyone here.
+        </p>
         {data.members.map((m) => (
           <div className="member-edit" key={m.id}>
             <Avatar member={m} size={38} />

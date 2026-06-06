@@ -7,7 +7,7 @@ export default function Ring({
   pct,
   size = 56,
   stroke = 6,
-  color = "#5fe0a6",
+  color = "#84d6a5",
   track = "rgba(255,255,255,0.1)",
   children,
 }: {

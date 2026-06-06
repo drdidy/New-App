@@ -76,7 +76,7 @@ function migrate(raw: any): AppData {
       id: defaultMemberId,
       name: "You",
       emoji: "🦊",
-      color: "#5fe0a6",
+      color: "#8dbbff",
       monthlyIncome: raw.monthlyIncome,
       updatedAt: now,
     });

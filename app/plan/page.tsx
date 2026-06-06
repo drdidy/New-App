@@ -1,243 +1,347 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import {
+  ArrowRight,
+  CalendarDays,
+  Check,
+  Home,
+  PiggyBank,
+  Plus,
+  ShieldCheck,
+  Target,
+  Wallet,
+} from "lucide-react";
 import { useStore } from "@/lib/store";
-import { moneyPlan, billsThisMonth } from "@/lib/insights";
-import { formatMoney, clampPct, MEMBER_COLORS } from "@/lib/format";
+import { billsThisMonth, budgetStatus, moneyPlan, monthlyTotals } from "@/lib/insights";
+import { clampPct, formatMoney } from "@/lib/format";
+import Donut from "@/components/Donut";
 import Ring from "@/components/Ring";
+import Sparkline from "@/components/Sparkline";
+import { ActionButton, EmptyState, PageHeader } from "@/components/PremiumUI";
 
-const GOAL_EMOJIS = ["🛟", "✈️", "🏖️", "🚗", "🏠", "🎓", "💍", "🎁"];
-
-const ALLOC = [
-  { key: "bills", label: "Bills", color: "#bc5446" },
-  { key: "debtMin", label: "Debt", color: "#7c6ba8" },
-  { key: "savings", label: "Savings", color: "#2e8b72" },
-  { key: "budgeted", label: "Spending", color: "#c2663f" },
-] as const;
+const ALLOC_COLORS = ["#8dbbff", "#84d6a5", "#e3bf74", "#ef8b7d"];
 
 export default function PlanPage() {
-  const {
-    data,
-    ready,
-    setBudget,
-    removeBudget,
-    addGoal,
-    deleteGoal,
-    contributeGoal,
-  } = useStore();
-  const [goalOpen, setGoalOpen] = useState(false);
-  const [gName, setGName] = useState("");
-  const [gTarget, setGTarget] = useState("");
-  const [gMonthly, setGMonthly] = useState("");
-  const [gEmoji, setGEmoji] = useState(GOAL_EMOJIS[0]);
-  const [gColor, setGColor] = useState(MEMBER_COLORS[0]);
-  const [newCat, setNewCat] = useState("");
-  const [newLimit, setNewLimit] = useState("");
-
+  const { data, ready } = useStore();
   if (!ready) return null;
 
   const plan = moneyPlan(data);
   const bills = billsThisMonth(data);
-  const billsTotal = bills.reduce((s, b) => s + b.bill.amount, 0);
-  const billsPaid = bills.filter((b) => b.paid).reduce((s, b) => s + b.bill.amount, 0);
+  const budgets = budgetStatus(data);
+  const goals = data.goals || [];
+  const trend = monthlyTotals(data, 6);
+  const allocationPct = plan.income ? clampPct((plan.allocated / plan.income) * 100) : 0;
+  const slices = [
+    { label: "Needs", value: plan.bills + plan.budgeted * 0.5, color: ALLOC_COLORS[0] },
+    { label: "Savings & Goals", value: plan.savings, color: ALLOC_COLORS[1] },
+    { label: "Wants", value: plan.budgeted * 0.3, color: ALLOC_COLORS[2] },
+    { label: "Debt Paydown", value: plan.debtMin, color: ALLOC_COLORS[3] },
+  ].filter((x) => x.value > 0);
 
-  const allocTotal = Math.max(plan.income, plan.allocated, 1);
-
-  function saveGoal() {
-    const t = parseFloat(gTarget);
-    if (!gName.trim() || !t || t <= 0) return;
-    addGoal({
-      name: gName.trim(),
-      target: t,
-      emoji: gEmoji,
-      color: gColor,
-      monthlyContribution: gMonthly ? parseFloat(gMonthly) : undefined,
-    });
-    setGName(""); setGTarget(""); setGMonthly(""); setGoalOpen(false);
-  }
-
-  function saveBudget() {
-    const lim = parseFloat(newLimit);
-    if (!newCat.trim() || !lim || lim <= 0) return;
-    setBudget(newCat.trim(), lim);
-    setNewCat(""); setNewLimit("");
-  }
+  const eventList = [
+    ...bills.slice(0, 3).map((b) => ({
+      id: b.bill.id,
+      label: b.bill.name,
+      sub: `Day ${b.dueDay}`,
+      amount: b.bill.amount,
+      Icon: b.bill.category.toLowerCase().includes("rent") ? Home : CalendarDays,
+    })),
+    ...goals.slice(0, 2).map((g) => ({
+      id: g.id,
+      label: g.name,
+      sub: "Goal contribution",
+      amount: g.monthlyContribution || 0,
+      Icon: PiggyBank,
+    })),
+  ];
+  const protectedFunds = goals
+    .filter((g) => (g.monthlyContribution || 0) > 0 || g.saved > 0)
+    .slice(0, 4);
+  const automationRows = [
+    ...bills
+      .filter((b) => b.bill.autoLog)
+      .slice(0, 3)
+      .map((b) => ({
+        label: `${b.bill.name} auto-log`,
+        detail: `Day ${b.dueDay}`,
+        active: true,
+        Icon: CalendarDays,
+      })),
+    ...goals
+      .filter((g) => (g.monthlyContribution || 0) > 0)
+      .slice(0, 3)
+      .map((g) => ({
+        label: `${g.name} contribution`,
+        detail: `${formatMoney(g.monthlyContribution || 0, data.currency)}/mo`,
+        active: true,
+        Icon: PiggyBank,
+      })),
+    ...(data.remindersEnabled
+      ? [{ label: "Weekly check-in reminder", detail: "Enabled", active: true, Icon: ShieldCheck }]
+      : []),
+  ].slice(0, 4);
+  const hasEmergencyFund = goals.some((g) => /emergency|buffer/i.test(g.name) && g.saved > 0);
+  const debtTotal = data.debts
+    .filter((d) => d.direction === "i_owe")
+    .reduce((sum, d) => sum + d.balance, 0);
+  const hasForecastData = trend.map((m) => m.income - m.expense).some(Boolean);
+  const hasPlanInputs =
+    plan.income > 0 ||
+    plan.allocated > 0 ||
+    budgets.length > 0 ||
+    goals.length > 0 ||
+    bills.length > 0 ||
+    debtTotal > 0 ||
+    data.transactions.length > 0 ||
+    data.accounts.length > 0;
 
   return (
-    <main>
-      <h1 className="h-title">Your money plan</h1>
-      <p className="h-sub">Give every dollar a job — before you spend it.</p>
+    <main className="vision-page plan-dashboard">
+      <PageHeader
+        title="Your Plan Overview"
+        subtitle="Turn income into a calm monthly system."
+      />
 
-      {/* Zero-based allocation */}
-      <div className="card reveal">
-        <div className="card-h">This month&apos;s plan</div>
-        {plan.income === 0 ? (
-          <div className="empty">
-            Add your income in <Link href="/settings" style={{ color: "var(--amber)" }}>Settings</Link> to
-            see your plan.
-          </div>
-        ) : (
-          <>
-            <div className="alloc-bar">
-              {ALLOC.map((a) => {
-                const v = (plan as any)[a.key] as number;
-                if (v <= 0) return null;
-                return (
-                  <span
-                    key={a.key}
-                    style={{ width: `${(v / allocTotal) * 100}%`, background: a.color }}
-                    title={a.label}
-                  />
-                );
-              })}
-              {plan.leftover > 0 && (
-                <span style={{ width: `${(plan.leftover / allocTotal) * 100}%`, background: "var(--surface-2)" }} />
-              )}
-            </div>
-            <div className="alloc-list">
-              <div className="alloc-row total">
-                <span>Income</span>
-                <span>{formatMoney(plan.income, data.currency)}</span>
-              </div>
-              {ALLOC.map((a) => {
-                const v = (plan as any)[a.key] as number;
-                return (
-                  <div className="alloc-row" key={a.key}>
-                    <span><i style={{ background: a.color }} />{a.label}</span>
-                    <span>−{formatMoney(v, data.currency)}</span>
-                  </div>
-                );
-              })}
-              <div className={"alloc-row leftover " + (plan.leftover < 0 ? "neg" : "pos")}>
-                <span>{plan.leftover < 0 ? "Over-allocated" : "Left to assign"}</span>
-                <span>{formatMoney(plan.leftover, data.currency)}</span>
-              </div>
-            </div>
-            <p className="plan-note" style={{ marginBottom: 0 }}>
-              {plan.leftover < 0
-                ? "Your plan spends more than you earn — trim a category, or ask Coach to help rebalance."
-                : plan.leftover > 0
-                ? "You've got money still unassigned. Send it to a savings goal or extra debt payment."
-                : "Nicely balanced — every dollar has a job."}
-            </p>
-          </>
-        )}
-      </div>
+      <section className="vision-grid plan-grid">
+        <article className="vision-card span-3 center-card">
+          <div className="vision-card-title"><span>Plan Progress</span></div>
+          {hasPlanInputs ? (
+            <Ring pct={allocationPct} size={126} stroke={11} color="#84d6a5">
+              <strong>{Math.round(allocationPct)}%</strong>
+              <span>{allocationPct <= 100 ? "On track" : "Over"}</span>
+            </Ring>
+          ) : (
+            <EmptyState
+              Icon={Target}
+              title="Build your plan"
+              body="Add income and a few priorities to see plan progress."
+              action="Start plan"
+              href="/settings"
+            />
+          )}
+        </article>
 
-      {/* Savings goals */}
-      <div className="section-h">
-        <h2>Savings goals</h2>
-      </div>
-      <div className="card">
-        {(data.goals || []).length === 0 ? (
-          <div className="empty">
-            No goals yet. An emergency fund is the best first one — even a small
-            buffer changes everything.
+        <article className="vision-card metric-card span-3">
+          <span>Income This Month</span>
+          <strong className={!plan.income ? "metric-phrase" : undefined}>{plan.income ? formatMoney(plan.income, data.currency) : "Add income"}</strong>
+          <small>{plan.income ? "After-tax income" : "Log a paycheck or set a monthly baseline."}</small>
+        </article>
+
+        <article className="vision-card metric-card span-3">
+          <span>Planned Savings</span>
+          <strong className={!plan.savings ? "metric-phrase" : undefined}>{plan.savings ? formatMoney(plan.savings, data.currency) : "Create goal"}</strong>
+          <small>{plan.savings ? `${plan.income ? Math.round((plan.savings / plan.income) * 100) : 0}% of income` : "Create your first goal to protect your future."}</small>
+        </article>
+
+        <article className="vision-card metric-card span-3">
+          <span>Projected Surplus</span>
+          <strong className={!hasPlanInputs ? "metric-phrase" : undefined}>{hasPlanInputs ? formatMoney(plan.leftover, data.currency) : "Waiting"}</strong>
+          <small>{hasPlanInputs ? "This month" : "Appears after income and commitments."}</small>
+        </article>
+
+        <article className="vision-card span-5">
+          <div className="vision-card-title">
+            <span>Income Allocation</span>
+            <small>Manage</small>
           </div>
-        ) : (
-          data.goals.map((g) => {
-            const pct = clampPct((g.saved / g.target) * 100);
-            return (
-              <div className="item" key={g.id}>
-                <Ring pct={pct} size={46} stroke={5} color={g.color}>
-                  <span className="ring-pct">{Math.round(pct)}%</span>
-                </Ring>
-                <div className="meta">
-                  <div className="t">{g.emoji} {g.name}</div>
-                  <div className="s">
-                    {formatMoney(g.saved, data.currency)} of {formatMoney(g.target, data.currency)}
-                    {g.monthlyContribution ? ` · ${formatMoney(g.monthlyContribution, data.currency)}/mo` : ""}
+          {slices.length ? (
+            <div className="donut-wrap">
+              <Donut
+                slices={slices}
+                centerTop={`${Math.round(allocationPct)}%`}
+                centerSub="Allocated"
+                size={190}
+                stroke={25}
+              />
+              <div className="legend">
+                {slices.map((s) => (
+                  <div className="legend-row" key={s.label}>
+                    <span className="swatch" style={{ background: s.color }} />
+                    <span className="legend-label">{s.label}</span>
+                    <span>{formatMoney(s.value, data.currency)}</span>
                   </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <EmptyState
+              Icon={Wallet}
+              title="Income allocation is waiting"
+              body="Add income, bills, budgets, or goals so every dollar can get a role."
+              action="Allocate income"
+              href="/settings"
+            />
+          )}
+          {plan.leftover > 0 && (
+            <div className="assignment-callout">
+              <strong>{formatMoney(plan.leftover, data.currency)} unassigned</strong>
+              <span>Give every dollar a role.</span>
+              <ActionButton href="/settings" variant="secondary">Allocate income</ActionButton>
+            </div>
+          )}
+        </article>
+
+        <article className="vision-card span-5">
+          <div className="vision-card-title">
+            <span>Cash Flow Forecast</span>
+            <small>{hasForecastData ? "6M" : "Forecast preview"}</small>
+          </div>
+          <Sparkline
+            values={hasForecastData ? trend.map((m) => m.income - m.expense) : [1200, 900, 1420, 980, 1550, 1247]}
+            labels={trend.map((m) => m.label.slice(0, 3))}
+            color="#8dbbff"
+            height={190}
+          />
+        </article>
+
+        <article className="vision-card span-3">
+          <div className="vision-card-title"><span>Upcoming Money Events</span></div>
+          <div className="vision-list">
+            {eventList.slice(0, 4).map((event) => (
+              <div className="vision-list-row" key={event.id}>
+                <span className="icon-tile"><event.Icon size={15} /></span>
+                <div>
+                  <strong>{event.label}</strong>
+                  <small>{event.sub}</small>
                 </div>
-                <button
-                  className="bill-pay"
-                  onClick={() => {
-                    const v = prompt(`Add to ${g.name}:`);
-                    const n = v ? parseFloat(v) : 0;
-                    if (n > 0) contributeGoal(g.id, n);
-                  }}
-                >
-                  + Add
-                </button>
-                <button className="x" onClick={() => deleteGoal(g.id)} aria-label="Delete goal">×</button>
+                <b>{formatMoney(event.amount, data.currency)}</b>
               </div>
-            );
-          })
-        )}
-      </div>
-      {goalOpen ? (
-        <div className="card">
-          <div className="field">
-            <label>What are you saving for?</label>
-            <input value={gName} onChange={(e) => setGName(e.target.value)} placeholder="Emergency fund" autoFocus />
+            ))}
+            {eventList.length === 0 && (
+              <EmptyState
+                Icon={CalendarDays}
+                title="No money events yet"
+                body="Add bills, subscriptions, or goal dates so your calendar becomes useful."
+                action="Add bill or event"
+                href="/bills"
+              />
+            )}
           </div>
-          <div className="emoji-pick">
-            {GOAL_EMOJIS.map((e) => (
-              <button key={e} className={"emoji-opt" + (gEmoji === e ? " on" : "")} onClick={() => setGEmoji(e)} style={gEmoji === e ? { borderColor: gColor } : undefined}>{e}</button>
+          <Link href="/bills" className="text-link">View full calendar <ArrowRight size={14} /></Link>
+        </article>
+
+        <article className="vision-card span-3">
+          <div className="vision-card-title"><span>Category Budgets</span><Link href="/settings">Edit</Link></div>
+          <div className="budget-bars">
+            {budgets.slice(0, 5).map((b) => (
+              <div className="budget-bar-row" key={b.category}>
+                <div>
+                  <strong>{b.category}</strong>
+                  <span>{formatMoney(b.spent, data.currency)} of {formatMoney(b.limit, data.currency)}</span>
+                </div>
+                <div className="mini-progress"><span style={{ width: `${Math.min(100, b.pct)}%` }} /></div>
+              </div>
+            ))}
+            {budgets.length === 0 && (
+              <EmptyState
+                Icon={Target}
+                title="No category budgets"
+                body="Create budgets for groceries, dining, bills, and other repeat categories."
+                action="Create budgets"
+                href="/settings"
+              />
+            )}
+          </div>
+        </article>
+
+        <article className="vision-card span-3">
+          <div className="vision-card-title"><span>Savings Goals</span><Link href="/settings">See all</Link></div>
+          <div className="budget-bars">
+            {goals.slice(0, 4).map((g) => (
+              <div className="budget-bar-row" key={g.id}>
+                <div>
+                  <strong>{g.name}</strong>
+                  <span>{formatMoney(g.saved, data.currency)} of {formatMoney(g.target, data.currency)}</span>
+                </div>
+                <div className="mini-progress"><span style={{ width: `${clampPct((g.saved / g.target) * 100)}%` }} /></div>
+              </div>
+            ))}
+            {goals.length === 0 && (
+              <EmptyState
+                Icon={PiggyBank}
+                title="No savings goals yet"
+                body="Create your first goal to protect your future."
+                action="Create first goal"
+                href="/settings"
+              />
+            )}
+          </div>
+          <button className="soft-button full"><Plus size={14} /> Add New Goal</button>
+        </article>
+
+        <article className="vision-card span-3">
+          <div className="vision-card-title"><span>Protected Funds</span><small>From goals</small></div>
+          <div className="budget-bars">
+            {protectedFunds.map((fund) => (
+              <div className="budget-bar-row" key={fund.id}>
+                <div>
+                  <strong><PiggyBank size={13} /> {fund.name}</strong>
+                  <span>
+                    {formatMoney(fund.saved, data.currency)} of {formatMoney(fund.target, data.currency)}
+                    {fund.monthlyContribution ? ` - ${formatMoney(fund.monthlyContribution, data.currency)}/mo` : ""}
+                  </span>
+                </div>
+                <div className="mini-progress"><span style={{ width: `${clampPct((fund.saved / fund.target) * 100)}%` }} /></div>
+              </div>
+            ))}
+            {protectedFunds.length === 0 && (
+              <EmptyState
+                Icon={ShieldCheck}
+                title="No protected funds yet"
+                body="Create a goal with a monthly contribution to protect money before you spend it."
+                action="Add protected fund"
+                href="/settings"
+              />
+            )}
+          </div>
+          <Link href="/settings" className="soft-button full"><Plus size={14} /> Add New Fund</Link>
+        </article>
+
+        <article className="vision-card span-3">
+          <div className="vision-card-title"><span>Automation</span><small>Manage</small></div>
+          <div className="toggle-list">
+            {automationRows.map((row) => (
+              <div className="toggle-row" key={row.label}>
+                <span><row.Icon size={14} /> {row.label}</span>
+                <i>{row.active ? <Check size={12} /> : <Wallet size={12} />}</i>
+              </div>
+            ))}
+            {automationRows.length === 0 && (
+              <EmptyState
+                Icon={Wallet}
+                title="No automations yet"
+                body="Set reminders, bill auto-log, or goal contributions to make the plan run quietly."
+                action="Set automation"
+                href="/settings"
+              />
+            )}
+          </div>
+          <Link href="/settings" className="text-link">View all automations <ArrowRight size={14} /></Link>
+        </article>
+
+        <article className="vision-card span-12 roadmap">
+          <div className="milestones">
+            {[
+              ["1 Month", "Build Momentum", data.transactions.length > 0],
+              ["3 Months", "Emergency Fund", hasEmergencyFund],
+              ["6 Months", "Debt Freedom", debtTotal === 0 && data.debts.length > 0],
+              ["12 Months", "Financial Freedom", plan.leftover > 0 && goals.length > 0],
+              ["3 Years", "Future You", plan.leftover > 500 && goals.length > 0],
+            ].map(([time, label, done]) => (
+              <div className={done ? "milestone done" : "milestone"} key={String(label)}>
+                <i>{done ? <Check size={14} /> : <Target size={14} />}</i>
+                <strong>{time}</strong>
+                <span>{label}</span>
+              </div>
             ))}
           </div>
-          <div className="color-pick">
-            {MEMBER_COLORS.map((c) => (
-              <button key={c} className={"color-opt" + (gColor === c ? " on" : "")} style={{ background: c }} onClick={() => setGColor(c)} aria-label="colour" />
-            ))}
+          <div className="roadmap-copy">
+            <strong>Big plans start with small steps.</strong>
+            <span>You are building a future of freedom and peace of mind.</span>
           </div>
-          <div className="row">
-            <div className="field">
-              <label>Target</label>
-              <input value={gTarget} onChange={(e) => setGTarget(e.target.value)} inputMode="decimal" placeholder="1000" />
-            </div>
-            <div className="field">
-              <label>Monthly (optional)</label>
-              <input value={gMonthly} onChange={(e) => setGMonthly(e.target.value)} inputMode="decimal" placeholder="100" />
-            </div>
-          </div>
-          <div className="capture-actions">
-            <button className="btn btn-ghost" onClick={() => setGoalOpen(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={saveGoal}>Save goal</button>
-          </div>
-        </div>
-      ) : (
-        <button className="btn btn-ghost btn-block" onClick={() => setGoalOpen(true)}>+ Add a savings goal</button>
-      )}
-
-      {/* Category budgets */}
-      <div className="section-h">
-        <h2>Spending budgets</h2>
-      </div>
-      <div className="card">
-        {data.budgets.length === 0 ? (
-          <div className="empty">Cap a category (e.g. Dining) to keep it in check.</div>
-        ) : (
-          data.budgets.map((b) => (
-            <div className="item" key={b.category}>
-              <div className="ic">🎯</div>
-              <div className="meta">
-                <div className="t">{b.category}</div>
-                <div className="s">{formatMoney(b.limit, data.currency)} / month</div>
-              </div>
-              <button className="x" onClick={() => removeBudget(b.category)} aria-label="Remove">×</button>
-            </div>
-          ))
-        )}
-        <div className="row" style={{ marginTop: 10 }}>
-          <input className="mini-input" value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Category" />
-          <input className="mini-input" value={newLimit} onChange={(e) => setNewLimit(e.target.value)} inputMode="decimal" placeholder="Limit" style={{ maxWidth: 110 }} />
-        </div>
-        <button className="btn btn-ghost btn-block" onClick={saveBudget} style={{ marginTop: 10 }}>Set budget</button>
-      </div>
-
-      {/* Bills summary */}
-      <div className="section-h">
-        <h2>Recurring bills</h2>
-        <Link href="/bills">Manage →</Link>
-      </div>
-      <Link href="/bills" className="card" style={{ display: "block" }}>
-        <div className="alloc-row total" style={{ borderBottom: "none" }}>
-          <span>{bills.length} bill{bills.length === 1 ? "" : "s"} · {formatMoney(billsTotal, data.currency)}/mo</span>
-          <span className="muted">{formatMoney(billsPaid, data.currency)} paid →</span>
-        </div>
-      </Link>
+        </article>
+      </section>
     </main>
   );
 }

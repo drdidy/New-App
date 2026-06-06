@@ -39,7 +39,7 @@ export default function CheckInBanner() {
   function start() {
     markCheckIn();
     sessionStorage.setItem("mc-checkin", "1");
-    router.push("/advisor");
+    router.push("/coach");
   }
 
   return (

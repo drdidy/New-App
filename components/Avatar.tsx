@@ -11,7 +11,7 @@ export default function Avatar({
   member?: Member;
   size?: number;
 }) {
-  const color = member?.color || "#5fe0a6";
+  const color = member?.color || "#8dbbff";
   return (
     <span
       className="avatar"

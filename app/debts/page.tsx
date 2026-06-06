@@ -1,374 +1,203 @@
 "use client";
 
-import { useState } from "react";
+import {
+  ArrowRight,
+  BadgeDollarSign,
+  CalendarClock,
+  CheckCircle2,
+  CreditCard,
+  Flag,
+  Landmark,
+  Mountain,
+  Snowflake,
+  TrendingDown,
+} from "lucide-react";
 import { useStore } from "@/lib/store";
 import { payoffPlan, simulatePayoff } from "@/lib/insights";
-import { formatMoney, clampPct } from "@/lib/format";
-import type { DebtDirection } from "@/lib/types";
+import { clampPct, formatMoney } from "@/lib/format";
 import Ring from "@/components/Ring";
-import Avatar from "@/components/Avatar";
-import MemberPicker from "@/components/MemberPicker";
-
-const STRATEGIES = [
-  { title: "Snowball", body: "Pay the smallest balance first for fast wins and motivation." },
-  { title: "Avalanche", body: "Pay the highest APR first to reduce interest cost." },
-  { title: "Hybrid", body: "Clear one small debt, then switch extra money to the highest APR." },
-  { title: "Minimum shield", body: "Automate minimums first so fees and credit damage do not pile on." },
-  { title: "Negotiate", body: "Ask lenders for hardship plans, APR reductions, or payment dates that match payday." },
-];
-
-const CURB_IDEAS = [
-  "Freeze new borrowing while the payoff plan is active.",
-  "Move one flexible category down by 10% and send the difference to debt.",
-  "Use receipts to spot grocery subcategories that are quietly inflating.",
-  "Route windfalls and refunds to the current target debt before spending them.",
-  "Keep a small emergency buffer so surprise costs do not become new debt.",
-];
+import Sparkline from "@/components/Sparkline";
+import { EmptyState, PageHeader } from "@/components/PremiumUI";
 
 export default function DebtsPage() {
-  const { data, ready, addDebt, payDebt, deleteDebt, member } = useStore();
-  const [open, setOpen] = useState(false);
-  const [method, setMethod] = useState<"snowball" | "avalanche">("snowball");
-  const [direction, setDirection] = useState<DebtDirection>("i_owe");
-  const [party, setParty] = useState("");
-  const [balance, setBalance] = useState("");
-  const [apr, setApr] = useState("");
-  const [minPayment, setMinPayment] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [who, setWho] = useState<string | undefined>(undefined);
-  const [extra, setExtra] = useState(0);
-
+  const { data, ready, payDebt } = useStore();
   if (!ready) return null;
 
-  const multi = data.members.length > 1;
-  const iOwe = data.debts.filter((d) => d.direction === "i_owe");
-  const owedToMe = data.debts.filter((d) => d.direction === "owed_to_me");
-  const plan = payoffPlan(data, method);
-  const totalOwe = iOwe.reduce((s, d) => s + d.balance, 0);
-
-  const base = simulatePayoff(data, method, 0);
-  const sim = simulatePayoff(data, method, extra);
-  const monthsSaved =
-    base.months != null && sim.months != null ? base.months - sim.months : null;
-  const interestSaved = base.totalInterest - sim.totalInterest;
-  const freeDate =
-    sim.months != null
-      ? new Date(new Date().getFullYear(), new Date().getMonth() + sim.months, 1)
-      : null;
-
-  function save() {
-    const bal = parseFloat(balance);
-    if (!party.trim() || !bal || bal <= 0) return;
-    addDebt({
-      direction,
-      party: party.trim(),
-      balance: bal,
-      original: bal,
-      apr: apr ? parseFloat(apr) : undefined,
-      minPayment: minPayment ? parseFloat(minPayment) : undefined,
-      dueDate: dueDate || undefined,
-      memberId: who ?? data.members[0]?.id,
-    });
-    setParty("");
-    setBalance("");
-    setApr("");
-    setMinPayment("");
-    setDueDate("");
-    setOpen(false);
-  }
-
-  function quickPay(id: string) {
-    const v = prompt("How much did you pay?");
-    if (!v) return;
-    const n = parseFloat(v);
-    if (n > 0) payDebt(id, n);
-  }
+  const debts = data.debts.filter((d) => d.direction === "i_owe" && d.balance > 0);
+  const total = debts.reduce((sum, d) => sum + d.balance, 0);
+  const original = debts.reduce((sum, d) => sum + (d.original || d.balance), 0);
+  const paidPct = original ? clampPct(((original - total) / original) * 100) : 0;
+  const snowball = payoffPlan(data, "snowball", 75);
+  const avalanche = payoffPlan(data, "avalanche", 75);
+  const sim = simulatePayoff(data, "snowball", 75);
+  const base = simulatePayoff(data, "snowball", 0);
+  const interestSaved = Math.max(0, base.totalInterest - sim.totalInterest);
+  const monthlyMin = debts.reduce((sum, d) => sum + (d.minPayment || 0), 0);
+  const targetDate = snowball.months
+    ? new Date(new Date().getFullYear(), new Date().getMonth() + snowball.months, 1)
+    : null;
+  const nextDebt = [...debts].sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""))[0];
+  const hasDebt = debts.length > 0;
 
   return (
-    <main>
-      <h1 className="h-title">Debts &amp; IOUs</h1>
-      <p className="h-sub">Everything you owe and everything owed to you.</p>
+    <main className="vision-page debt-dashboard">
+      <PageHeader
+        title={hasDebt ? "You have a plan. Let's crush this debt." : "Protect your debt-free progress"}
+        subtitle={hasDebt ? "Stay disciplined, follow your plan, and freedom is closer than you think." : "Add debts if you have them, or keep this page as your payoff safety plan."}
+        action={<div className="encouragement"><Flag size={20} aria-hidden="true" /> {hasDebt ? "Keep it up. You are doing great." : "Protection mode"}</div>}
+      />
 
-      {/* Payoff plan */}
-      {iOwe.length > 0 && (
-        <div className="card hero reveal" style={{ marginBottom: 16 }}>
-          <div className="plan-head">
-            <div>
-              <div className="label">Total you owe</div>
-              <div className="big neg" style={{ fontSize: 36 }}>
-                {formatMoney(totalOwe, data.currency)}
-              </div>
+      <section className="vision-grid debt-grid">
+        <article className="vision-card metric-card span-3">
+          <span>Total Debt Balance</span>
+          <strong>{formatMoney(total, data.currency)}</strong>
+          <small>{hasDebt ? `Across ${debts.length} account${debts.length === 1 ? "" : "s"}` : "No active debt added"}</small>
+        </article>
+
+        <article className="vision-card center-card span-3">
+          <div className="vision-card-title"><span>Debt Free Progress</span></div>
+          <Ring pct={paidPct} size={150} stroke={12} color="#84d6a5">
+            <strong>{hasDebt ? `${Math.round(paidPct)}%` : "✓"}</strong>
+            <span>{hasDebt ? `${formatMoney(original - total, data.currency)} paid off` : "Protected"}</span>
+          </Ring>
+          <div className="mini-progress"><span style={{ width: `${paidPct}%` }} /></div>
+        </article>
+
+        <article className="vision-card metric-card span-3">
+          <span>Target Debt Free Date</span>
+          <strong className={!targetDate ? "metric-phrase" : undefined}>{targetDate ? targetDate.toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Add payments"}</strong>
+          <small>{snowball.months ? `In ${snowball.months} months` : "Ready to calculate"}</small>
+        </article>
+
+        <article className="vision-card metric-card span-3">
+          <span>Interest Saved</span>
+          <strong className={!hasDebt ? "metric-phrase" : undefined}>{hasDebt ? formatMoney(interestSaved, data.currency) : "Ready"}</strong>
+          <small>{hasDebt ? "By adding $75 monthly" : "Ready to calculate"}</small>
+        </article>
+
+        <article className="vision-card span-5">
+          <div className="vision-card-title">
+            <span>Choose Your Payoff Strategy</span>
+            <small>Pick the strategy that motivates you most.</small>
+          </div>
+          <div className={"strategy-choice" + (!hasDebt ? " muted-preview" : "")}>
+            <div className="strategy-option selected">
+              <div><Snowflake size={22} /><strong>Snowball</strong><span>Recommended</span></div>
+              <p>{hasDebt ? "Pay off smallest balances first to build momentum." : "Add debts to compare payoff strategies."}</p>
+              <small>Estimated time: {snowball.months ? `${snowball.months} months` : "Add debts first"}</small>
+            </div>
+            <div className="strategy-option">
+              <div><Mountain size={22} /><strong>Avalanche</strong></div>
+              <p>{hasDebt ? "Save the most by paying highest interest debt first." : "Compare APR impact once accounts are added."}</p>
+              <small>Estimated time: {avalanche.months ? `${avalanche.months} months` : "Add debts first"}</small>
             </div>
           </div>
-          <div className="seg" style={{ marginTop: 6 }}>
-            <button
-              className={"seg-btn" + (method === "snowball" ? " on" : "")}
-              onClick={() => setMethod("snowball")}
-            >
-              ❄️ Snowball
-            </button>
-            <button
-              className={"seg-btn" + (method === "avalanche" ? " on" : "")}
-              onClick={() => setMethod("avalanche")}
-            >
-              🏔️ Avalanche
-            </button>
-          </div>
-          <p className="plan-note">
-            {method === "snowball"
-              ? "Pay the smallest balance first — quick wins keep you motivated."
-              : "Pay the highest interest first — saves you the most money overall."}
-            {plan.months
-              ? ` At your current minimums, you'd be debt-free in about ${plan.months} month${plan.months === 1 ? "" : "s"}.`
-              : ""}
-          </p>
-          <div className="plan-order">
-            {plan.order.map((d, i) => (
-              <div className="plan-step" key={d.id}>
-                <span className="plan-num">{i + 1}</span>
-                <span className="plan-party">{d.party}</span>
-                <span className="plan-amt">{formatMoney(d.balance, data.currency)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        </article>
 
-      {/* What-if simulator */}
-      {iOwe.length > 0 && (
-        <div className="card reveal" style={{ marginBottom: 16 }}>
-          <div className="card-h">What if you paid extra?</div>
-          <div className="whatif-val">
-            <span className="h-sub" style={{ margin: 0 }}>Extra per month</span>
-            <span className="whatif-amount">{formatMoney(extra, data.currency)}</span>
+        <article className="vision-card span-7">
+          <div className="vision-card-title">
+            <span>Payoff Projection</span>
+            <small>Payoff by {targetDate ? targetDate.toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "plan date"}</small>
           </div>
-          <input
-            type="range"
-            className="slider"
-            min={0}
-            max={2000}
-            step={25}
-            value={extra}
-            onChange={(e) => setExtra(parseInt(e.target.value, 10))}
-          />
-          <div className="whatif-result">
-            <div className="whatif-stat">
-              <div className="v">
-                {freeDate
-                  ? freeDate.toLocaleDateString(undefined, { month: "short", year: "numeric" })
-                  : "—"}
-              </div>
-              <div className="l">Debt-free</div>
-            </div>
-            <div className="whatif-stat">
-              <div className="v pos">
-                {monthsSaved && monthsSaved > 0 ? `${monthsSaved} mo` : "—"}
-              </div>
-              <div className="l">Sooner</div>
-            </div>
-            <div className="whatif-stat">
-              <div className="v pos">
-                {interestSaved > 1 ? formatMoney(interestSaved, data.currency) : "—"}
-              </div>
-              <div className="l">Interest saved</div>
-            </div>
-          </div>
-          {extra > 0 && monthsSaved != null && monthsSaved > 0 && (
-            <p className="plan-note" style={{ marginBottom: 0 }}>
-              Putting an extra {formatMoney(extra, data.currency)}/mo toward your debts
-              clears them <strong>{monthsSaved} month{monthsSaved === 1 ? "" : "s"} sooner</strong>
-              {interestSaved > 1 ? ` and saves about ${formatMoney(interestSaved, data.currency)} in interest.` : "."}
-            </p>
-          )}
-        </div>
-      )}
-
-      {iOwe.length > 0 && (
-        <div className="card reveal" style={{ marginBottom: 16 }}>
-          <div className="card-h">Ways to attack the debt</div>
-          <div className="strategy-grid">
-            {STRATEGIES.map((s) => (
-              <div className="strategy" key={s.title}>
-                <div className="strategy-title">{s.title}</div>
-                <div className="strategy-body">{s.body}</div>
-              </div>
-            ))}
-          </div>
-          <div className="card-h" style={{ marginTop: 14 }}>Curb new debt</div>
-          <ul className="advice-list">
-            {CURB_IDEAS.map((idea) => (
-              <li key={idea}>{idea}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="section-h">
-        <h2>You owe</h2>
-        <span className="pill owe">{formatMoney(totalOwe, data.currency)}</span>
-      </div>
-      <div className="card">
-        {iOwe.length === 0 ? (
-          <div className="empty">Nothing here. You are clear for now.</div>
-        ) : (
-          iOwe.map((d) => {
-            const original = d.original || d.balance;
-            const paidPct = clampPct(((original - d.balance) / original) * 100);
-            const m = member(d.memberId);
-            return (
-              <div className="item" key={d.id}>
-                <Ring pct={paidPct} size={46} stroke={5} color="#bc5446">
-                  <span className="ring-pct">{Math.round(paidPct)}%</span>
-                </Ring>
-                <div className="meta">
-                  <div className="t">{d.party}</div>
-                  <div className="s">
-                    {d.apr ? `${d.apr}% APR` : "No interest"}
-                    {d.minPayment
-                      ? ` · min ${formatMoney(d.minPayment, data.currency)}`
-                      : ""}
-                    {d.dueDate ? ` · due ${d.dueDate}` : ""}
-                    {multi && m ? ` · ${m.emoji}` : ""}
-                  </div>
-                </div>
-                <div className="amt out">{formatMoney(d.balance, data.currency)}</div>
-                <button className="x" onClick={() => quickPay(d.id)} aria-label="Pay">
-                  Pay
-                </button>
-                <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
-                  ×
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      <div className="section-h">
-        <h2>Owed to you</h2>
-        <span className="pill owed">
-          {formatMoney(
-            owedToMe.reduce((s, d) => s + d.balance, 0),
-            data.currency,
-          )}
-        </span>
-      </div>
-      <div className="card">
-        {owedToMe.length === 0 ? (
-          <div className="empty">No one owes you right now.</div>
-        ) : (
-          owedToMe.map((d) => {
-            const m = member(d.memberId);
-            return (
-              <div className="item" key={d.id}>
-                <div className="ic">🙋</div>
-                <div className="meta">
-                  <div className="t">{d.party}</div>
-                  <div className="s">Owes {multi && m ? m.name.split(" ")[0] : "you"}</div>
-                </div>
-                <div className="amt in">{formatMoney(d.balance, data.currency)}</div>
-                <button className="x" onClick={() => quickPay(d.id)} aria-label="Mark repaid">
-                  Paid
-                </button>
-                <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
-                  ×
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {open ? (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="field">
-            <label>Type</label>
-            <select
-              value={direction}
-              onChange={(e) => setDirection(e.target.value as DebtDirection)}
-            >
-              <option value="i_owe">I owe someone</option>
-              <option value="owed_to_me">Someone owes me</option>
-            </select>
-          </div>
-          {multi && (
-            <div className="field">
-              <label>Whose is it?</label>
-              <MemberPicker members={data.members} value={who ?? data.members[0]?.id} onChange={setWho} size="sm" />
-            </div>
-          )}
-          <div className="field">
-            <label>Who / what</label>
-            <input
-              value={party}
-              onChange={(e) => setParty(e.target.value)}
-              placeholder="James, Visa card, landlord…"
-            />
-          </div>
-          <div className="field">
-            <label>Amount</label>
-            <input
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              inputMode="decimal"
-              placeholder="200"
-            />
-          </div>
-          {direction === "i_owe" && (
-            <div className="row">
-              <div className="field">
-                <label>APR % (optional)</label>
-                <input
-                  value={apr}
-                  onChange={(e) => setApr(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="19.9"
-                />
-              </div>
-              <div className="field">
-                <label>Min payment (optional)</label>
-                <input
-                  value={minPayment}
-                  onChange={(e) => setMinPayment(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="35"
-                />
-              </div>
-            </div>
-          )}
-          {direction === "i_owe" && (
-            <div className="field">
-              <label>Next due date (optional)</label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+          {hasDebt ? (
+            <>
+              <Sparkline
+                values={[total, total * 0.86, total * 0.7, total * 0.52, total * 0.34, total * 0.18, 0]}
+                labels={["Now", "+3m", "+6m", "+9m", "+12m", "+15m", "Free"]}
+                color="#6EE7A8"
+                height={210}
               />
-            </div>
+              <p className="plan-note">Stick to your plan and you will be debt free faster.</p>
+            </>
+          ) : (
+            <EmptyState
+              Icon={TrendingDown}
+              title="Your payoff projection will appear here"
+              body="Add credit cards, loans, or payment plans to generate a payoff path."
+              action="Add debt account"
+              href="/settings"
+            />
           )}
-          <div className="capture-actions">
-            <button className="btn btn-ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={save}>
-              Save
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          className="btn btn-primary btn-block"
-          style={{ marginTop: 14 }}
-          onClick={() => setOpen(true)}
-        >
-          + Add a debt or IOU
-        </button>
-      )}
+        </article>
 
-      <p className="hint" style={{ marginTop: 12, textAlign: "center" }}>
-        Tip: you can also just say{" "}
-        <strong>&quot;I owe James 200&quot;</strong> on the Home screen.
-      </p>
+        <article className="vision-card span-8">
+          <div className="vision-card-title"><span>Your Debt Accounts</span></div>
+          <div className="debt-table">
+            <div className="debt-head">
+              <span>Account</span><span>Balance</span><span>APR</span><span>Min.</span><span>Progress</span>
+            </div>
+            {debts.map((d) => {
+              const pct = d.original ? clampPct(((d.original - d.balance) / d.original) * 100) : 0;
+              return (
+                <div className="debt-row" key={d.id}>
+                  <span><CreditCard size={15} /> {d.party}</span>
+                  <b>{formatMoney(d.balance, data.currency)}</b>
+                  <span>{d.apr ? `${d.apr}%` : "0%"}</span>
+                  <span>{formatMoney(d.minPayment || 0, data.currency)}</span>
+                  <span className="table-progress"><i style={{ width: `${pct}%` }} />{Math.round(pct)}%</span>
+                </div>
+              );
+            })}
+            {debts.length === 0 && (
+              <EmptyState
+                Icon={CreditCard}
+                title="No debt accounts added"
+                body="Add credit cards, loans, or payment plans to track progress."
+                action="Add debt account"
+                href="/settings"
+                secondary="Not carrying debt? Great — keep this section as your protection plan."
+              />
+            )}
+          </div>
+        </article>
+
+        <article className="vision-card span-4">
+          <div className="vision-card-title"><span>Your Monthly Debt Plan</span></div>
+          {hasDebt ? (
+            <>
+              <div className="debt-plan-list">
+                <div><span>Minimum Payments</span><b>{formatMoney(monthlyMin, data.currency)}</b></div>
+                <div><span>Extra Payment</span><b>{formatMoney(75, data.currency)}</b></div>
+                <div className="total"><span>Total Monthly Payment</span><b>{formatMoney(monthlyMin + 75, data.currency)}</b></div>
+              </div>
+              {nextDebt && (
+                <button className="soft-button full" onClick={() => payDebt(nextDebt.id, 75)}>
+                  Add $75 to {nextDebt.party}
+                </button>
+              )}
+              <div className="next-payment">
+                <CalendarClock size={15} />
+                <span>Next payment due</span>
+                <b>{nextDebt?.dueDate || "Not set"}</b>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              Icon={CalendarClock}
+              title="No minimum payments yet"
+              body="Add accounts to build your monthly debt plan."
+              action="Add debt account"
+              href="/settings"
+            />
+          )}
+        </article>
+
+        <article className="vision-card span-12 debt-advice">
+          {[
+            ["Strategic Payoff Plans", "Snowball or Avalanche. Choose what drives you.", BadgeDollarSign],
+            ["Clear Progress Tracking", "See how close you are and stay motivated.", TrendingDown],
+            ["Smart Projections", "Know your payoff date and interest savings.", CalendarClock],
+            ["Actionable Guidance", "Personalized tips to help you stay on track.", CheckCircle2],
+            ["Debt Freedom", "A clear path to a stronger financial life.", Landmark],
+          ].map(([title, body, Icon]) => (
+            <div key={String(title)}>
+              <Icon size={24} />
+              <strong>{String(title)}</strong>
+              <span>{String(body)}</span>
+            </div>
+          ))}
+        </article>
+      </section>
     </main>
   );
 }
