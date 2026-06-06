@@ -62,6 +62,17 @@ Environment Variables), open the URL on your phone, then:
 
 It'll open like a native app, full-screen, with its own icon.
 
+## Privacy and sync
+
+Money Coach is local-first: the household budget is stored in this browser by
+default. AI features send only the note, receipt image, or Coach snapshot you
+choose to analyze to the server-side Claude API. Optional cross-device sync
+stores a shared household blob in KV when `KV_REST_API_URL`,
+`KV_REST_API_TOKEN`, and a 32+ character `SYNC_KEY_SECRET` are configured.
+
+Money Coach provides educational planning help only. It cannot move money,
+access bank accounts, or replace a licensed financial professional.
+
 ## How the AI works
 
 | Endpoint | What it does |

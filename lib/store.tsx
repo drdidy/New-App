@@ -24,6 +24,7 @@ import type {
 } from "./types";
 import { uid, todayISO, monthKey } from "./format";
 import { mergeData, sanitizeForSync } from "./merge";
+import { parseAppDataInput } from "./validation";
 
 const STORAGE_KEY = "money-coach-data-v1";
 const CURRENT_VERSION = 2;
@@ -61,8 +62,12 @@ function touch<T extends { createdAt?: number; updatedAt?: number }>(x: T, now =
 function migrate(raw: any): AppData {
   const base = freshData();
   if (!raw || typeof raw !== "object") return base;
+  const now = Date.now();
 
-  const members: Member[] = Array.isArray(raw.members) ? raw.members : [];
+  const members: Member[] = (Array.isArray(raw.members) ? raw.members : []).map((m: Member) => ({
+    ...m,
+    updatedAt: m.updatedAt || raw.settingsUpdatedAt || now,
+  }));
   // v1 had no members — create a default one and attribute existing items to it.
   let defaultMemberId: string | undefined;
   if (members.length === 0) {
@@ -73,6 +78,7 @@ function migrate(raw: any): AppData {
       emoji: "🦊",
       color: "#5fe0a6",
       monthlyIncome: raw.monthlyIncome,
+      updatedAt: now,
     });
   }
 
@@ -80,20 +86,20 @@ function migrate(raw: any): AppData {
     x.memberId ? x : { ...x, memberId: members[0]?.id };
 
   const transactions: Transaction[] = (raw.transactions || []).map((t: Transaction) =>
-    touch(attribute(t), t.updatedAt || t.createdAt || Date.now()),
+    touch(attribute(t), t.updatedAt || t.createdAt || now),
   );
   const debts: Debt[] = (raw.debts || []).map((d: Debt) => ({
-    ...touch(attribute(d), d.updatedAt || d.createdAt || Date.now()),
+    ...touch(attribute(d), d.updatedAt || d.createdAt || now),
     original: d.original ?? d.balance,
   }));
   const recurringBills: RecurringBill[] = (Array.isArray(raw.recurringBills) ? raw.recurringBills : []).map(
-    (b: RecurringBill) => touch(attribute(b), b.updatedAt || b.createdAt || Date.now()),
+    (b: RecurringBill) => touch(attribute(b), b.updatedAt || b.createdAt || now),
   );
   const goals: Goal[] = (Array.isArray(raw.goals) ? raw.goals : []).map((g: Goal) =>
-    touch(attribute(g), g.updatedAt || g.createdAt || Date.now()),
+    touch(attribute(g), g.updatedAt || g.createdAt || now),
   );
   const accounts: Account[] = (Array.isArray(raw.accounts) ? raw.accounts : []).map((a: Account) =>
-    touch(attribute(a), a.updatedAt || a.createdAt || Date.now()),
+    touch(attribute(a), a.updatedAt || a.createdAt || now),
   );
 
   const hadData = transactions.length > 0 || debts.length > 0;
@@ -107,7 +113,9 @@ function migrate(raw: any): AppData {
     members,
     transactions,
     debts,
-    budgets: Array.isArray(raw.budgets) ? raw.budgets : [],
+    budgets: Array.isArray(raw.budgets)
+      ? raw.budgets.map((b: Budget) => ({ ...b, updatedAt: b.updatedAt || raw.settingsUpdatedAt || now }))
+      : [],
     recurringBills,
     goals,
     accounts,
@@ -128,6 +136,7 @@ function migrate(raw: any): AppData {
 interface StoreContextValue {
   data: AppData;
   ready: boolean;
+  storageError?: string;
   member: (id?: string) => Member | undefined;
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => void;
   deleteTransaction: (id: string) => void;
@@ -174,6 +183,7 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppData>(freshData);
   const [ready, setReady] = useState(false);
+  const [storageError, setStorageError] = useState("");
 
   // Load once on mount.
   useEffect(() => {
@@ -181,7 +191,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) setData(migrate(JSON.parse(raw)));
     } catch {
-      /* ignore corrupt storage */
+      setStorageError("Saved data looked corrupt, so Money Coach opened a fresh local copy.");
     }
     setReady(true);
   }, []);
@@ -191,8 +201,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      setStorageError("");
     } catch {
-      /* storage full or unavailable */
+      setStorageError("This browser could not save your latest changes. Back up your data and free storage.");
     }
   }, [data, ready]);
 
@@ -544,14 +555,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addMember = useCallback((m: Omit<Member, "id">) => {
     const id = uid();
-    setData((d) => ({ ...d, members: [...d.members, { ...m, id }] }));
+    setData((d) => ({ ...d, members: [...d.members, { ...m, id, updatedAt: Date.now() }] }));
     return id;
   }, []);
 
   const updateMember = useCallback((id: string, patch: Partial<Member>) => {
     setData((d) => ({
       ...d,
-      members: d.members.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+      members: d.members.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: Date.now() } : m)),
     }));
   }, []);
 
@@ -575,10 +586,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const setBudget = useCallback((category: string, limit: number) => {
     setData((d) => {
+      const now = Date.now();
       const exists = d.budgets.some((b) => b.category === category);
       const budgets = exists
-        ? d.budgets.map((b) => (b.category === category ? { ...b, limit } : b))
-        : [...d.budgets, { category, limit }];
+        ? d.budgets.map((b) => (b.category === category ? { ...b, limit, updatedAt: now } : b))
+        : [...d.budgets, { category, limit, updatedAt: now }];
       return {
         ...d,
         budgets,
@@ -819,7 +831,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const importData = useCallback((incoming: AppData) => {
     setData(() => {
-      const next = migrate(incoming);
+      const valid = parseAppDataInput(incoming);
+      if (!valid) return dataRef.current;
+      const next = migrate(valid);
       next.syncCode = undefined;
       next.syncEnabled = false;
       return next;
@@ -832,6 +846,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => ({
       data,
       ready,
+      storageError,
       member,
       addTransaction,
       deleteTransaction,
@@ -873,6 +888,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [
       data,
       ready,
+      storageError,
       member,
       addTransaction,
       deleteTransaction,

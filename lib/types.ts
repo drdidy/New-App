@@ -14,6 +14,7 @@ export interface Member {
   emoji: string; // avatar glyph, e.g. "🦊"
   color: string; // accent hue used in charts/avatars, e.g. "#5fe0a6"
   monthlyIncome?: number; // optional self-reported baseline
+  updatedAt?: number; // epoch ms; used by sync conflict resolution
 }
 
 export interface Transaction {
@@ -59,6 +60,7 @@ export interface Debt {
 export interface Budget {
   category: string;
   limit: number; // monthly cap
+  updatedAt?: number; // epoch ms; used by sync conflict resolution
 }
 
 // A savings goal / pot (emergency fund, holiday, new laptop…). `saved` grows as

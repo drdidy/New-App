@@ -4,6 +4,7 @@ import { mergeData, sanitizeForSync } from "@/lib/merge";
 import type { AppData } from "@/lib/types";
 import { createHash, createHmac } from "crypto";
 import { contentLengthOk, rateLimit, requestIp } from "@/lib/rateLimit";
+import { parseAppDataInput } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,10 @@ function validCode(code: unknown): code is string {
   return typeof code === "string" && codeValidAfterCleaning(code);
 }
 
+function syncConfigured(): boolean {
+  return kvConfigured() && Boolean(process.env.SYNC_KEY_SECRET && process.env.SYNC_KEY_SECRET.length >= 32);
+}
+
 export async function POST(req: NextRequest) {
   if (!contentLengthOk(req, 1_000_000)) {
     return NextResponse.json({ ok: false, error: "Request is too large." }, { status: 413 });
@@ -48,9 +53,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!kvConfigured()) {
+  if (!syncConfigured()) {
     return NextResponse.json(
-      { ok: false, configured: false, error: "Sync is not set up on the server." },
+      {
+        ok: false,
+        configured: false,
+        error: "Sync needs KV_REST_API_URL, KV_REST_API_TOKEN, and a 32+ character SYNC_KEY_SECRET.",
+      },
       { status: 200 },
     );
   }
@@ -80,19 +89,20 @@ export async function POST(req: NextRequest) {
   try {
     if (action === "pull") {
       const raw = await kvGet(key);
-      const data = raw ? (JSON.parse(raw) as AppData) : null;
+      const parsed = raw ? parseAppDataInput(JSON.parse(raw)) : null;
+      const data = parsed as AppData | null;
       return NextResponse.json({ ok: true, configured: true, data });
     }
 
     if (action === "push") {
-      const incoming = body.data as AppData;
+      const incoming = parseAppDataInput(body.data) as AppData | null;
       if (!incoming || typeof incoming !== "object") {
-        return NextResponse.json({ ok: false, error: "No data" }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Invalid household data." }, { status: 400 });
       }
       // Merge with whatever is already stored so simultaneous pushes from both
       // phones don't clobber each other.
       const raw = await kvGet(key);
-      const existing = raw ? (JSON.parse(raw) as AppData) : null;
+      const existing = raw ? (parseAppDataInput(JSON.parse(raw)) as AppData | null) : null;
       const merged = existing
         ? mergeData(existing, sanitizeForSync(incoming))
         : sanitizeForSync(incoming);

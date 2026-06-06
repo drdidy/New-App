@@ -1,7 +1,7 @@
 // Minimal offline-capable service worker for Money Coach.
 // Strategy: network-first for navigation/app shell, falling back to cache so
 // the app still opens when the phone is offline. API calls always go to network.
-const CACHE = "money-coach-v2";
+const CACHE = "money-coach-v3";
 const SHELL = [
   "/",
   "/plan",
@@ -15,6 +15,7 @@ const SHELL = [
   "/icon-192.png",
   "/icon-512.png",
   "/icon-maskable-512.png",
+  "/offline.html",
 ];
 
 self.addEventListener("install", (event) => {
@@ -48,6 +49,8 @@ self.addEventListener("fetch", (event) => {
         caches.open(CACHE).then((c) => c.put(request, copy).catch(() => {}));
         return res;
       })
-      .catch(() => caches.match(request).then((r) => r || caches.match("/"))),
+      .catch(() =>
+        caches.match(request).then((r) => r || caches.match("/offline.html") || caches.match("/")),
+      ),
   );
 });

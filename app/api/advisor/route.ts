@@ -48,7 +48,16 @@ export async function POST(req: NextRequest) {
   let snapshot: unknown = {};
   try {
     const body = await req.json();
-    messages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
+    messages = Array.isArray(body.messages)
+      ? body.messages
+          .filter(
+            (m: any) =>
+              (m?.role === "user" || m?.role === "assistant") &&
+              typeof m?.content === "string",
+          )
+          .slice(-12)
+          .map((m: any) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+      : [];
     snapshot = body.snapshot ?? {};
     if (JSON.stringify(snapshot).length > 150_000) {
       return NextResponse.json({ error: "That snapshot is too large." }, { status: 413 });

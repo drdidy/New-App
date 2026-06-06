@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClient, MODELS, hasApiKey } from "@/lib/anthropic";
 import { contentLengthOk, rateLimit, requestIp } from "@/lib/rateLimit";
+import { parseRequestSchema, parsedResponseSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -79,8 +80,11 @@ export async function POST(req: NextRequest) {
 
   let text = "";
   try {
-    const body = await req.json();
-    text = String(body.text || "").slice(0, 1000);
+    const body = parseRequestSchema.safeParse(await req.json());
+    if (!body.success) {
+      return NextResponse.json({ error: "Enter a shorter money note." }, { status: 400 });
+    }
+    text = body.data.text;
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
@@ -101,7 +105,7 @@ export async function POST(req: NextRequest) {
     } as any);
 
     const block = res.content.find((b: any) => b.type === "text");
-    const parsed = JSON.parse(block?.text || '{"entries":[]}');
+    const parsed = parsedResponseSchema.parse(JSON.parse(block?.text || '{"entries":[]}'));
     return NextResponse.json(parsed);
   } catch (err: any) {
     console.error("parse error", err?.message);

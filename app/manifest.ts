@@ -15,6 +15,29 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#d2723f",
     orientation: "portrait",
     categories: ["finance", "productivity"],
+    shortcuts: [
+      {
+        name: "Log spending",
+        short_name: "Log",
+        description: "Quickly capture an expense, income, or debt note.",
+        url: "/",
+        icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+      },
+      {
+        name: "Money Coach",
+        short_name: "Coach",
+        description: "Ask for a budget, debt, or weekly check-in plan.",
+        url: "/advisor",
+        icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+      },
+      {
+        name: "Debt plan",
+        short_name: "Debts",
+        description: "Review payoff strategy and payment ideas.",
+        url: "/debts",
+        icons: [{ src: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+      },
+    ],
     icons: [
       // PNGs first — Android/Chrome generate the home-screen icon most reliably
       // from these. 'maskable' fills Android's adaptive-icon shape; 'any' keeps

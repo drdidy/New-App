@@ -30,8 +30,8 @@ export function mergeData(a: AppData, b: AppData): AppData {
 
   const transactions = unionById(a.transactions, b.transactions, dead, txnTime);
   const debts = unionById(a.debts, b.debts, dead, recordTime);
-  let members = unionById(a.members, b.members, dead, () => 0);
-  const budgets = unionByKey(a.budgets, b.budgets, (x) => x.category, dead);
+  let members = unionById(a.members, b.members, dead, memberTime);
+  const budgets = unionByKey(a.budgets, b.budgets, (x) => x.category, dead, budgetTime);
   const recurringBills = unionById(
     a.recurringBills,
     b.recurringBills,
@@ -43,7 +43,8 @@ export function mergeData(a: AppData, b: AppData): AppData {
   // Net-worth history: one point per month, prefer the most recent writer.
   const nwMap = new Map<string, NetWorthPoint>();
   for (const p of [...(a.netWorthHistory || []), ...(b.netWorthHistory || [])]) {
-    nwMap.set(p.month, p);
+    const prev = nwMap.get(p.month);
+    if (!prev || stableStringify(p) >= stableStringify(prev)) nwMap.set(p.month, p);
   }
   const netWorthHistory = [...nwMap.values()].sort((x, y) =>
     x.month.localeCompare(y.month),
@@ -91,6 +92,14 @@ function recordTime<T extends { createdAt: number; updatedAt?: number }>(x: T): 
   return x.updatedAt || x.createdAt;
 }
 
+function memberTime(m: Member): number {
+  return m.updatedAt || 0;
+}
+
+function budgetTime(b: Budget): number {
+  return b.updatedAt || 0;
+}
+
 function unionById<T extends { id: string }>(
   a: T[] = [],
   b: T[] = [],
@@ -101,9 +110,12 @@ function unionById<T extends { id: string }>(
   for (const x of [...a, ...b]) {
     if (dead.has(x.id)) continue;
     const prev = map.get(x.id);
-    if (!prev || time(x) >= time(prev)) map.set(x.id, x);
+    if (!prev || isPreferred(x, prev, time)) map.set(x.id, x);
   }
-  return [...map.values()].sort((x, y) => time(y) - time(x));
+  return [...map.values()].sort((x, y) => {
+    const byTime = time(y) - time(x);
+    return byTime || x.id.localeCompare(y.id);
+  });
 }
 
 function unionByKey<T>(
@@ -111,18 +123,42 @@ function unionByKey<T>(
   b: T[] = [],
   key: (x: T) => string,
   dead: Set<string>,
+  time: (x: T) => number,
 ): T[] {
   const map = new Map<string, T>();
   for (const x of [...a, ...b]) {
     const k = key(x);
     if (dead.has("budget:" + k)) continue;
-    map.set(k, x);
+    const prev = map.get(k);
+    if (!prev || isPreferred(x, prev, time)) map.set(k, x);
   }
-  return [...map.values()];
+  return [...map.values()].sort((x, y) => key(x).localeCompare(key(y)));
 }
 
 function unionStrings(a: string[] = [], b: string[] = []): string[] {
-  return [...new Set([...(a || []), ...(b || [])])];
+  return [...new Set([...(a || []), ...(b || [])])].sort();
+}
+
+function isPreferred<T>(next: T, prev: T, time: (x: T) => number): boolean {
+  const nextTime = time(next);
+  const prevTime = time(prev);
+  if (nextTime !== prevTime) return nextTime > prevTime;
+  return stableStringify(next) >= stableStringify(prev);
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortKeys(value));
+}
+
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value as Record<string, unknown>)
+    .sort()
+    .reduce<Record<string, unknown>>((acc, key) => {
+      acc[key] = sortKeys((value as Record<string, unknown>)[key]);
+      return acc;
+    }, {});
 }
 
 // Strip local-only fields before writing to the shared cloud blob.

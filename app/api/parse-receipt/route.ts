@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClient, MODELS, hasApiKey } from "@/lib/anthropic";
 import { contentLengthOk, rateLimit, requestIp } from "@/lib/rateLimit";
+import { receiptResponseSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -111,7 +112,9 @@ export async function POST(req: NextRequest) {
     } as any);
 
     const block = res.content.find((b: any) => b.type === "text");
-    const parsed = JSON.parse(block?.text || '{"found":false,"amount":0,"items":[]}');
+    const parsed = receiptResponseSchema.parse(
+      JSON.parse(block?.text || '{"found":false,"amount":0,"items":[]}'),
+    );
     return NextResponse.json(parsed);
   } catch (err: any) {
     console.error("receipt error", err?.message);
