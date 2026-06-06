@@ -209,7 +209,7 @@ export default function DebtsPage() {
       </div>
       <div className="card">
         {iOwe.length === 0 ? (
-          <div className="empty">Nothing here. Nice. 🎉</div>
+          <div className="empty">Nothing here. You are clear for now.</div>
         ) : (
           iOwe.map((d) => {
             const original = d.original || d.balance;
@@ -233,7 +233,7 @@ export default function DebtsPage() {
                 </div>
                 <div className="amt out">{formatMoney(d.balance, data.currency)}</div>
                 <button className="x" onClick={() => quickPay(d.id)} aria-label="Pay">
-                  💵
+                  Pay
                 </button>
                 <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
                   ×
@@ -268,7 +268,7 @@ export default function DebtsPage() {
                 </div>
                 <div className="amt in">{formatMoney(d.balance, data.currency)}</div>
                 <button className="x" onClick={() => quickPay(d.id)} aria-label="Mark repaid">
-                  💵
+                  Paid
                 </button>
                 <button className="x" onClick={() => deleteDebt(d.id)} aria-label="Delete">
                   ×

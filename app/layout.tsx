@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Budget",
+    title: "Money Coach",
   },
   icons: {
     icon: [
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#fbf6f1",
+  themeColor: "#0f5448",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

@@ -16,12 +16,12 @@ import Donut from "@/components/Donut";
 import Sparkline from "@/components/Sparkline";
 import Avatar from "@/components/Avatar";
 
-const ACCOUNT_EMOJI: Record<string, string> = {
-  checking: "🏦",
-  savings: "🐷",
-  cash: "💵",
-  investment: "📈",
-  other: "💼",
+const ACCOUNT_MARK: Record<string, string> = {
+  checking: "CK",
+  savings: "SV",
+  cash: "CA",
+  investment: "IN",
+  other: "OT",
 };
 
 const CHART_COLORS = [
@@ -63,7 +63,7 @@ export default function InsightsPage() {
       name: aName.trim(),
       type: aType,
       balance: bal,
-      emoji: ACCOUNT_EMOJI[aType],
+      emoji: ACCOUNT_MARK[aType],
       color: MEMBER_COLORS[(data.accounts?.length || 0) % MEMBER_COLORS.length],
     });
     setAName(""); setABalance(""); setAcctOpen(false);
@@ -77,8 +77,8 @@ export default function InsightsPage() {
 
   return (
     <main>
-      <h1 className="h-title">Insights</h1>
-      <p className="h-sub">Your money for {monthLabel(monthKey())}, at a glance.</p>
+      <h1 className="h-title">Spending</h1>
+      <p className="h-sub">Your money for {monthLabel(monthKey())}, organized into clear trends and categories.</p>
 
       {/* Net worth + accounts */}
       <div className="card reveal">
@@ -87,7 +87,7 @@ export default function InsightsPage() {
           {formatMoney(nw, data.currency)}
         </div>
         <div className="h-sub" style={{ marginTop: 2, marginBottom: 14 }}>
-          {formatMoney(cash, data.currency)} in accounts · {formatMoney(s.totalIOwe, data.currency)} owed
+          {formatMoney(cash, data.currency)} in accounts - {formatMoney(s.totalIOwe, data.currency)} owed
         </div>
 
         {nwHist.length >= 2 && (
@@ -177,11 +177,11 @@ export default function InsightsPage() {
 
       {!hasData ? (
         <div className="card empty-card reveal">
-          <div className="empty-emoji">📊</div>
+          <div className="empty-emoji" aria-hidden="true">SP</div>
           <div className="empty-title">No data yet</div>
           <p className="h-sub" style={{ textAlign: "center" }}>
             Log a few expenses on the Home screen and your charts will appear
-            here — categories, trends, budgets and how spending splits between
+            here - categories, trends, budgets and how spending splits between
             you.
           </p>
         </div>
@@ -226,10 +226,10 @@ export default function InsightsPage() {
               </div>
               <div className="mom-col">
                 {mom.changePct === null ? (
-                  <div className="mom-val muted">—</div>
+                  <div className="mom-val muted">-</div>
                 ) : (
                   <div className={"mom-val " + (mom.changePct > 0 ? "neg" : "pos")}>
-                    {mom.changePct > 0 ? "▲" : "▼"} {Math.abs(Math.round(mom.changePct))}%
+                    {mom.changePct > 0 ? "Up" : "Down"} {Math.abs(Math.round(mom.changePct))}%
                   </div>
                 )}
                 <div className="mom-k">Change</div>
@@ -295,7 +295,7 @@ export default function InsightsPage() {
                       <div className="split-top">
                         <span>{m?.name || "Someone"}</span>
                         <span className="muted">
-                          {formatMoney(sp.expenses, data.currency)} ·{" "}
+                          {formatMoney(sp.expenses, data.currency)} -{" "}
                           {Math.round(sp.pct)}%
                         </span>
                       </div>

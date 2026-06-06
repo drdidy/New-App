@@ -1,21 +1,43 @@
 "use client";
 
 import { useState } from "react";
+import { Bot, LockKeyhole, ReceiptText, ShieldCheck, Users } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { uid, CURRENCIES, MEMBER_COLORS, MEMBER_EMOJIS } from "@/lib/format";
+import { uid, CURRENCIES, MEMBER_COLORS } from "@/lib/format";
 import type { Member } from "@/lib/types";
 
 interface Draft {
   name: string;
-  emoji: string;
   color: string;
   income: string;
 }
 
+const SETUP_POINTS = [
+  {
+    title: "Capture spending instantly",
+    body: "Type, speak, or scan a receipt and review the result before patterns build up.",
+    Icon: ReceiptText,
+  },
+  {
+    title: "Plan as a household",
+    body: "Track shared spending, debts, bills, and goals without losing who owns what.",
+    Icon: Users,
+  },
+  {
+    title: "Ask for specific guidance",
+    body: "Coach can explain debt payoff options, grocery trends, and weekly next steps.",
+    Icon: Bot,
+  },
+  {
+    title: "Local-first by default",
+    body: "Your budget stays in this browser unless you choose AI analysis or sync.",
+    Icon: ShieldCheck,
+  },
+];
+
 function blankMember(i: number): Draft {
   return {
     name: "",
-    emoji: MEMBER_EMOJIS[i % MEMBER_EMOJIS.length],
     color: MEMBER_COLORS[i % MEMBER_COLORS.length],
     income: "",
   };
@@ -51,16 +73,25 @@ export default function Onboarding() {
   function finish() {
     const members: Member[] = people
       .filter((p) => p.name.trim())
-      .map((p) => ({
+      .map((p, i) => ({
         id: uid(),
         name: p.name.trim(),
-        emoji: p.emoji,
+        emoji: i === 0 ? "A" : "B",
         color: p.color,
         monthlyIncome: p.income ? parseFloat(p.income) : undefined,
+        updatedAt: Date.now(),
       }));
+
     if (members.length === 0) {
-      members.push({ id: uid(), name: "You", emoji: "🦊", color: MEMBER_COLORS[0] });
+      members.push({
+        id: uid(),
+        name: "You",
+        emoji: "A",
+        color: MEMBER_COLORS[0],
+        updatedAt: Date.now(),
+      });
     }
+
     completeOnboarding({
       householdName: household.trim(),
       currency,
@@ -75,29 +106,31 @@ export default function Onboarding() {
 
   if (joining) {
     return (
-      <div className="onb">
+      <div className="onb professional-onb">
         <div className="onb-body">
           <div className="onb-step">
-            <div className="onb-badge">🔗</div>
-            <h1 className="onb-title">Join your household</h1>
+            <div className="onb-badge professional-badge">
+              <LockKeyhole size={30} aria-hidden="true" />
+            </div>
+            <h1 className="onb-title">Join an existing household</h1>
             <p className="onb-text">
-              Enter the <strong>household code</strong> your partner set up on
-              their phone (you'll find it in their Settings → Sync). Your phones
-              will then share the same numbers.
+              Enter the private household code from Settings on the other device.
+              Treat this code like a password because it can sync shared budget data.
             </p>
             <div className="field">
+              <label htmlFor="join-code">Household code</label>
               <input
-                autoFocus
+                id="join-code"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="e.g. otter-maple-river-k4p9x2"
+                placeholder="example-household-code"
                 onKeyDown={(e) => e.key === "Enter" && void joinHousehold()}
               />
             </div>
             {joinError && <p className="err">{joinError}</p>}
             <p className="hint">
-              Sync needs the cloud add-on enabled on your app. If nothing appears
-              after joining, ask your partner to confirm sync is on.
+              Sync requires the production KV store and sync secret to be configured
+              on Vercel.
             </p>
           </div>
         </div>
@@ -110,7 +143,7 @@ export default function Onboarding() {
             disabled={joinCode.trim().length < 16 || joinBusy}
             onClick={() => void joinHousehold()}
           >
-            Join household →
+            Join household
           </button>
         </div>
       </div>
@@ -118,7 +151,7 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="onb">
+    <div className="onb professional-onb">
       <div className="onb-progress">
         {Array.from({ length: totalSteps }).map((_, i) => (
           <span key={i} className={i <= step ? "on" : ""} />
@@ -128,33 +161,43 @@ export default function Onboarding() {
       <div className="onb-body" key={step}>
         {step === 0 && (
           <div className="onb-step">
-            <div className="onb-badge">💸</div>
-            <h1 className="onb-title">Welcome to Money Coach</h1>
+            <div className="onb-badge professional-badge">MC</div>
+            <p className="eyebrow">Money Coach</p>
+            <h1 className="onb-title">A sharper operating system for household money.</h1>
             <p className="onb-text">
-              A calm, private place to get on top of your money — together. No
-              forms to dread: you just talk to it, and your AI coach turns it
-              into a plan.
+              Build a real monthly plan, see debt and spending pressure clearly,
+              and use AI only when you want help turning numbers into next steps.
             </p>
-            <ul className="onb-list">
-              <li>🗣️ Log spending by typing or speaking a sentence</li>
-              <li>🤝 Track debts &amp; who owes who</li>
-              <li>💬 Get judgment-free advice on your real numbers</li>
-              <li>🔒 Everything stays on your device</li>
-            </ul>
+            <div className="onb-capabilities">
+              {SETUP_POINTS.map(({ title, body, Icon }) => (
+                <div className="onb-capability" key={title}>
+                  <Icon size={20} aria-hidden="true" />
+                  <div>
+                    <strong>{title}</strong>
+                    <span>{body}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
             <button className="onb-link" onClick={() => setJoining(true)}>
-              Joining your partner? Use a household code →
+              Join an existing household
             </button>
           </div>
         )}
 
         {step === 1 && (
           <div className="onb-step">
-            <div className="onb-badge">🏡</div>
-            <h1 className="onb-title">What should we call your household?</h1>
-            <p className="onb-text">Just a friendly name — you can change it later.</p>
+            <div className="onb-badge professional-badge">
+              <Users size={30} aria-hidden="true" />
+            </div>
+            <h1 className="onb-title">Set up the household profile</h1>
+            <p className="onb-text">
+              This gives the dashboard a clean name, currency, and planning context.
+            </p>
             <div className="field">
+              <label htmlFor="household-name">Household name</label>
               <input
-                autoFocus
+                id="household-name"
                 value={household}
                 onChange={(e) => setHousehold(e.target.value)}
                 placeholder="The Smith Household"
@@ -162,8 +205,8 @@ export default function Onboarding() {
               />
             </div>
             <div className="field">
-              <label>Currency</label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              <label htmlFor="currency">Currency</label>
+              <select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
                 {CURRENCIES.map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.label}
@@ -176,75 +219,71 @@ export default function Onboarding() {
 
         {step === 2 && (
           <div className="onb-step">
-            <div className="onb-badge">👫</div>
-            <h1 className="onb-title">Who's in your household?</h1>
+            <div className="onb-badge professional-badge">
+              <Users size={30} aria-hidden="true" />
+            </div>
+            <h1 className="onb-title">Add the people money belongs to</h1>
             <p className="onb-text">
-              Add yourself and your partner. Each person gets their own colour so
-              you can see who spent what. Leave the second blank if it's just you.
+              Add one or two people now. Income is optional, but it unlocks better
+              safe-to-spend and payoff guidance immediately.
             </p>
-            {people.map((p, i) => (
-              <div className="onb-person" key={i}>
-                <div className="onb-person-head">
-                  <div className="emoji-pick">
-                    {MEMBER_EMOJIS.slice(0, 6).map((e) => (
+            <div className="people-grid">
+              {people.map((p, i) => (
+                <div className="onb-person" key={i}>
+                  <div className="person-token" style={{ background: p.color }}>
+                    {i === 0 ? "A" : "B"}
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`person-${i}`}>{i === 0 ? "Primary person" : "Second person"}</label>
+                    <input
+                      id={`person-${i}`}
+                      value={p.name}
+                      onChange={(e) => updatePerson(i, { name: e.target.value })}
+                      placeholder={i === 0 ? "Your name" : "Partner or household member"}
+                    />
+                  </div>
+                  <div className="color-pick" aria-label="Accent color">
+                    {MEMBER_COLORS.map((c) => (
                       <button
-                        key={e}
+                        key={c}
                         type="button"
-                        className={"emoji-opt" + (p.emoji === e ? " on" : "")}
-                        onClick={() => updatePerson(i, { emoji: e })}
-                        style={p.emoji === e ? { borderColor: p.color } : undefined}
-                      >
-                        {e}
-                      </button>
+                        className={"color-opt" + (p.color === c ? " on" : "")}
+                        style={{ background: c }}
+                        onClick={() => updatePerson(i, { color: c })}
+                        aria-label={`Use color ${c}`}
+                      />
                     ))}
                   </div>
-                </div>
-                <div className="field">
-                  <input
-                    value={p.name}
-                    onChange={(e) => updatePerson(i, { name: e.target.value })}
-                    placeholder={i === 0 ? "Your name" : "Partner's name (optional)"}
-                  />
-                </div>
-                <div className="color-pick">
-                  {MEMBER_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={"color-opt" + (p.color === c ? " on" : "")}
-                      style={{ background: c }}
-                      onClick={() => updatePerson(i, { color: c })}
-                      aria-label="colour"
+                  <div className="field">
+                    <label htmlFor={`income-${i}`}>Monthly income, optional</label>
+                    <input
+                      id={`income-${i}`}
+                      value={p.income}
+                      onChange={(e) => updatePerson(i, { income: e.target.value })}
+                      inputMode="decimal"
+                      placeholder="2800"
                     />
-                  ))}
+                  </div>
                 </div>
-                <div className="field">
-                  <label>Monthly income (optional)</label>
-                  <input
-                    value={p.income}
-                    onChange={(e) => updatePerson(i, { income: e.target.value })}
-                    inputMode="decimal"
-                    placeholder="e.g. 2800"
-                  />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
         {step === 3 && (
           <div className="onb-step">
-            <div className="onb-badge">🎉</div>
-            <h1 className="onb-title">You're all set</h1>
+            <div className="onb-badge professional-badge">
+              <ShieldCheck size={30} aria-hidden="true" />
+            </div>
+            <h1 className="onb-title">Start with a simple operating rhythm</h1>
             <p className="onb-text">
-              Here's the trick to actually sticking with it:{" "}
-              <strong>don't try to be perfect.</strong> Just open the app and say
-              what you spent — even "coffee 4". Do that for a few days and your
-              coach will start spotting patterns and giving you a plan.
+              Log a few real transactions, add your bills and debts, then ask Coach
+              for a weekly plan. The app gets more useful as your numbers become
+              more complete.
             </p>
             <div className="onb-tip">
-              Try your first one in a second:{" "}
-              <em>"spent 40 on gas and I still owe James 200"</em>
+              AI features send the note, receipt image, or financial snapshot you
+              choose to analyze. Manual logging remains available at any time.
             </div>
           </div>
         )}
@@ -266,7 +305,7 @@ export default function Onboarding() {
           </button>
         ) : (
           <button className="btn btn-primary btn-block" onClick={finish}>
-            Start using Money Coach →
+            Enter dashboard
           </button>
         )}
       </div>

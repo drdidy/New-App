@@ -1,29 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarClock,
+  CheckCircle2,
+  CircleDollarSign,
+  ClipboardList,
+  CreditCard,
+  ReceiptText,
+  ShieldAlert,
+  TrendingDown,
+} from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
-import { quickInsights, billsThisMonth, pace } from "@/lib/insights";
+import { billsThisMonth, pace, quickInsights } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
 import MemberPicker from "@/components/MemberPicker";
 import Avatar from "@/components/Avatar";
 import CheckInBanner from "@/components/CheckInBanner";
-import Link from "next/link";
-
-const CATEGORY_ICON: Record<string, string> = {
-  Groceries: "🛒",
-  Transport: "⛽",
-  Dining: "🍔",
-  Rent: "🏠",
-  Utilities: "💡",
-  Salary: "💰",
-  Income: "💰",
-  Shopping: "🛍️",
-  Health: "🩺",
-  Entertainment: "🎬",
-  "Debt payment": "🤝",
-};
 
 function greeting() {
   const h = new Date().getHours();
@@ -32,49 +30,106 @@ function greeting() {
   return "Good evening";
 }
 
-export default function Home() {
+function statusFor(safeToSpend: number, billsDue: number, debtDue: number) {
+  if (safeToSpend < 0) {
+    return {
+      label: "Recovery needed",
+      tone: "danger",
+      Icon: ShieldAlert,
+      text: "Your plan is over pressure. Coach can help find the smallest correction.",
+    };
+  }
+  if (billsDue + debtDue > safeToSpend * 0.7 && safeToSpend > 0) {
+    return {
+      label: "Watch commitments",
+      tone: "warn",
+      Icon: AlertTriangle,
+      text: "Upcoming bills and debt minimums take most of the room left.",
+    };
+  }
+  return {
+    label: "On track",
+    tone: "good",
+    Icon: CheckCircle2,
+    text: "You have spending room after logged expenses, bills, and minimum payments.",
+  };
+}
+
+export default function TodayPage() {
   const { data, ready, deleteTransaction, markBillPaid, member } = useStore();
   const [view, setView] = useState<string | undefined>(undefined);
   if (!ready) return null;
 
   const multi = data.members.length > 1;
-  const s = summarize(data, view);
-  const insights = quickInsights(data, data.currency);
+  const summary = summarize(data, view);
+  const upcomingBills = billsThisMonth(data, view).filter((b) => !b.paid);
+  const totalBillsDue = upcomingBills.reduce((sum, b) => sum + b.bill.amount, 0);
+  const debtMinimums = data.debts
+    .filter((d) => d.direction === "i_owe" && (!view || d.memberId === view))
+    .reduce((sum, d) => sum + (d.minPayment || 0), 0);
+  const status = statusFor(summary.safeToSpend, totalBillsDue, debtMinimums);
+  const dailyPace = pace(data, summary.safeToSpend);
+  const insights = quickInsights(data, data.currency).slice(0, 3);
   const recent = data.transactions
     .filter((t) => !view || t.memberId === view)
-    .slice(0, 10);
-  const upcomingBills = billsThisMonth(data, view).filter((b) => !b.paid);
-  const p = pace(data, s.safeToSpend);
-  const safePos = s.safeToSpend >= 0;
+    .slice(0, 8);
   const firstName = data.members[0]?.name?.split(" ")[0];
+  const nextBill = upcomingBills[0];
+  const debtTarget = data.debts
+    .filter((d) => d.direction === "i_owe" && d.balance > 0)
+    .sort((a, b) => (b.apr || 0) - (a.apr || 0))[0];
+
+  const nextAction = summary.safeToSpend < 0
+    ? {
+        href: "/advisor",
+        title: "Ask Coach for a recovery plan",
+        body: "Get one specific adjustment to bring this month back under control.",
+        Icon: TrendingDown,
+      }
+    : nextBill
+    ? {
+        href: "/bills",
+        title: `Confirm ${nextBill.bill.name}`,
+        body: `${formatMoney(nextBill.bill.amount, data.currency)} is still committed this month.`,
+        Icon: CalendarClock,
+      }
+    : debtTarget
+    ? {
+        href: "/debts",
+        title: `Review ${debtTarget.party}`,
+        body: "Compare snowball, avalanche, and hybrid payoff routes.",
+        Icon: CreditCard,
+      }
+    : {
+        href: "/plan",
+        title: "Finish your first monthly plan",
+        body: "Add bills, budgets, and a starter goal so safe-to-spend becomes accurate.",
+        Icon: ClipboardList,
+      };
 
   return (
-    <main>
-      <header className="home-head reveal">
+    <main className="today-page">
+      <header className="today-hero">
         <div>
-          <p className="h-sub" style={{ marginBottom: 0 }}>
-            {greeting()}{firstName ? `, ${firstName}` : ""}.
-          </p>
+          <p className="eyebrow">{greeting()}{firstName ? `, ${firstName}` : ""}</p>
           <h1 className="h-title">
-            {data.householdName ? data.householdName : "Here's where you stand"}
+            {data.householdName || "Today"}
           </h1>
+          <p className="h-sub">
+            A plain-English view of what is safe, what needs attention, and what to do next.
+          </p>
         </div>
-        <div className="head-right">
-          <div className="avatars">
-            {data.members.map((m) => (
-              <Avatar key={m.id} member={m} size={34} />
-            ))}
-          </div>
-          <Link href="/settings" className="gear" aria-label="Settings">
-            ⚙️
-          </Link>
+        <div className="today-people">
+          {data.members.map((m) => (
+            <Avatar key={m.id} member={m} size={36} />
+          ))}
         </div>
       </header>
 
       <CheckInBanner />
 
       {multi && (
-        <div className="reveal d1" style={{ marginBottom: 14 }}>
+        <section className="today-filter">
           <MemberPicker
             members={data.members}
             value={view}
@@ -82,178 +137,165 @@ export default function Home() {
             allLabel="Everyone"
             size="sm"
           />
-        </div>
+        </section>
       )}
 
-      <div className="card hero reveal d1">
-        <div className="label">Safe to spend this month</div>
-        <div className={"big " + (safePos ? "pos" : "neg")}>
-          <AnimatedNumber value={s.safeToSpend} currency={data.currency} />
+      <section className="today-grid">
+        <div className="card money-status">
+          <div className="status-row">
+            <span className={`status-pill ${status.tone}`}>
+              <status.Icon size={15} aria-hidden="true" />
+              {status.label}
+            </span>
+            <span className="muted">Safe to spend</span>
+          </div>
+          <div className="money-xl">
+            <AnimatedNumber value={summary.safeToSpend} currency={data.currency} />
+          </div>
+          <p>{status.text}</p>
+          {summary.safeToSpend >= 0 && (
+            <div className="daily-pace">
+              <CircleDollarSign size={18} aria-hidden="true" />
+              <span>
+                {formatMoney(dailyPace.dailyAllowance, data.currency)} per day keeps this period on track.
+              </span>
+            </div>
+          )}
         </div>
-        <div className="h-sub" style={{ margin: "2px 0 0" }}>
-          {safePos
-            ? "What's left after expenses and minimum payments."
-            : "You're over budget — tap Coach for a plan to recover."}
-        </div>
-      </div>
 
-      <div className="row reveal d2" style={{ marginBottom: 14 }}>
-        <div className="card stat">
-          <div className="n in">{formatMoney(s.income, data.currency)}</div>
-          <div className="k">In this month</div>
-        </div>
-        <div className="card stat">
-          <div className="n out">{formatMoney(s.expenses, data.currency)}</div>
-          <div className="k">Out this month</div>
-        </div>
-      </div>
-
-      {safePos && (
-        <div className="card reveal d2 pace">
-          <div className="pace-num">{formatMoney(p.dailyAllowance, data.currency)}</div>
+        <Link href={nextAction.href} className="card next-action">
+          <div className="action-icon">
+            <nextAction.Icon size={22} aria-hidden="true" />
+          </div>
           <div>
-            <div style={{ fontWeight: 650, fontSize: 15 }}>a day to stay on track</div>
-            <div className="pace-sub">
-              {p.daysLeft} day{p.daysLeft === 1 ? "" : "s"} {p.periodLabel} ·{" "}
-              {p.forecastLeftover >= 0
-                ? `on pace to finish ${formatMoney(p.forecastLeftover, data.currency)} ahead`
-                : `on pace to overspend by ${formatMoney(-p.forecastLeftover, data.currency)}`}
-            </div>
+            <p className="eyebrow">Next best move</p>
+            <h2>{nextAction.title}</h2>
+            <p>{nextAction.body}</p>
+          </div>
+          <ArrowRight className="action-arrow" size={20} aria-hidden="true" />
+        </Link>
+
+        <div className="metric-strip">
+          <div className="card metric-card">
+            <span>Income</span>
+            <strong className="pos">{formatMoney(summary.income, data.currency)}</strong>
+          </div>
+          <div className="card metric-card">
+            <span>Spent</span>
+            <strong className="neg">{formatMoney(summary.expenses, data.currency)}</strong>
+          </div>
+          <div className="card metric-card">
+            <span>Bills left</span>
+            <strong>{formatMoney(totalBillsDue, data.currency)}</strong>
+          </div>
+          <div className="card metric-card">
+            <span>Debt owed</span>
+            <strong className="neg">{formatMoney(summary.totalIOwe, data.currency)}</strong>
           </div>
         </div>
-      )}
 
-      {(s.totalIOwe > 0 || s.totalOwedToMe > 0) && (
-        <div className="row reveal d3" style={{ marginBottom: 14 }}>
-          <Link href="/debts" className="card stat">
-            <div className="n out">{formatMoney(s.totalIOwe, data.currency)}</div>
-            <div className="k">You owe</div>
-          </Link>
-          <Link href="/debts" className="card stat">
-            <div className="n in">
-              {formatMoney(s.totalOwedToMe, data.currency)}
+        <section className="capture-panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Quick capture</p>
+              <h2>Log money before it gets fuzzy</h2>
             </div>
-            <div className="k">Owed to you</div>
-          </Link>
-        </div>
-      )}
-
-      {insights.length > 0 && (
-        <div className="insight-chips reveal d3">
-          {insights.map((t, i) => (
-            <div className="insight-chip" key={i}>
-              <span className="dot" />
-              {t}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="reveal d4">
-        <QuickCapture />
-      </div>
-
-      {upcomingBills.length > 0 && (
-        <>
-          <div className="section-h">
-            <h2>Bills due this month</h2>
-            <Link href="/bills">Manage →</Link>
           </div>
+          <QuickCapture />
+        </section>
+
+        <aside className="attention-panel">
           <div className="card">
-            {upcomingBills.slice(0, 4).map((b) => (
-              <div className="item" key={b.bill.id}>
-                <div className="ic">🧾</div>
-                <div className="meta">
-                  <div className="t">{b.bill.name}</div>
-                  <div className="s">
-                    Due {b.dueDay}
-                    {b.daysAway >= 0 && b.daysAway <= 6
-                      ? b.daysAway === 0
-                        ? " · today"
-                        : ` · in ${b.daysAway}d`
-                      : ""}
-                  </div>
-                </div>
-                <div className="amt out">
-                  {formatMoney(b.bill.amount, data.currency)}
-                </div>
-                <button className="bill-pay" onClick={() => markBillPaid(b.bill.id)}>
-                  Mark paid
-                </button>
+            <div className="card-h">Needs attention</div>
+            {insights.length === 0 && upcomingBills.length === 0 && !debtTarget ? (
+              <div className="empty">
+                Add a few transactions, bills, or debts and this panel will become your daily checklist.
               </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      <div className="section-h">
-        <h2>Recent activity</h2>
-        {data.transactions.length > 0 && (
-          <Link href="/insights">See insights →</Link>
-        )}
-      </div>
-      <div className="card">
-        {recent.length === 0 ? (
-          <div className="empty">
-            Nothing logged yet. Try typing{" "}
-            <strong>&quot;spent 12 on coffee&quot;</strong> above.
-          </div>
-        ) : (
-          recent.map((t) => {
-            const m = member(t.memberId);
-            return (
-              <div className="item" key={t.id}>
-                <div className="ic">{CATEGORY_ICON[t.category] || "💸"}</div>
-                <div className="meta">
-                  <div className="t">{t.description || t.category}</div>
-                  <div className="s">
-                    {t.category} · {friendlyDate(t.date)}
-                    {multi && m ? ` · ${m.emoji} ${m.name.split(" ")[0]}` : ""}
-                  </div>
-                  {t.lineItems?.length ? (
-                    <div className="line-items">
-                      <span>{t.lineItems.length} receipt items</span>
-                      {t.lineItems.slice(0, 3).map((item, i) => (
-                        <span key={i}>{item.category}: {item.name}</span>
-                      ))}
+            ) : (
+              <div className="attention-list">
+                {upcomingBills.slice(0, 3).map((b) => (
+                  <div className="attention-item" key={b.bill.id}>
+                    <CalendarClock size={18} aria-hidden="true" />
+                    <div>
+                      <strong>{b.bill.name}</strong>
+                      <span>{formatMoney(b.bill.amount, data.currency)} due day {b.dueDay}</span>
                     </div>
-                  ) : null}
-                </div>
-                <div className={"amt " + (t.type === "income" ? "in" : "out")}>
-                  {t.type === "income" ? "+" : "−"}
-                  {formatMoney(t.amount, data.currency)}
-                </div>
-                <button
-                  className="x"
-                  onClick={() => deleteTransaction(t.id)}
-                  aria-label="Delete"
-                >
-                  ×
-                </button>
+                    <button className="bill-pay" onClick={() => markBillPaid(b.bill.id)}>
+                      Paid
+                    </button>
+                  </div>
+                ))}
+                {debtTarget && (
+                  <Link href="/debts" className="attention-item">
+                    <CreditCard size={18} aria-hidden="true" />
+                    <div>
+                      <strong>{debtTarget.party}</strong>
+                      <span>{formatMoney(debtTarget.balance, data.currency)} balance</span>
+                    </div>
+                    <ArrowRight size={16} aria-hidden="true" />
+                  </Link>
+                )}
+                {insights.map((text) => (
+                  <div className="attention-item" key={text}>
+                    <AlertTriangle size={18} aria-hidden="true" />
+                    <div>
+                      <strong>Pattern found</strong>
+                      <span>{text}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            );
-          })
-        )}
-      </div>
+            )}
+          </div>
+        </aside>
 
-      <div className="section-h">
-        <h2>Need a hand?</h2>
-        <Link href="/advisor">Open Coach →</Link>
-      </div>
-      <Link href="/advisor" className="card coach-cta" style={{ display: "block" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <div className="ic" style={{ width: 44, height: 44, fontSize: 22 }}>
-            💬
-          </div>
-          <div className="meta">
-            <div className="t">Ask your AI money coach</div>
-            <div className="s">
-              Get a debt payoff plan and advice based on your real numbers.
+        <section className="card recent-panel">
+          <div className="panel-head">
+            <div>
+              <p className="eyebrow">Ledger</p>
+              <h2>Recent activity</h2>
             </div>
+            <Link href="/insights">Spending details</Link>
           </div>
-          <div className="chev">→</div>
-        </div>
-      </Link>
+          {recent.length === 0 ? (
+            <div className="empty">
+              Start with one sentence, like <strong>spent 12 on lunch</strong>.
+            </div>
+          ) : (
+            recent.map((t) => {
+              const owner = member(t.memberId);
+              return (
+                <div className="ledger-row" key={t.id}>
+                  <div className="ledger-icon">
+                    <ReceiptText size={18} aria-hidden="true" />
+                  </div>
+                  <div className="ledger-main">
+                    <strong>{t.description || t.category}</strong>
+                    <span>
+                      {t.category} · {friendlyDate(t.date)}
+                      {multi && owner ? ` · ${owner.name.split(" ")[0]}` : ""}
+                    </span>
+                    {t.lineItems?.length ? (
+                      <span className="receipt-note">{t.lineItems.length} receipt line items captured</span>
+                    ) : null}
+                  </div>
+                  <div className={t.type === "income" ? "ledger-amount pos" : "ledger-amount neg"}>
+                    {t.type === "income" ? "+" : "-"}
+                    {formatMoney(t.amount, data.currency)}
+                  </div>
+                  <button
+                    className="x"
+                    onClick={() => deleteTransaction(t.id)}
+                    aria-label="Delete transaction"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </section>
+      </section>
     </main>
   );
 }

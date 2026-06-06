@@ -3,16 +3,15 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Money Coach",
-    // short_name is what Android/iOS show under the home-screen icon — keep it
-    // short so launchers don't truncate it.
-    short_name: "Budget",
+    // Keep the launcher label aligned with the actual product name.
+    short_name: "Money Coach",
     description:
-      "Your private, AI-powered budgeting, bills and debt coach. Just talk to it.",
+      "Your private, AI-powered budgeting, bills, spending and debt coach.",
     start_url: "/",
     id: "/",
     display: "standalone",
-    background_color: "#fbf6f1",
-    theme_color: "#d2723f",
+    background_color: "#fafbf8",
+    theme_color: "#0f5448",
     orientation: "portrait",
     categories: ["finance", "productivity"],
     shortcuts: [
