@@ -23,11 +23,11 @@ void main() {
   vec2 p = vec2(st.x * a, st.y);
   float t = uTime * 0.04;
 
-  vec3 base = vec3(0.961, 0.969, 0.980);
-  vec3 mint = vec3(0.86, 0.95, 0.91);
-  vec3 sky  = vec3(0.89, 0.93, 0.985);
-  vec3 cream= vec3(0.99, 0.96, 0.92);
-  vec3 lilac= vec3(0.93, 0.91, 0.98);
+  vec3 base = vec3(0.949, 0.961, 0.976);
+  vec3 mint = vec3(0.70, 0.91, 0.84);
+  vec3 sky  = vec3(0.78, 0.88, 0.99);
+  vec3 cream= vec3(0.99, 0.93, 0.86);
+  vec3 lilac= vec3(0.88, 0.85, 0.99);
 
   vec2 c1 = vec2(0.26 * a + 0.18 * a * sin(t * 0.9), 0.30 + 0.12 * cos(t));
   vec2 c2 = vec2(0.80 * a + 0.14 * a * cos(t * 0.7), 0.72 + 0.12 * sin(t * 1.1));
@@ -35,10 +35,10 @@ void main() {
   vec2 c4 = vec2(0.12 * a + 0.12 * a * cos(t * 0.6 + 2.0), 0.86 + 0.08 * sin(t));
 
   vec3 col = base;
-  col = mix(col, mint,  blob(p, c1, 0.55 * a) * 0.5);
-  col = mix(col, sky,   blob(p, c2, 0.52 * a) * 0.5);
-  col = mix(col, cream, blob(p, c3, 0.40 * a) * 0.4);
-  col = mix(col, lilac, blob(p, c4, 0.38 * a) * 0.35);
+  col = mix(col, mint,  blob(p, c1, 0.58 * a) * 0.7);
+  col = mix(col, sky,   blob(p, c2, 0.55 * a) * 0.65);
+  col = mix(col, cream, blob(p, c3, 0.42 * a) * 0.55);
+  col = mix(col, lilac, blob(p, c4, 0.40 * a) * 0.5);
 
   gl_FragColor = vec4(col, 1.0);
 }`;
