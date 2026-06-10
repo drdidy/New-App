@@ -3,11 +3,10 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-// A slow, living dark gradient rendered in WebGL — replaces the app's static
-// navy backdrop with a flowing navy/teal/emerald field. Tuned dark so the UI
-// stays readable. Pixel-ratio capped, pauses when hidden, renders one static
-// frame under prefers-reduced-motion, and the CSS dark fallback covers it if
-// WebGL is unavailable.
+// A soft, airy animated gradient — pale mint / sky / cream drifting over an
+// off-white base. Tuned very light so white cards and ink text stay crisp.
+// Pixel-ratio capped, pauses when hidden, single static frame under
+// prefers-reduced-motion; the CSS off-white fallback covers it if WebGL fails.
 const FRAG = `
 precision mediump float;
 varying vec2 vUv;
@@ -15,36 +14,31 @@ uniform float uTime;
 uniform vec2 uRes;
 
 float blob(vec2 p, vec2 c, float r) {
-  float d = length(p - c);
-  return smoothstep(r, 0.0, d);
+  return smoothstep(r, 0.0, length(p - c));
 }
 
 void main() {
   vec2 st = vUv;
   float a = uRes.x / uRes.y;
   vec2 p = vec2(st.x * a, st.y);
-  float t = uTime * 0.045;
+  float t = uTime * 0.04;
 
-  vec3 navy1 = vec3(0.027, 0.043, 0.071);
-  vec3 navy3 = vec3(0.063, 0.098, 0.157);
-  vec3 teal  = vec3(0.055, 0.300, 0.262);
-  vec3 emer  = vec3(0.110, 0.460, 0.350);
-  vec3 gold  = vec3(0.886, 0.710, 0.322);
+  vec3 base = vec3(0.961, 0.969, 0.980);
+  vec3 mint = vec3(0.86, 0.95, 0.91);
+  vec3 sky  = vec3(0.89, 0.93, 0.985);
+  vec3 cream= vec3(0.99, 0.96, 0.92);
+  vec3 lilac= vec3(0.93, 0.91, 0.98);
 
-  // base vertical navy gradient
-  vec3 col = mix(navy1, navy3, smoothstep(0.0, 1.0, st.y));
+  vec2 c1 = vec2(0.26 * a + 0.18 * a * sin(t * 0.9), 0.30 + 0.12 * cos(t));
+  vec2 c2 = vec2(0.80 * a + 0.14 * a * cos(t * 0.7), 0.72 + 0.12 * sin(t * 1.1));
+  vec2 c3 = vec2(0.58 * a + 0.20 * a * sin(t * 0.5 + 1.0), 0.12 + 0.10 * cos(t * 0.8));
+  vec2 c4 = vec2(0.12 * a + 0.12 * a * cos(t * 0.6 + 2.0), 0.86 + 0.08 * sin(t));
 
-  // drifting light fields
-  vec2 c1 = vec2(0.30 * a + 0.18 * a * sin(t * 0.9), 0.32 + 0.12 * cos(t));
-  vec2 c2 = vec2(0.78 * a + 0.14 * a * cos(t * 0.7), 0.74 + 0.12 * sin(t * 1.1));
-  vec2 c3 = vec2(0.55 * a + 0.20 * a * sin(t * 0.5 + 1.0), 0.10 + 0.10 * cos(t * 0.8));
-
-  col += teal * blob(p, c1, 0.55 * a) * 0.55;
-  col += emer * blob(p, c2, 0.50 * a) * 0.40;
-  col += gold * blob(p, c3, 0.30 * a) * 0.05;
-
-  // gentle top sheen
-  col += vec3(0.04, 0.06, 0.09) * smoothstep(0.7, 0.0, st.y);
+  vec3 col = base;
+  col = mix(col, mint,  blob(p, c1, 0.55 * a) * 0.5);
+  col = mix(col, sky,   blob(p, c2, 0.52 * a) * 0.5);
+  col = mix(col, cream, blob(p, c3, 0.40 * a) * 0.4);
+  col = mix(col, lilac, blob(p, c4, 0.38 * a) * 0.35);
 
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -72,7 +66,7 @@ export default function WebGLBackground() {
         powerPreference: "low-power",
       });
     } catch {
-      return; // no WebGL — the CSS dark fallback stays
+      return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
