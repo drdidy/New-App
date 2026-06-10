@@ -49,38 +49,22 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Animated aurora backdrop — slow drifting colour blobs behind everything. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: -30vmax;
-  z-index: -2;
-  background:
-    radial-gradient(42vmax 42vmax at 14% 8%, rgba(194, 102, 63, 0.07), transparent 60%),
-    radial-gradient(40vmax 40vmax at 88% 16%, rgba(173, 86, 49, 0.05), transparent 60%),
-    radial-gradient(46vmax 46vmax at 76% 94%, rgba(46, 139, 114, 0.05), transparent 62%);
-  filter: blur(12px) saturate(0.85);
-  opacity: 0.7;
-  animation: aurora 40s ease-in-out infinite alternate;
-}
-body::after {
-  content: "";
+/* WebGL flowing-gradient background (Three.js). The cream body colour is the
+   fallback if WebGL is unavailable. */
+.webgl-bg {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: -1;
-  background: radial-gradient(120vmax 80vmax at 50% -10%, transparent, var(--bg) 75%);
+  display: block;
   pointer-events: none;
 }
-@keyframes aurora {
-  0% {
-    transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1.05);
-  }
-  50% {
-    transform: translate3d(3%, 2%, 0) rotate(8deg) scale(1.12);
-  }
-  100% {
-    transform: translate3d(-2%, 3%, 0) rotate(-6deg) scale(1.08);
-  }
+
+/* Old CSS aurora retired in favour of the WebGL background. */
+body::before,
+body::after {
+  display: none;
 }
 
 a {

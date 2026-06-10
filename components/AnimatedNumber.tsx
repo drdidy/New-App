@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
 import { formatMoney } from "@/lib/format";
 
-// Smoothly counts up (or down) to `value` whenever it changes, with an
-// ease-out so the balance feels alive when you open the app or log something.
+// GSAP-eased count-up to `value`, with a subtle scale "pop" whenever it changes,
+// so the balance feels alive when you open the app or log something.
 export default function AnimatedNumber({
   value,
   currency = "USD",
-  duration = 900,
+  duration = 1.0,
 }: {
   value: number;
   currency?: string;
@@ -16,32 +17,46 @@ export default function AnimatedNumber({
 }) {
   const [display, setDisplay] = useState(value);
   const fromRef = useRef(value);
-  const rafRef = useRef<number | null>(null);
+  const elRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const from = fromRef.current;
-    const to = value;
-    if (from === to) return;
-    const start = performance.now();
+    const obj = { v: fromRef.current };
+    const reduce =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / duration);
-      // easeOutCubic
-      const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(from + (to - from) * eased);
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = to;
-      }
-    };
+    if (reduce || fromRef.current === value) {
+      setDisplay(value);
+      fromRef.current = value;
+      return;
+    }
 
-    rafRef.current = requestAnimationFrame(tick);
+    const tween = gsap.to(obj, {
+      v: value,
+      duration,
+      ease: "power2.out",
+      onUpdate: () => setDisplay(obj.v),
+      onComplete: () => {
+        fromRef.current = value;
+      },
+    });
+    if (elRef.current) {
+      gsap.fromTo(
+        elRef.current,
+        { scale: 0.97 },
+        { scale: 1, duration: 0.5, ease: "back.out(2)" },
+      );
+    }
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      fromRef.current = to;
+      tween.kill();
+      fromRef.current = value;
     };
   }, [value, duration]);
 
-  return <>{formatMoney(Math.round(display), currency)}</>;
+  return (
+    <span ref={elRef} style={{ display: "inline-block" }}>
+      {formatMoney(Math.round(display), currency)}
+    </span>
+  );
 }
