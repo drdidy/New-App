@@ -7005,3 +7005,37 @@ svg text {
     max-width: 94%;
   }
 }
+
+/* ============================================================
+   Three.js living background (added on top of the redesign).
+   The canvas replaces the static navy backdrop with a flowing
+   one; a dark CSS colour is the fallback if WebGL is missing.
+   ============================================================ */
+html {
+  background: #070b12;
+}
+body {
+  background: transparent;
+}
+/* retire the old CSS aurora/vignette in favour of the WebGL field */
+body::before,
+body::after {
+  display: none !important;
+}
+.webgl-bg {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  display: block;
+  pointer-events: none;
+}
+/* let the canvas show through the app shells */
+.vision-shell,
+.onboarding-frame {
+  background: transparent;
+}
+.app.boot {
+  background: #070b12;
+}
