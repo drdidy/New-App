@@ -7039,3 +7039,176 @@ body::after {
 .app.boot {
   background: #070b12;
 }
+
+/* ============================================================
+   LIGHT & AIRY RE-SKIN — appended last so it wins the cascade.
+   Re-themes the chrome + onboarding from the dark build to a
+   bright, clean look over the Three.js airy background.
+   ============================================================ */
+:root,
+html[data-theme="light"],
+html[data-theme="dark"] {
+  --bg: #f5f7f9;
+  --bg-2: #eceff3;
+  --surface: #ffffff;
+  --surface-solid: #ffffff;
+  --surface-2: #eef2f6;
+  --line: rgba(22, 32, 45, 0.10);
+  --line-strong: rgba(22, 32, 45, 0.16);
+  --text: #18222e;
+  --muted: #5e6a78;
+  --amber: #0f766e;
+  --amber-2: #0b5f58;
+  --amber-press: #094f49;
+  --green: #0f766e;
+  --green-2: #0b5f58;
+  --coral: #c0453b;
+  --coral-2: #d2675a;
+}
+html, body { background: var(--bg); color: var(--text); }
+body::before, body::after { display: none !important; }
+
+.webgl-bg {
+  position: fixed; inset: 0; width: 100vw; height: 100vh;
+  z-index: -1; pointer-events: none; display: block;
+}
+
+/* shells transparent so the airy canvas shows */
+.app-frame, .vision-shell, .onboarding-frame, .launch-onb { background: transparent !important; }
+.onboarding-frame::before { display: none !important; }
+.app.boot { background: var(--bg); }
+.boot-logo { color: var(--text) !important; }
+
+/* topbar + nav -> light glass */
+.topbar, .vision-mobile-topbar, .nav {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border-color: var(--line) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+.brand-lockup strong { color: var(--text); }
+.brand-lockup small { color: var(--muted); }
+.topbar-action { background: var(--surface-2) !important; color: var(--text) !important; border: 1px solid var(--line); }
+.brand-mark, .launch-brand span, .professional-badge {
+  background: linear-gradient(145deg, #0f766e, #0b5f58) !important;
+  color: #fff !important;
+}
+
+/* onboarding headings + text -> ink */
+.launch-brand { color: var(--amber) !important; }
+.launch-copy h1 { color: var(--text) !important; }
+.launch-copy h1 em { color: var(--amber) !important; }
+.launch-copy > p { color: var(--muted) !important; }
+.eyebrow { color: var(--amber) !important; }
+
+/* progress steps -> light */
+.launch-step { color: var(--muted) !important; }
+.launch-step.active { color: var(--text) !important; }
+.launch-step span { background: var(--surface-2) !important; color: var(--text) !important; border: 1px solid var(--line) !important; }
+.launch-step.active span, .launch-step.done span { background: var(--amber) !important; color: #fff !important; border-color: transparent !important; }
+
+/* onboarding panels -> white cards */
+.launch-capability, .profile-form, .people-card, .launch-overview,
+.privacy-panel, .rhythm-panel, .rhythm-checklist > div,
+.launch-privacy-note.wide, .preview-metrics > div, .preview-chart, .preview-category {
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: var(--shadow-card) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.launch-capability strong, .people-card-head strong, .privacy-row strong,
+.rhythm-checklist strong, .launch-preview-head strong, .preview-metrics b, .preview-category b {
+  color: var(--text) !important;
+}
+.launch-capability p, .privacy-row p, .rhythm-checklist p, .people-card label,
+.profile-form small, .launch-preview-head label, .preview-metrics small,
+.preview-category small, .preview-metrics span, .preview-category span, .launch-preview-head em {
+  color: var(--muted) !important;
+}
+.launch-capability span, .rhythm-checklist > div > span, .people-card-head > span, .privacy-row > span {
+  background: linear-gradient(145deg, #0f766e, #0b5f58) !important;
+  color: #fff !important;
+}
+.launch-capability svg, .onb-capability svg { color: #fff !important; }
+
+/* onboarding buttons */
+.launch-btn-primary { background: linear-gradient(135deg, #0f766e, #0b5f58) !important; color: #fff !important; border: 0 !important; }
+.launch-btn-ghost { background: var(--surface) !important; color: var(--text) !important; border: 1px solid var(--line-strong) !important; }
+
+/* mobile: stop the squished one-word-per-line heading */
+@media (max-width: 760px) {
+  .onboarding-frame .app { width: min(100vw - 24px, 520px) !important; padding: 16px 0 22px !important; }
+  .launch-grid { grid-template-columns: 1fr !important; gap: 20px !important; }
+  .launch-preview { display: none !important; }
+  .launch-copy h1 { font-size: clamp(30px, 8.5vw, 42px) !important; max-width: 100% !important; }
+  .launch-copy > p { font-size: 15px !important; }
+}
+
+/* ============================================================
+   LIGHT & AIRY — full vision-theme variable override + the
+   explicit dark cards. Appended last to win the cascade.
+   ============================================================ */
+:root,
+html[data-theme="light"],
+html[data-theme="dark"] {
+  --bg: #f5f7f9;
+  --bg-soft: #eef2f6;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-hover: #f1f4f7;
+  --border: rgba(22, 32, 45, 0.10);
+  --border-strong: rgba(15, 118, 110, 0.30);
+  --text: #18222e;
+  --text-muted: #5e6a78;
+  --text-soft: #8a94a3;
+  --emerald: #0f766e;
+  --emerald-strong: #0b5f58;
+  --mint: #6ea98f;
+  --gold: #b7791f;
+  --blue: #2563eb;
+  --danger: #c0453b;
+  --warning: #b7791f;
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --muted: var(--text-muted);
+  --green: var(--emerald);
+  --green-2: var(--emerald-strong);
+  --coral: var(--danger);
+}
+
+/* explicit dark hero card -> light */
+.hero-money-card {
+  background:
+    radial-gradient(26rem 18rem at 16% 0%, rgba(15, 118, 110, 0.08), transparent 66%),
+    linear-gradient(180deg, #ffffff, #f2f7f5) !important;
+  border-color: var(--line) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+.hero-money-card .metric-xl { color: var(--emerald) !important; text-shadow: none !important; }
+
+/* hardcoded light-on-dark text -> ink/muted */
+.vision-card-title,
+.metric-xl, .metric-lg, .metric-text strong,
+.vision-page-head h1, .vision-card-title strong,
+.today-greeting, .split-card-content strong {
+  color: var(--text) !important;
+}
+.metric-row span, .vision-card p, .vision-card small,
+.vision-page-head p, .vision-card-title small {
+  color: var(--muted) !important;
+}
+.soft-button, .text-link {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line-strong) !important;
+}
+.icon-tile { background: var(--surface-2) !important; color: var(--emerald) !important; }
+
+/* safety: force opaque light cards + readable chips/empty-states */
+.vision-card { background: var(--surface) !important; }
+.status-pill { border-color: var(--line-strong) !important; color: var(--text) !important; }
+.premium-empty-state { border-color: var(--line-strong) !important; background: var(--surface-2) !important; }
+.premium-empty-state strong { color: var(--text) !important; }
+.premium-empty-state p, .premium-empty-state small { color: var(--muted) !important; }
+.vision-page-head h1 { color: var(--text) !important; }
