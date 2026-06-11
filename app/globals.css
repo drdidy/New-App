@@ -7316,3 +7316,40 @@ html[data-theme="dark"] {
 .lx .card.capture { background: rgba(255,255,255,0.84) !important; border: 1px solid rgba(20,32,46,0.09) !important; backdrop-filter: blur(14px); }
 .lx .capture textarea { background: #fff !important; color: #16202c !important; border: 1px solid rgba(20,32,46,0.12) !important; }
 .lx .capture .hint { color: #6b7585 !important; }
+
+/* ============================================================
+   LIGHT MOP-UP — flip remaining hardcoded light-on-dark text
+   across Plan / Debt / Spending / Coach to readable ink.
+   (Accent/colored-bg elements are intentionally excluded.)
+   ============================================================ */
+.action-plan-row b, .action-plan-row strong,
+.budget-bar-row strong, .cash-card b, .challenge-box b,
+.coach-message strong, .debt-plan-list .total, .debt-row,
+.donut-top, .dual-metric b, .insight-banner strong,
+.metric-card > strong, .metric-lg, .milestone strong,
+.money-input, .money-input input, .priority-card strong,
+.ring-label strong, .roadmap-copy strong, .strategy-option div,
+.toggle-row i, .nav-brand-lockup, .nav-desktop-coach strong,
+.nav-profile strong, .profile-form label, .vision-filters button,
+.vision-card-title, .vision-page-head h1, .weekly-summary strong,
+.summary-metric strong, .plan-allocation strong, .account-row strong,
+.goal-row strong, .bill-row strong, .category-row strong,
+.spend-row strong, .trend-card strong, .health-ring-label,
+.next-step strong, .coach-suggestion {
+  color: var(--text) !important;
+}
+.money-input span, .toggle-row span, .strategy-option small,
+.vision-filters button:not(.on), .summary-metric span,
+.account-row span, .goal-row span, .bill-row span,
+.category-row span, .spend-row span {
+  color: var(--muted) !important;
+}
+/* force opaque light backgrounds on any remaining special dark cards */
+.cash-card, .priority-card, .challenge-box, .insight-banner,
+.coach-message, .strategy-option, .weekly-summary, .action-plan-row,
+.debt-row, .metric-card, .dual-metric, .summary-metric,
+.account-row, .goal-row, .bill-row, .category-row, .spend-row,
+.trend-card, .next-step, .roadmap-copy, .milestone {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+}
