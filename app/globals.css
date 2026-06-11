@@ -7353,3 +7353,42 @@ html[data-theme="dark"] {
   background: var(--surface) !important;
   border-color: var(--line) !important;
 }
+
+/* ============================================================
+   READABILITY VEIL — the fixed WebGL canvas can render a darker
+   patch at the top (and headings sit directly on it). Drop the
+   canvas a layer and lay a light veil between it and content so
+   page headings are always legible; the gradient still shows
+   through, softer, lower down.
+   ============================================================ */
+.webgl-bg { z-index: -2 !important; }
+body::after {
+  content: "" !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: -1 !important;
+  pointer-events: none !important;
+  display: block !important;
+  background: linear-gradient(
+    180deg,
+    rgba(246, 248, 251, 0.84) 0%,
+    rgba(246, 248, 251, 0.52) 24%,
+    rgba(246, 248, 251, 0.44) 100%
+  ) !important;
+}
+/* belt-and-braces: guarantee page headings are ink */
+.vision-page-head h1, .vision-page-head p { -webkit-text-fill-color: currentColor !important; }
+
+/* ============================================================
+   SCREEN-BLEND BACKGROUND — the canvas blends with the light
+   page base using `screen`, which can only lighten. Guarantees
+   page headings sitting on the bare background stay legible no
+   matter what the GPU/headless renderer does. Replaces the veil.
+   ============================================================ */
+html, body { background: #eef1f6 !important; }
+body::after { display: none !important; }
+.webgl-bg {
+  z-index: -1 !important;
+  mix-blend-mode: screen !important;
+  opacity: 1 !important;
+}
