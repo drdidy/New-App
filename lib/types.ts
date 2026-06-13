@@ -186,7 +186,11 @@ export type ParsedKind =
   | "income"
   | "debt_i_owe"
   | "debt_owed_to_me"
-  | "debt_payment";
+  | "debt_payment"
+  | "account"
+  | "bill"
+  | "budget"
+  | "goal";
 
 export interface ParsedEntry {
   kind: ParsedKind;
@@ -195,5 +199,11 @@ export interface ParsedEntry {
   description?: string;
   party?: string;
   apr?: number;
+  // account
+  accountType?: AccountType;
+  // recurring bill
+  dayOfMonth?: number;
+  // savings goal
+  monthlyContribution?: number;
   summary: string;
 }

@@ -482,8 +482,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setData((d) => {
         let txns = d.transactions;
         let debts = d.debts;
+        let accounts = d.accounts || [];
+        let recurringBills = d.recurringBills || [];
+        let budgets = d.budgets || [];
+        let goals = d.goals || [];
         const now = Date.now();
         const owner = memberId ?? d.members[0]?.id;
+        const ACCT_EMOJI: Record<string, string> = {
+          checking: "🏦", savings: "🐷", cash: "💵", investment: "📈", other: "💼",
+        };
+        const PALETTE = ["#0f766e", "#14b8a6", "#5e7fa6", "#d99a4e", "#7c6ba8", "#2e8b72"];
 
         for (const e of entries) {
           if (e.kind === "expense" || e.kind === "income") {
@@ -574,9 +582,81 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               },
               ...txns,
             ];
+          } else if (e.kind === "account") {
+            const type = e.accountType || "checking";
+            const name = (e.description || `${type[0].toUpperCase()}${type.slice(1)}`).trim();
+            const existing = accounts.find((a) => a.name.toLowerCase() === name.toLowerCase());
+            if (existing) {
+              accounts = accounts.map((a) =>
+                a.id === existing.id ? { ...a, balance: Math.abs(e.amount), updatedAt: now } : a,
+              );
+            } else {
+              accounts = [
+                {
+                  id: uid(), name, type, balance: Math.abs(e.amount),
+                  emoji: ACCT_EMOJI[type] || "💼", color: PALETTE[accounts.length % PALETTE.length],
+                  memberId: owner, createdAt: now, updatedAt: now,
+                },
+                ...accounts,
+              ];
+            }
+          } else if (e.kind === "bill") {
+            const name = (e.description || e.category || "Bill").trim();
+            const existing = recurringBills.find((b) => b.name.toLowerCase() === name.toLowerCase());
+            const patch = {
+              name, amount: Math.abs(e.amount), category: e.category || "Other",
+              dayOfMonth: Math.min(31, Math.max(1, Math.round(e.dayOfMonth || 1))),
+            };
+            if (existing) {
+              recurringBills = recurringBills.map((b) =>
+                b.id === existing.id ? { ...b, ...patch, updatedAt: now } : b,
+              );
+            } else {
+              recurringBills = [
+                { id: uid(), ...patch, memberId: owner, createdAt: now, updatedAt: now },
+                ...recurringBills,
+              ];
+            }
+          } else if (e.kind === "budget") {
+            const category = (e.category || e.description || "Other").trim();
+            const existing = budgets.find((b) => b.category.toLowerCase() === category.toLowerCase());
+            if (existing) {
+              budgets = budgets.map((b) =>
+                b.category.toLowerCase() === category.toLowerCase()
+                  ? { ...b, limit: Math.abs(e.amount), updatedAt: now }
+                  : b,
+              );
+            } else {
+              budgets = [...budgets, { category, limit: Math.abs(e.amount), updatedAt: now }];
+            }
+          } else if (e.kind === "goal") {
+            const name = (e.description || "Goal").trim();
+            const existing = goals.find((g) => g.name.toLowerCase() === name.toLowerCase());
+            if (existing) {
+              goals = goals.map((g) =>
+                g.id === existing.id
+                  ? {
+                      ...g,
+                      target: Math.abs(e.amount) || g.target,
+                      monthlyContribution: e.monthlyContribution ?? g.monthlyContribution,
+                      updatedAt: now,
+                    }
+                  : g,
+              );
+            } else {
+              goals = [
+                {
+                  id: uid(), name, emoji: "🎯", color: PALETTE[goals.length % PALETTE.length],
+                  target: Math.abs(e.amount), saved: 0,
+                  monthlyContribution: e.monthlyContribution, memberId: owner,
+                  createdAt: now, updatedAt: now,
+                },
+                ...goals,
+              ];
+            }
           }
         }
-        return { ...d, transactions: txns, debts };
+        return { ...d, transactions: txns, debts, accounts, recurringBills, budgets, goals };
       });
     },
     [],

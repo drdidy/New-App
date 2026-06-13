@@ -13,12 +13,18 @@ export const receiptLineItemSchema = z.object({
 });
 
 export const parsedEntrySchema = z.object({
-  kind: z.enum(["expense", "income", "debt_i_owe", "debt_owed_to_me", "debt_payment"]),
+  kind: z.enum([
+    "expense", "income", "debt_i_owe", "debt_owed_to_me", "debt_payment",
+    "account", "bill", "budget", "goal",
+  ]),
   amount: money,
   category: shortText(60).optional(),
   description: shortText(180).optional(),
   party: shortText(120).optional(),
   apr: z.number().finite().min(0).max(300).optional(),
+  accountType: z.enum(["checking", "savings", "cash", "investment", "other"]).optional(),
+  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  monthlyContribution: money.optional(),
   summary: shortText(240),
 });
 
