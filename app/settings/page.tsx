@@ -1,33 +1,17 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Download, Plus, Settings as SettingsIcon, Trash2, Upload, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import {
-  formatMoney,
-  CURRENCIES,
-  MEMBER_COLORS,
-  MEMBER_EMOJIS,
-} from "@/lib/format";
+import { formatMoney, CURRENCIES, MEMBER_COLORS, MEMBER_EMOJIS } from "@/lib/format";
 import Avatar from "@/components/Avatar";
 import SyncCard from "@/components/SyncCard";
-import type { AppData } from "@/lib/types";
+import type { AppData, PayCycleType } from "@/lib/types";
 
 export default function SettingsPage() {
   const {
-    data,
-    ready,
-    setHouseholdName,
-    setCurrency,
-    setTheme,
-    setPayCycle,
-    setReminders,
-    addMember,
-    updateMember,
-    removeMember,
-    setBudget,
-    removeBudget,
-    importData,
-    resetAll,
+    data, ready, setHouseholdName, setCurrency, setPayCycle, setReminders,
+    addMember, updateMember, removeMember, setBudget, removeBudget, importData, resetAll,
   } = useStore();
   const [newBudgetCat, setNewBudgetCat] = useState("");
   const [newBudgetLimit, setNewBudgetLimit] = useState("");
@@ -35,11 +19,10 @@ export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   if (!ready) return null;
+  const cur = data.currency;
 
   function exportData() {
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -73,11 +56,7 @@ export default function SettingsPage() {
   function addPerson() {
     if (data.members.length >= 6) return;
     const i = data.members.length;
-    addMember({
-      name: "New person",
-      emoji: MEMBER_EMOJIS[i % MEMBER_EMOJIS.length],
-      color: MEMBER_COLORS[i % MEMBER_COLORS.length],
-    });
+    addMember({ name: "New person", emoji: MEMBER_EMOJIS[i % MEMBER_EMOJIS.length], color: MEMBER_COLORS[i % MEMBER_COLORS.length] });
   }
 
   function saveBudget() {
@@ -89,260 +68,129 @@ export default function SettingsPage() {
   }
 
   return (
-    <main>
-      <h1 className="h-title">You &amp; settings</h1>
-      <p className="h-sub">
-        Your private profile, optional household sharing, budgets, and data controls.
-      </p>
+    <main className="lx">
+      <header className="lx-top">
+        <div>
+          <p className="lx-eyebrow"><SettingsIcon size={13} /> You & your setup</p>
+          <h1 className="lx-h1">Settings</h1>
+        </div>
+      </header>
 
       {/* Profile */}
-      <div className="card reveal">
-        <div className="card-h">Profile &amp; household</div>
-        <p className="h-sub" style={{ marginBottom: 12 }}>
-          This browser has its own profile. Other users only see this plan if they
-          use the same device, restore the same backup, or join the same sync code.
-        </p>
-        <div className="field">
-          <label>Profile or household name</label>
-          <input
-            value={data.householdName || ""}
-            onChange={(e) => setHouseholdName(e.target.value)}
-            placeholder="David's Money Plan"
-          />
-        </div>
-        <div className="field">
-          <label>Currency</label>
-          <select
-            value={data.currency}
-            onChange={(e) => setCurrency(e.target.value)}
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.label}
-              </option>
-            ))}
+      <section className="lx-card">
+        <div className="lx-card-head"><h2>Profile</h2></div>
+        <label className="lx-field"><span>Profile or household name</span>
+          <input value={data.householdName || ""} onChange={(e) => setHouseholdName(e.target.value)} placeholder="David's Money Plan" />
+        </label>
+        <label className="lx-field"><span>Currency</span>
+          <select value={data.currency} onChange={(e) => setCurrency(e.target.value)}>
+            {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
-        </div>
-        <div className="field">
-          <label>Appearance</label>
-          <div className="seg">
-            <button
-              className={"seg-btn" + (data.theme === "dark" ? " on" : "")}
-              onClick={() => setTheme("dark")}
-            >
-              🌙 Dark
-            </button>
-            <button
-              className={"seg-btn" + (data.theme === "light" ? " on" : "")}
-              onClick={() => setTheme("light")}
-            >
-              ☀️ Light
-            </button>
-          </div>
-        </div>
-        <div className="field">
-          <label>Pay schedule</label>
-          <select
-            value={data.payCycle?.type || "monthly"}
-            onChange={(e) =>
-              setPayCycle({ type: e.target.value as any, anchor: data.payCycle?.anchor })
-            }
-          >
+        </label>
+        <label className="lx-field"><span>Pay schedule</span>
+          <select value={data.payCycle?.type || "monthly"} onChange={(e) => setPayCycle({ type: e.target.value as PayCycleType, anchor: data.payCycle?.anchor })}>
             <option value="monthly">Monthly</option>
             <option value="semimonthly">Twice a month</option>
             <option value="biweekly">Every 2 weeks</option>
             <option value="weekly">Weekly</option>
           </select>
-        </div>
+        </label>
         {data.payCycle?.type !== "monthly" && (
-          <div className="field">
-            <label>Your next (or last) payday</label>
-            <input
-              type="date"
-              value={data.payCycle?.anchor || ""}
-              onChange={(e) =>
-                setPayCycle({ type: data.payCycle.type, anchor: e.target.value || undefined })
-              }
-            />
-          </div>
+          <label className="lx-field"><span>Your next (or last) payday</span>
+            <input type="date" value={data.payCycle?.anchor || ""} onChange={(e) => setPayCycle({ type: data.payCycle.type, anchor: e.target.value || undefined })} />
+          </label>
         )}
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={Boolean(data.remindersEnabled)}
+        <label className="lx-toggle">
+          <input type="checkbox" checked={Boolean(data.remindersEnabled)}
             onChange={async (e) => {
               const on = e.target.checked;
               if (on && typeof Notification !== "undefined" && Notification.permission === "default") {
                 try { await Notification.requestPermission(); } catch {}
               }
               setReminders(on);
-            }}
-          />
+            }} />
           <span>Weekly check-in reminders</span>
         </label>
-      </div>
+      </section>
 
       {/* Members */}
-      <div className="card reveal d1">
-        <div className="card-h">People in this plan</div>
-        <p className="h-sub" style={{ marginBottom: 12 }}>
-          Add people only when their spending should be part of this profile. For
-          separate users, create separate profiles instead of adding everyone here.
-        </p>
+      <section className="lx-card">
+        <div className="lx-card-head"><h2>People in this plan</h2></div>
+        <p className="lx-group-sub">Add people only when their spending is part of this profile.</p>
         {data.members.map((m) => (
-          <div className="member-edit" key={m.id}>
-            <Avatar member={m} size={38} />
-            <div className="member-fields">
-              <input
-                className="member-name"
-                value={m.name}
-                onChange={(e) => updateMember(m.id, { name: e.target.value })}
-              />
-              <div className="member-sub">
-                <div className="emoji-pick">
-                  {MEMBER_EMOJIS.slice(0, 6).map((e) => (
-                    <button
-                      key={e}
-                      className={"emoji-opt" + (m.emoji === e ? " on" : "")}
-                      onClick={() => updateMember(m.id, { emoji: e })}
-                      style={m.emoji === e ? { borderColor: m.color } : undefined}
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="color-pick">
-                {MEMBER_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    className={"color-opt" + (m.color === c ? " on" : "")}
-                    style={{ background: c }}
-                    onClick={() => updateMember(m.id, { color: c })}
-                    aria-label="colour"
-                  />
-                ))}
-              </div>
-              <input
-                className="member-income"
-                value={m.monthlyIncome ?? ""}
-                onChange={(e) =>
-                  updateMember(m.id, {
-                    monthlyIncome: e.target.value
-                      ? parseFloat(e.target.value)
-                      : undefined,
-                  })
-                }
-                inputMode="decimal"
-                placeholder="Monthly income (optional)"
-              />
+          <div className="lx-member" key={m.id}>
+            <div className="lx-member-top">
+              <Avatar member={m} size={36} />
+              <input className="lx-member-name" value={m.name} onChange={(e) => updateMember(m.id, { name: e.target.value })} />
+              {data.members.length > 1 && (
+                <button className="lx-icon-btn danger" onClick={() => removeMember(m.id)} aria-label="Remove person"><X size={15} /></button>
+              )}
             </div>
-            {data.members.length > 1 && (
-              <button
-                className="x"
-                onClick={() => removeMember(m.id)}
-                aria-label="Remove person"
-              >
-                ×
-              </button>
-            )}
+            <div className="lx-emoji-row">
+              {MEMBER_EMOJIS.slice(0, 6).map((e) => (
+                <button key={e} className={"lx-emoji" + (m.emoji === e ? " on" : "")} onClick={() => updateMember(m.id, { emoji: e })}>{e}</button>
+              ))}
+            </div>
+            <div className="lx-color-row">
+              {MEMBER_COLORS.map((c) => (
+                <button key={c} className={"lx-color" + (m.color === c ? " on" : "")} style={{ background: c }} onClick={() => updateMember(m.id, { color: c })} aria-label="colour" />
+              ))}
+            </div>
+            <input className="lx-member-income" value={m.monthlyIncome ?? ""} inputMode="decimal" placeholder="Monthly income (optional)"
+              onChange={(e) => updateMember(m.id, { monthlyIncome: e.target.value ? parseFloat(e.target.value) : undefined })} />
           </div>
         ))}
         {data.members.length < 6 && (
-          <button className="btn btn-ghost btn-block" onClick={addPerson} style={{ marginTop: 8 }}>
-            + Add a person
-          </button>
+          <button className="lx-ghost" style={{ width: "100%", marginTop: 8 }} onClick={addPerson}><Plus size={15} /> Add a person</button>
         )}
-      </div>
+      </section>
 
-      {/* Sync */}
-      <SyncCard />
+      <div className="lx-syncwrap"><SyncCard /></div>
 
       {/* Budgets */}
-      <div className="card reveal d2">
-        <div className="card-h">Monthly budgets</div>
-        {data.budgets.length === 0 && (
-          <p className="h-sub" style={{ marginBottom: 12 }}>
-            Set a cap on a category and we'll show progress + warn you on the
-            Insights screen.
-          </p>
-        )}
-        {data.budgets.map((b) => (
-          <div className="item" key={b.category}>
-            <div className="ic">🎯</div>
-            <div className="meta">
-              <div className="t">{b.category}</div>
-              <div className="s">{formatMoney(b.limit, data.currency)} / month</div>
-            </div>
-            <button
-              className="x"
-              onClick={() => removeBudget(b.category)}
-              aria-label="Remove budget"
-            >
-              ×
-            </button>
+      <section className="lx-card">
+        <div className="lx-card-head"><h2>Monthly budgets</h2></div>
+        {data.budgets.length === 0 ? (
+          <p className="lx-group-sub">Cap a category and Spending will show progress and warn you.</p>
+        ) : (
+          <div className="lx-list">
+            {data.budgets.map((b) => (
+              <div className="lx-li" key={b.category}>
+                <span className="ic">🎯</span>
+                <div className="meta"><div className="t">{b.category}</div><div className="s">{formatMoney(b.limit, cur)} / month</div></div>
+                <button className="lx-icon-btn danger" onClick={() => removeBudget(b.category)} aria-label="Remove budget"><Trash2 size={14} /></button>
+              </div>
+            ))}
           </div>
-        ))}
-        <div className="row" style={{ marginTop: 10 }}>
-          <input
-            className="mini-input"
-            value={newBudgetCat}
-            onChange={(e) => setNewBudgetCat(e.target.value)}
-            placeholder="Category, e.g. Dining"
-          />
-          <input
-            className="mini-input"
-            value={newBudgetLimit}
-            onChange={(e) => setNewBudgetLimit(e.target.value)}
-            inputMode="decimal"
-            placeholder="Limit"
-            style={{ maxWidth: 110 }}
-          />
+        )}
+        <div className="lx-field-row" style={{ marginTop: 12 }}>
+          <label className="lx-field"><span>Category</span>
+            <input value={newBudgetCat} onChange={(e) => setNewBudgetCat(e.target.value)} placeholder="Dining" />
+          </label>
+          <label className="lx-field"><span>Limit / month</span>
+            <input value={newBudgetLimit} onChange={(e) => setNewBudgetLimit(e.target.value)} inputMode="decimal" placeholder="300" />
+          </label>
         </div>
-        <button className="btn btn-ghost btn-block" onClick={saveBudget} style={{ marginTop: 10 }}>
-          Set budget
-        </button>
-      </div>
+        <button className="lx-primary full" onClick={saveBudget} style={{ marginTop: 4 }}>Set budget</button>
+      </section>
 
       {/* Data */}
-      <div className="card reveal d3">
-        <div className="card-h">Your data</div>
-        <p className="h-sub" style={{ marginBottom: 12 }}>
-          Everything lives on this device only. Use backup to move it to another
-          phone or keep it safe.
-        </p>
-        <div className="capture-actions" style={{ flexWrap: "wrap" }}>
-          <button className="btn btn-ghost" onClick={exportData}>
-            ⬇️ Back up
-          </button>
-          <button className="btn btn-ghost" onClick={() => fileRef.current?.click()}>
-            ⬆️ Restore
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json"
-            hidden
-            onChange={onImport}
-          />
+      <section className="lx-card">
+        <div className="lx-card-head"><h2>Your data</h2></div>
+        <p className="lx-group-sub">Everything lives on this device. Back it up to move phones or keep it safe.</p>
+        <div className="lx-field-row">
+          <button className="lx-ghost" onClick={exportData}><Download size={15} /> Back up</button>
+          <button className="lx-ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> Restore</button>
+          <input ref={fileRef} type="file" accept="application/json" hidden onChange={onImport} />
         </div>
-        <button
-          className="btn btn-ghost btn-block danger"
-          style={{ marginTop: 10 }}
-          onClick={() => {
-            if (confirm("Erase ALL data and start over? This can't be undone.")) {
-              resetAll();
-            }
-          }}
-        >
-          Erase everything
+        <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }}
+          onClick={() => { if (confirm("Erase ALL data and start over? This can't be undone.")) resetAll(); }}>
+          <Trash2 size={15} /> Erase everything
         </button>
-        {note && <p className="confirm" style={{ marginTop: 12 }}>{note}</p>}
-      </div>
+        {note && <p className="lx-flash">{note}</p>}
+      </section>
 
-      <p className="hint" style={{ textAlign: "center", marginTop: 4 }}>
-        Money Coach · your private money companion 💚
-      </p>
+      <p className="lx-footer">Money Coach · your private money companion 💚</p>
     </main>
   );
 }

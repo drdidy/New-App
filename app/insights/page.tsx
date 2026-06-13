@@ -1,325 +1,249 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import gsap from "gsap";
 import {
-  AlertTriangle,
   ArrowRight,
-  Download,
-  Filter,
+  BarChart3,
+  Landmark,
+  Pencil,
+  Plus,
   ReceiptText,
-  RotateCcw,
+  Trash2,
   TrendingDown,
   TrendingUp,
+  Wallet,
+  X,
 } from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
 import {
-  billsThisMonth,
   budgetStatus,
+  cashOnHand,
   categoryBreakdown,
   monthOverMonth,
   monthlyTotals,
+  netWorth,
 } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
+import type { AccountType } from "@/lib/types";
 import Donut from "@/components/Donut";
 import Sparkline from "@/components/Sparkline";
-import { ActionButton, EmptyState, PageHeader } from "@/components/PremiumUI";
 
-const CHART_COLORS = ["#8dbbff", "#84d6a5", "#e3bf74", "#ef8b7d", "#bca7ff", "#9fb4c7", "#7fb7b2"];
+const CHART = ["#0f766e", "#14b8a6", "#5e7fa6", "#d99a4e", "#7c6ba8", "#9fb4c7", "#2e8b72"];
+
+const ACCT: Record<AccountType, { emoji: string; label: string }> = {
+  checking: { emoji: "🏦", label: "Checking" },
+  savings: { emoji: "🐷", label: "Savings" },
+  cash: { emoji: "💵", label: "Cash" },
+  investment: { emoji: "📈", label: "Investment" },
+  other: { emoji: "💼", label: "Other" },
+};
+
+interface AcctDraft { id?: string; name: string; type: AccountType; balance: string; }
 
 export default function SpendingPage() {
-  const { data, ready } = useStore();
+  const { data, ready, addAccount, updateAccount, deleteAccount } = useStore();
+  const [draft, setDraft] = useState<AcctDraft | null>(null);
+  const root = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from(".lx-reveal", { y: 20, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+    }, root);
+    return () => ctx.revert();
+  }, [ready]);
+
   if (!ready) return null;
 
+  const cur = data.currency;
   const summary = summarize(data);
   const cats = categoryBreakdown(data);
   const budgets = budgetStatus(data);
   const mom = monthOverMonth(data);
   const trend = monthlyTotals(data, 7);
-  const bills = billsThisMonth(data);
-  const budgetTotal = data.budgets.reduce((sum, b) => sum + b.limit, 0);
-  const pctBudget = budgetTotal ? Math.round((summary.expenses / budgetTotal) * 100) : 0;
-  const outflow = summary.expenses + bills.reduce((sum, b) => sum + b.bill.amount, 0);
-  const merchantTotals = new Map<string, { category: string; amount: number }>();
+  const nw = netWorth(data);
+  const cash = cashOnHand(data);
+  const accounts = data.accounts || [];
 
-  for (const t of data.transactions.filter((t) => t.type === "expense")) {
-    const key = t.description || t.category;
-    const prev = merchantTotals.get(key) || { category: t.category, amount: 0 };
-    merchantTotals.set(key, { category: prev.category, amount: prev.amount + t.amount });
-  }
-
-  const merchants = [...merchantTotals.entries()]
-    .map(([name, value]) => ({ name, ...value }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5);
-
-  const slices = (cats.length ? cats : [{ category: "No data", amount: 1, pct: 100 }]).slice(0, 6).map((c, i) => ({
-    label: c.category,
-    value: c.amount,
-    color: CHART_COLORS[i % CHART_COLORS.length],
-  }));
-  const unusual = cats.find((c) => c.pct > 28) || cats[0];
-  const recurring = bills.slice(0, 4);
-  const topCategory = cats[0];
-  const trendValues = trend.map((m) => m.expense);
-  const trendForChart = trendValues.some(Boolean) ? trendValues : trend.map(() => 0);
-  const itemTotals = new Map<string, { category: string; amount: number; count: number }>();
-
-  for (const t of data.transactions.filter((t) => t.type === "expense")) {
-    for (const item of t.lineItems || []) {
-      if (!item.name || item.amount <= 0) continue;
-      const key = `${item.category || t.category}::${item.name}`.toLowerCase();
-      const prev = itemTotals.get(key) || {
-        category: item.category || t.category,
-        amount: 0,
-        count: 0,
-      };
-      itemTotals.set(key, {
-        category: prev.category,
-        amount: prev.amount + item.amount,
-        count: prev.count + 1,
-      });
-    }
-  }
-
-  const itemSpending = [...itemTotals.entries()]
-    .map(([key, value]) => ({
-      name: key.split("::").slice(1).join("::"),
-      ...value,
-    }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 6);
+  const slices = cats.slice(0, 6).map((c, i) => ({ label: c.category, value: c.amount, color: CHART[i % CHART.length] }));
+  const trendVals = trend.map((m) => m.expense);
   const hasExpenses = data.transactions.some((t) => t.type === "expense");
 
-  return (
-    <main className="vision-page spending-dashboard">
-      <PageHeader
-        title="Spending"
-        subtitle="Understand where your money goes and make smarter choices."
-        action={<button className="soft-button icon-button"><Download size={16} aria-hidden="true" /> Export</button>}
-      />
+  const merchantMap = new Map<string, { category: string; amount: number }>();
+  for (const t of data.transactions.filter((t) => t.type === "expense")) {
+    const key = t.description || t.category;
+    const prev = merchantMap.get(key) || { category: t.category, amount: 0 };
+    merchantMap.set(key, { category: prev.category, amount: prev.amount + t.amount });
+  }
+  const merchants = [...merchantMap.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.amount - a.amount).slice(0, 5);
 
-      <div className="vision-filters">
-        <button>This Month</button>
-        <button>All Categories</button>
-        <button>All Accounts</button>
-        <button className="filter-only"><Filter size={16} /></button>
+  function saveAcct() {
+    if (!draft) return;
+    const balance = parseFloat(draft.balance);
+    if (!draft.name.trim() || !Number.isFinite(balance)) return;
+    if (draft.id) {
+      updateAccount(draft.id, { name: draft.name.trim(), type: draft.type, balance });
+    } else {
+      addAccount({
+        name: draft.name.trim(),
+        type: draft.type,
+        balance,
+        emoji: ACCT[draft.type].emoji,
+        color: CHART[accounts.length % CHART.length],
+      });
+    }
+    setDraft(null);
+  }
+
+  return (
+    <main className="lx" ref={root}>
+      <header className="lx-top lx-reveal">
+        <div>
+          <p className="lx-eyebrow"><BarChart3 size={13} /> Money overview</p>
+          <h1 className="lx-h1">Spending</h1>
+        </div>
+        <button className="lx-addbtn" onClick={() => setDraft({ name: "", type: "checking", balance: "" })} aria-label="Add account">
+          <Plus size={20} />
+        </button>
+      </header>
+
+      {/* NET WORTH HERO */}
+      <div className="lx-hero lx-reveal">
+        <div className="lx-hero-inner">
+          <div className="lx-hero-label">Net worth</div>
+          <div className={"lx-hero-num " + (nw >= 0 ? "pos" : "neg")}>{formatMoney(nw, cur)}</div>
+          <div className="lx-hero-sub">{formatMoney(cash, cur)} across {accounts.length} account{accounts.length === 1 ? "" : "s"} · minus what you owe.</div>
+        </div>
       </div>
 
-      <section className="vision-grid spending-grid">
-        <article className="vision-card stat-card span-4">
-          <div className="vision-card-title">
-            <span>Total Spending</span>
-            <TrendingUp size={16} />
-          </div>
-          <div className="metric-lg">{hasExpenses ? formatMoney(summary.expenses, data.currency) : <span className="metric-text">Start</span>}</div>
-          <p className={mom.changePct != null && mom.changePct > 0 ? "negative" : "positive"}>
-            {mom.changePct == null ? "Start tracking this month" : `${mom.changePct > 0 ? "Up" : "Down"} ${Math.abs(Math.round(mom.changePct))}% vs last month`}
-          </p>
-          {hasExpenses ? (
-            <Sparkline values={trendForChart} color="#6EE7A8" height={72} />
-          ) : (
-            <EmptyState Icon={ReceiptText} title="Start tracking this month" body="Log a few expenses to see your spending pulse." action="Add transaction" href="/" />
-          )}
-        </article>
-
-        <article className="vision-card stat-card span-4">
-          <div className="vision-card-title">
-            <span>Budget vs Actual</span>
-            <RotateCcw size={16} />
-          </div>
-          {budgetTotal ? (
-            <>
-              <div className="dual-metric">
-                <span><b>{formatMoney(budgetTotal, data.currency)}</b><small>Budget</small></span>
-                <span><b>{formatMoney(summary.expenses, data.currency)}</b><small>Actual</small></span>
+      {/* ACCOUNTS */}
+      <section className="lx-card lx-reveal">
+        <div className="lx-card-head"><h2>Accounts</h2><span className="lx-group-total">{formatMoney(cash, cur)}</span></div>
+        {accounts.length ? (
+          <div className="lx-list">
+            {accounts.map((a) => (
+              <div className="lx-li" key={a.id}>
+                <span className="ic" style={{ background: "rgba(15,118,110,0.08)" }}>{a.emoji || ACCT[a.type].emoji}</span>
+                <div className="meta"><div className="t">{a.name}</div><div className="s">{ACCT[a.type].label}</div></div>
+                <div className="amt" style={{ color: a.balance < 0 ? "var(--mc-neg)" : "var(--mc-ink)" }}>{formatMoney(a.balance, cur)}</div>
+                <button className="lx-icon-btn" onClick={() => setDraft({ id: a.id, name: a.name, type: a.type, balance: String(a.balance) })} aria-label="Edit"><Pencil size={14} /></button>
+                <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${a.name}"?`)) deleteAccount(a.id); }} aria-label="Delete"><Trash2 size={14} /></button>
               </div>
-              <div className="split-progress">
-                <span className="ok" style={{ width: `${Math.min(100, pctBudget)}%` }} />
-                <span className="bad" style={{ width: `${Math.max(0, pctBudget - 100)}%` }} />
-              </div>
-              <p className={pctBudget > 100 ? "negative" : "positive"}>{pctBudget}% of budget</p>
-            </>
-          ) : (
-            <EmptyState
-              Icon={Filter}
-              title="No budget set yet"
-              body="Create category budgets so spending has a useful target."
-              action="Create budgets"
-              href="/settings"
-            />
-          )}
-        </article>
-
-        <article className="vision-card stat-card span-4">
-          <div className="vision-card-title">
-            <span>Cash Outflow</span>
+            ))}
           </div>
-          <div className="metric-lg">{hasExpenses ? formatMoney(outflow, data.currency) : "Waiting"}</div>
-          <p>{hasExpenses ? "Total outflow this month" : "Cash outflow appears after transactions."}</p>
-          {hasExpenses ? (
-            <div className="bar-spark">
-              {trend.map((m) => (
-                <i key={m.month} style={{ height: `${Math.max(10, Math.min(100, m.expense / Math.max(1, outflow) * 160))}%` }} />
+        ) : (
+          <div className="lx-blank">
+            <div className="ic"><Wallet size={22} /></div>
+            <h4>Add your balances</h4>
+            <p>Your real cash on hand powers a true “safe to spend”. Add checking, savings, or cash.</p>
+            <button className="lx-primary" onClick={() => setDraft({ name: "", type: "checking", balance: "" })}><Plus size={16} /> Add an account</button>
+          </div>
+        )}
+      </section>
+
+      {/* SPENDING TOTAL + TREND */}
+      <section className="lx-card lx-reveal">
+        <div className="lx-card-head"><h2>Spent this month</h2>
+          {mom.changePct != null && (
+            <span className={"lx-delta " + (mom.changePct > 0 ? "up" : "down")}>
+              {mom.changePct > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+              {Math.abs(Math.round(mom.changePct))}%
+            </span>
+          )}
+        </div>
+        <div className="lx-hero-num neg" style={{ fontSize: 34 }}>{formatMoney(summary.expenses, cur)}</div>
+        <Sparkline values={hasExpenses ? trendVals : [0, 0, 0, 0, 0, 0, 0]} labels={trend.map((m) => m.label)} color="#c0453b" height={130} />
+      </section>
+
+      {/* CATEGORY DONUT */}
+      {cats.length > 0 && (
+        <section className="lx-card lx-reveal">
+          <div className="lx-card-head"><h2>By category</h2></div>
+          <div className="lx-donutwrap">
+            <Donut slices={slices} centerTop={formatMoney(summary.expenses, cur)} centerSub="total" size={168} stroke={24} />
+            <div className="lx-legend">
+              {cats.slice(0, 6).map((c, i) => (
+                <div className="lx-legend-row" key={c.category}>
+                  <span className="sw" style={{ background: CHART[i % CHART.length] }} />
+                  <span className="nm">{c.category}</span>
+                  <span className="am">{formatMoney(c.amount, cur)}</span>
+                  <span className="pc">{Math.round(c.pct)}%</span>
+                </div>
               ))}
             </div>
-          ) : (
-            <EmptyState Icon={TrendingDown} title="No cash outflow yet" body="Expenses, bills, and receipt totals will build this view." action="Log spending" href="/" />
-          )}
-        </article>
-
-        <article className="vision-card span-6">
-          <div className="vision-card-title">
-            <span>Spending by Category</span>
-            <small>Total</small>
           </div>
-          {cats.length > 0 ? (
-            <div className="donut-wrap">
-              <Donut slices={slices} centerTop={formatMoney(summary.expenses, data.currency)} centerSub="Total" size={190} stroke={24} />
-              <div className="legend">
-                {cats.slice(0, 6).map((c, i) => (
-                  <div className="legend-row" key={c.category}>
-                    <span className="swatch" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                    <span className="legend-label">{c.category}</span>
-                    <span>{formatMoney(c.amount, data.currency)}</span>
-                    <small>{Math.round(c.pct)}%</small>
-                  </div>
-                ))}
+        </section>
+      )}
+
+      {/* BUDGETS */}
+      {budgets.length > 0 && (
+        <section className="lx-card lx-reveal">
+          <div className="lx-card-head"><h2>Budgets</h2><Link href="/settings">Edit</Link></div>
+          <div className="lx-barlist">
+            {budgets.slice(0, 6).map((b) => (
+              <div className="lx-barrow" key={b.category}>
+                <div className="top"><span className="nm">{b.category}</span><span className="vals">{formatMoney(b.spent, cur)} / {formatMoney(b.limit, cur)}</span></div>
+                <div className="track"><span className={b.over ? "over" : ""} style={{ width: `${Math.min(100, b.pct)}%` }} /></div>
               </div>
-            </div>
-          ) : (
-            <EmptyState
-              Icon={ReceiptText}
-              title="Log expenses to see category detail"
-              body="Your category view will show groceries, dining, transport, bills, and receipt-level patterns."
-              action="Add transaction"
-              href="/"
-            />
-          )}
-          <Link href="/coach" className="text-link">View all categories <ArrowRight size={14} aria-hidden="true" /></Link>
-        </article>
+            ))}
+          </div>
+        </section>
+      )}
 
-        <article className="vision-card span-5">
-          <div className="vision-card-title">
-            <span>Weekly Trend</span>
-            <small>Average per week</small>
-          </div>
-          <div className="metric-row">
-            <strong className={!hasExpenses ? "metric-phrase" : undefined}>{hasExpenses ? formatMoney(summary.expenses / 4 || 0, data.currency) : "Building"}</strong>
-            <span>{mom.changePct == null ? "Building trend" : `${Math.abs(Math.round(mom.changePct))}% vs last month`}</span>
-          </div>
-          {hasExpenses ? (
-            <Sparkline values={trendForChart} labels={trend.map((m) => m.label.slice(0, 3))} color="#6EE7A8" height={170} />
-          ) : (
-            <EmptyState Icon={TrendingUp} title="Building trend" body="This chart will become useful after a few logged expenses." action="Quick capture" href="/" />
-          )}
-        </article>
-
-        <article className="vision-card span-4">
-          <div className="vision-card-title">
-            <span>Top Merchants</span>
-            <small>This Month</small>
-          </div>
-          <div className="vision-list">
+      {/* MERCHANTS */}
+      {merchants.length > 0 && (
+        <section className="lx-card lx-reveal">
+          <div className="lx-card-head"><h2>Top merchants</h2></div>
+          <div className="lx-list">
             {merchants.map((m) => (
-              <div className="vision-list-row" key={m.name}>
-                <span className="icon-tile">{m.name.slice(0, 1).toUpperCase()}</span>
-                <div>
-                  <strong>{m.name}</strong>
-                  <small>{m.category}</small>
-                </div>
-                <b>{formatMoney(m.amount, data.currency)}</b>
+              <div className="lx-li" key={m.name}>
+                <span className="ic">{m.name.slice(0, 1).toUpperCase()}</span>
+                <div className="meta"><div className="t">{m.name}</div><div className="s">{m.category}</div></div>
+                <div className="amt neg">{formatMoney(m.amount, cur)}</div>
               </div>
             ))}
-            {merchants.length === 0 && <EmptyState Icon={ReceiptText} title="No merchants yet" body="Your top merchants will appear after you log expenses." action="Add transaction" href="/" />}
           </div>
-        </article>
+        </section>
+      )}
 
-        <article className="vision-card span-4">
-          <div className="vision-card-title">
-            <span>Budget by Category</span>
-            <small>This Month</small>
-          </div>
-          <div className="budget-bars">
-            {budgets.slice(0, 5).map((b) => (
-              <div className="budget-bar-row" key={b.category}>
-                <div>
-                  <strong>{b.category}</strong>
-                  <span>{formatMoney(b.spent, data.currency)} of {formatMoney(b.limit, data.currency)}</span>
-                </div>
-                <div className="mini-progress"><span style={{ width: `${Math.min(100, b.pct)}%` }} /></div>
-              </div>
-            ))}
-            {budgets.length === 0 && <EmptyState Icon={Filter} title="No budgets set" body="Set budgets on the Plan tab to compare spending against intention." action="Create budgets" href="/settings" />}
-          </div>
-        </article>
+      {!hasExpenses && accounts.length === 0 && (
+        <Link href="/" className="lx-card lx-cta lx-reveal">
+          <div className="lx-cta-ic"><ReceiptText size={22} /></div>
+          <div className="lx-cta-meta"><div className="lx-cta-t">Log your first expense</div><div className="lx-cta-s">Say “spent 12 on coffee” on Today.</div></div>
+          <ArrowRight size={18} className="lx-cta-arrow" />
+        </Link>
+      )}
 
-        <article className="vision-card span-3 alert-card">
-          <div className="vision-card-title">
-            <span><AlertTriangle size={16} /> Unusual Spending Alert</span>
+      {/* ACCOUNT SHEET */}
+      {draft && (
+        <div className="lx-sheet-backdrop" onClick={() => setDraft(null)}>
+          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lx-sheet-head">
+              <h3>{draft.id ? "Edit account" : "Add account"}</h3>
+              <button className="lx-sheet-x" onClick={() => setDraft(null)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="lx-chips" style={{ marginBottom: 14 }}>
+              {(Object.keys(ACCT) as AccountType[]).map((t) => (
+                <button key={t} className={"lx-chip" + (draft.type === t ? " on" : "")} onClick={() => setDraft({ ...draft, type: t })}>
+                  {ACCT[t].emoji} {ACCT[t].label}
+                </button>
+              ))}
+            </div>
+            <label className="lx-field"><span>Name</span>
+              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={`${ACCT[draft.type].label} account`} autoFocus />
+            </label>
+            <label className="lx-field"><span>Current balance</span>
+              <input type="number" inputMode="decimal" value={draft.balance} onChange={(e) => setDraft({ ...draft, balance: e.target.value })} placeholder="0" />
+            </label>
+            <button className="lx-primary full" onClick={saveAcct} disabled={!draft.name.trim() || !Number.isFinite(parseFloat(draft.balance))}>
+              {draft.id ? "Save" : "Add account"}
+            </button>
           </div>
-          {unusual ? (
-            <>
-              <p>{`${unusual.category} is taking ${Math.round(unusual.pct)}% of spending this month.`}</p>
-              <div className="metric-lg small">{formatMoney(unusual.amount, data.currency)}</div>
-              <Link href="/coach" className="text-link">Review spending <ArrowRight size={14} aria-hidden="true" /></Link>
-            </>
-          ) : (
-            <EmptyState Icon={AlertTriangle} title="No unusual category pressure yet" body="Money Coach will flag categories that start moving faster than normal." action="Ask Coach" href="/coach" />
-          )}
-        </article>
-
-        <article className="vision-card span-3">
-          <div className="vision-card-title">
-            <span><ReceiptText size={16} /> Recurring Charges</span>
-          </div>
-          {recurring.length > 0 ? (
-            <>
-              <div className="metric-lg small">{formatMoney(recurring.reduce((s, b) => s + b.bill.amount, 0), data.currency)}</div>
-              <p>Due within this cycle</p>
-              <div className="recurring-dots">
-                {recurring.map((b) => <span key={b.bill.id}>{b.bill.name.slice(0, 1)}</span>)}
-              </div>
-              <Link href="/bills" className="text-link">View all <ArrowRight size={14} aria-hidden="true" /></Link>
-            </>
-          ) : (
-            <EmptyState Icon={RotateCcw} title="No recurring charges" body="Add subscriptions and repeat bills so recurring pressure stays visible." action="Add recurring charge" href="/bills" />
-          )}
-        </article>
-
-        <article className="vision-card span-4">
-          <div className="vision-card-title">
-            <span><ReceiptText size={16} /> Item-Level Spending</span>
-            <small>From receipts</small>
-          </div>
-          <div className="vision-list">
-            {itemSpending.map((item) => (
-              <div className="vision-list-row" key={`${item.category}-${item.name}`}>
-                <span className="icon-tile">{item.category.slice(0, 1).toUpperCase()}</span>
-                <div>
-                  <strong>{item.name}</strong>
-                  <small>{item.category} - {item.count} receipt{item.count === 1 ? "" : "s"}</small>
-                </div>
-                <b>{formatMoney(item.amount, data.currency)}</b>
-              </div>
-            ))}
-            {itemSpending.length === 0 && (
-              <EmptyState
-                Icon={ReceiptText}
-                title="Unlock item-level spending"
-                body="Scan grocery receipts to see items like chicken, snacks, paper towels, and produce inside each category."
-                action="Scan receipt"
-                href="/"
-              />
-            )}
-          </div>
-        </article>
-
-        <article className="vision-card span-8 insight-banner">
-          <strong>{topCategory ? `Save more on ${topCategory.category}` : "Build your spending picture"}</strong>
-          <span>{topCategory ? `You could review receipts and trim a few repeat items in ${topCategory.category}.` : "Add a few transactions and receipts to unlock smarter advice."}</span>
-          <ActionButton href={topCategory ? "/coach" : "/"} variant="secondary">See how</ActionButton>
-        </article>
-      </section>
+        </div>
+      )}
     </main>
   );
 }

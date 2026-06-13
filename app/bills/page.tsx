@@ -1,33 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { Calendar, Check, Plus, Trash2, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { billsThisMonth } from "@/lib/insights";
 import { formatMoney, monthLabel, monthKey } from "@/lib/format";
 import MemberPicker from "@/components/MemberPicker";
 
-const CATEGORIES = [
-  "Rent",
-  "Utilities",
-  "Subscription",
-  "Insurance",
-  "Phone",
-  "Internet",
-  "Loan",
-  "Childcare",
-  "Other",
-];
-
+const CATEGORIES = ["Rent", "Utilities", "Subscription", "Insurance", "Phone", "Internet", "Loan", "Childcare", "Other"];
 const ICON: Record<string, string> = {
-  Rent: "🏠",
-  Utilities: "💡",
-  Subscription: "📺",
-  Insurance: "🛡️",
-  Phone: "📱",
-  Internet: "🌐",
-  Loan: "🏦",
-  Childcare: "🧸",
-  Other: "🧾",
+  Rent: "🏠", Utilities: "💡", Subscription: "📺", Insurance: "🛡️", Phone: "📱",
+  Internet: "🌐", Loan: "🏦", Childcare: "🧸", Other: "🧾",
 };
 
 export default function BillsPage() {
@@ -42,193 +25,117 @@ export default function BillsPage() {
 
   if (!ready) return null;
 
+  const cur = data.currency;
   const multi = data.members.length > 1;
   const bills = billsThisMonth(data);
   const monthlyTotal = bills.reduce((s, b) => s + b.bill.amount, 0);
   const paidTotal = bills.filter((b) => b.paid).reduce((s, b) => s + b.bill.amount, 0);
   const remaining = monthlyTotal - paidTotal;
+  const paidPct = monthlyTotal ? (paidTotal / monthlyTotal) * 100 : 0;
 
   function save() {
     const amt = parseFloat(amount);
     const d = parseInt(day, 10);
     if (!name.trim() || !amt || amt <= 0 || !d || d < 1 || d > 31) return;
-    addBill({
-      name: name.trim(),
-      amount: amt,
-      category,
-      dayOfMonth: d,
-      memberId: who ?? data.members[0]?.id,
-      autoLog,
-    });
-    setName("");
-    setAmount("");
-    setDay("1");
-    setAutoLog(false);
-    setOpen(false);
+    addBill({ name: name.trim(), amount: amt, category, dayOfMonth: d, memberId: who ?? data.members[0]?.id, autoLog });
+    setName(""); setAmount(""); setDay("1"); setAutoLog(false); setOpen(false);
   }
 
   return (
-    <main>
-      <h1 className="h-title">Recurring bills</h1>
-      <p className="h-sub">
-        Your constant monthly costs — rent, utilities, subscriptions. Unpaid ones
-        are held back from your &quot;safe to spend&quot;.
-      </p>
+    <main className="lx">
+      <header className="lx-top">
+        <div>
+          <p className="lx-eyebrow"><Calendar size={13} /> Committed each month</p>
+          <h1 className="lx-h1">Bills</h1>
+        </div>
+        <button className="lx-addbtn" onClick={() => setOpen(true)} aria-label="Add a bill"><Plus size={20} /></button>
+      </header>
 
-      {bills.length > 0 && (
-        <div className="card hero reveal" style={{ marginBottom: 16 }}>
-          <div className="label">Fixed costs for {monthLabel(monthKey())}</div>
-          <div className="big" style={{ fontSize: 38 }}>
-            {formatMoney(monthlyTotal, data.currency)}
-          </div>
-          <div className="bills-progress">
-            <div className="bar-track" style={{ marginTop: 8 }}>
-              <div
-                className="bar-fill"
-                style={{
-                  width: `${monthlyTotal ? (paidTotal / monthlyTotal) * 100 : 0}%`,
-                }}
-              />
-            </div>
-            <div className="bills-progress-row">
-              <span className="pos">{formatMoney(paidTotal, data.currency)} paid</span>
-              <span className="muted">{formatMoney(remaining, data.currency)} left</span>
-            </div>
+      <div className="lx-hero">
+        <div className="lx-hero-inner">
+          <div className="lx-hero-label">Fixed costs · {monthLabel(monthKey())}</div>
+          <div className="lx-hero-num neg">{formatMoney(monthlyTotal, cur)}</div>
+          <div className="lx-bar"><span style={{ width: `${paidPct}%` }} /></div>
+          <div className="lx-hero-math">
+            <span className="pos">{formatMoney(paidTotal, cur)} paid</span>
+            <span>{formatMoney(remaining, cur)} left this month</span>
           </div>
         </div>
-      )}
-
-      <div className="card">
-        {bills.length === 0 ? (
-          <div className="empty">
-            No bills yet. Add your rent and regular bills so your budget knows
-            what&apos;s already committed.
-          </div>
-        ) : (
-          bills.map((b) => {
-            const m = member(b.bill.memberId);
-            return (
-              <div className="item" key={b.bill.id}>
-                <div className="ic">{ICON[b.bill.category] || "🧾"}</div>
-                <div className="meta">
-                  <div className="t">{b.bill.name}</div>
-                  <div className="s">
-                    Due {ordinal(b.dueDay)}
-                    {b.bill.autoLog ? " · auto" : ""}
-                    {multi && m ? ` · ${m.emoji}` : ""}
-                    {b.paid ? " · ✓ paid" : b.daysAway >= 0 && b.daysAway <= 6 ? ` · in ${b.daysAway}d` : ""}
-                  </div>
-                </div>
-                <div className="amt out" style={{ opacity: b.paid ? 0.5 : 1 }}>
-                  {formatMoney(b.bill.amount, data.currency)}
-                </div>
-                {b.paid ? (
-                  <span className="bill-paid">✓</span>
-                ) : (
-                  <button
-                    className="bill-pay"
-                    onClick={() => markBillPaid(b.bill.id)}
-                  >
-                    Mark paid
-                  </button>
-                )}
-                <button
-                  className="x"
-                  onClick={() => deleteBill(b.bill.id)}
-                  aria-label="Delete bill"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })
-        )}
       </div>
 
-      {open ? (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="field">
-            <label>Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Rent, Netflix, Electric…"
-              autoFocus
-            />
+      <section className="lx-card">
+        {bills.length === 0 ? (
+          <div className="lx-blank">
+            <div className="ic"><Calendar size={22} /></div>
+            <h4>No bills yet</h4>
+            <p>Add rent and regular bills so your “safe to spend” knows what’s already committed.</p>
+            <button className="lx-primary" onClick={() => setOpen(true)}><Plus size={16} /> Add a bill</button>
           </div>
-          <div className="row">
-            <div className="field">
-              <label>Amount</label>
-              <input
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal"
-                placeholder="1100"
-              />
-            </div>
-            <div className="field">
-              <label>Due day</label>
-              <input
-                value={day}
-                onChange={(e) => setDay(e.target.value)}
-                inputMode="numeric"
-                placeholder="1"
-              />
-            </div>
+        ) : (
+          <div className="lx-list">
+            {bills.map((b) => {
+              const m = member(b.bill.memberId);
+              const soon = !b.paid && b.daysAway >= 0 && b.daysAway <= 6;
+              return (
+                <div className="lx-li" key={b.bill.id}>
+                  <span className="ic">{ICON[b.bill.category] || "🧾"}</span>
+                  <div className="meta">
+                    <div className="t">{b.bill.name}</div>
+                    <div className="s">
+                      Due day {b.dueDay}{b.bill.autoLog ? " · auto" : ""}{multi && m ? ` · ${m.emoji}` : ""}
+                      {b.paid ? " · ✓ paid" : soon ? ` · in ${b.daysAway}d` : ""}
+                    </div>
+                  </div>
+                  <div className="amt neg" style={{ opacity: b.paid ? 0.45 : 1 }}>{formatMoney(b.bill.amount, cur)}</div>
+                  {b.paid ? (
+                    <span className="lx-paid"><Check size={15} /></span>
+                  ) : (
+                    <button className="lx-ghost sm" onClick={() => markBillPaid(b.bill.id)}>Pay</button>
+                  )}
+                  <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${b.bill.name}"?`)) deleteBill(b.bill.id); }} aria-label="Delete"><Trash2 size={14} /></button>
+                </div>
+              );
+            })}
           </div>
-          <div className="field">
-            <label>Category</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {ICON[c]} {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          {multi && (
-            <div className="field">
-              <label>Whose bill?</label>
-              <MemberPicker
-                members={data.members}
-                value={who ?? data.members[0]?.id}
-                onChange={setWho}
-                size="sm"
-              />
+        )}
+      </section>
+
+      {open && (
+        <div className="lx-sheet-backdrop" onClick={() => setOpen(false)}>
+          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lx-sheet-head">
+              <h3>Add a recurring bill</h3>
+              <button className="lx-sheet-x" onClick={() => setOpen(false)} aria-label="Close"><X size={18} /></button>
             </div>
-          )}
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={autoLog}
-              onChange={(e) => setAutoLog(e.target.checked)}
-            />
-            <span>Log it automatically on the due day</span>
-          </label>
-          <div className="capture-actions">
-            <button className="btn btn-ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" onClick={save}>
-              Save bill
-            </button>
+            <label className="lx-field"><span>Name</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rent, Netflix, Electric…" autoFocus />
+            </label>
+            <div className="lx-field-row">
+              <label className="lx-field"><span>Amount</span>
+                <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="1100" />
+              </label>
+              <label className="lx-field"><span>Due day</span>
+                <input value={day} onChange={(e) => setDay(e.target.value)} inputMode="numeric" placeholder="1" />
+              </label>
+            </div>
+            <label className="lx-field"><span>Category</span>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{ICON[c]} {c}</option>)}
+              </select>
+            </label>
+            {multi && (
+              <label className="lx-field"><span>Whose bill?</span>
+                <MemberPicker members={data.members} value={who ?? data.members[0]?.id} onChange={setWho} size="sm" />
+              </label>
+            )}
+            <label className="lx-toggle">
+              <input type="checkbox" checked={autoLog} onChange={(e) => setAutoLog(e.target.checked)} />
+              <span>Log it automatically on the due day</span>
+            </label>
+            <button className="lx-primary full" onClick={save} style={{ marginTop: 8 }}>Save bill</button>
           </div>
         </div>
-      ) : (
-        <button
-          className="btn btn-primary btn-block"
-          style={{ marginTop: 14 }}
-          onClick={() => setOpen(true)}
-        >
-          + Add a recurring bill
-        </button>
       )}
     </main>
   );
-}
-
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
