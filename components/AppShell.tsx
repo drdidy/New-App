@@ -5,7 +5,6 @@ import { Bell, Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
 import BottomNav from "@/components/BottomNav";
 import Onboarding from "@/components/Onboarding";
-import WebGLBackground from "@/components/WebGLBackground";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, data } = useStore();
@@ -13,7 +12,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (!ready) {
     return (
       <div className="app boot">
-        <WebGLBackground />
         <div className="boot-logo">MC</div>
       </div>
     );
@@ -22,7 +20,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (!data.onboarded) {
     return (
       <div className="app-frame onboarding-frame">
-        <WebGLBackground />
         <div className="app">
           <Onboarding />
         </div>
@@ -32,7 +29,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-frame vision-shell">
-      <WebGLBackground />
       <header className="topbar vision-mobile-topbar">
         <Link href="/" className="brand-lockup" aria-label="Money Coach home">
           <span className="brand-mark">MC</span>

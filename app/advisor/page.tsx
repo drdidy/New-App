@@ -1,18 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  ArrowRight,
-  BookOpen,
-  Bot,
-  Lightbulb,
-  Mic,
-  Plus,
-  Send,
-  Sparkles,
-  Target,
-  Trophy,
-} from "lucide-react";
+import { ArrowRight, Bot, Mic, Send, Sparkles } from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
 import {
   billsThisMonth,
@@ -27,9 +16,6 @@ import {
   safeToSpend,
 } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
-import Ring from "@/components/Ring";
-import Sparkline from "@/components/Sparkline";
-import { EmptyState, PageHeader } from "@/components/PremiumUI";
 
 interface Msg {
   role: "user" | "assistant";
@@ -164,236 +150,72 @@ export default function AdvisorPage() {
 
   const firstName = data.members[0]?.name?.split(" ")[0] || "there";
   const sum = summarize(data);
-  const budgets = budgetStatus(data);
-  const bestBudget = budgets.find((b) => !b.over);
-  const overBudget = budgets.find((b) => b.over);
-  const debts = data.debts.filter((d) => d.direction === "i_owe");
-  const debtTotal = debts.reduce((s, d) => s + d.balance, 0);
-  const topDebt = [...debts].sort((a, b) => (b.apr || 0) - (a.apr || 0))[0];
-  const topCategory = categoryBreakdown(data)[0];
-  const receiptItems = data.transactions.flatMap((t) =>
-    (t.lineItems || []).map((item) => ({
-      ...item,
-      transactionCategory: t.category,
-    })),
-  );
-  const topReceiptItem = receiptItems
-    .filter((item) => item.amount > 0)
-    .sort((a, b) => b.amount - a.amount)[0];
-  const primaryGoal = data.goals[0];
-  const score = sum.safeToSpend >= 0 ? 84 : 62;
-  const trend = data.netWorthHistory.length >= 2
-    ? data.netWorthHistory.slice(-7).map((p) => p.value)
-    : data.transactions.slice(0, 7).reverse().map((t, i) => (i + 1) * t.amount);
-  const hasMoneyHistory = trend.length > 1 || data.transactions.length > 0 || data.recurringBills.length > 0 || data.goals.length > 0 || debtTotal > 0;
-  const insightProgress = hasMoneyHistory
-    ? Math.max(12, Math.min(100, Math.round(score)))
-    : 18;
-  const weeklyScore = hasMoneyHistory ? score : 18;
-  const actionPlan = [
-    overBudget
-      ? {
-          title: `Trim ${overBudget.category}`,
-          body: `${formatMoney(overBudget.spent - overBudget.limit, data.currency)} over budget`,
-          status: "Needs action",
-        }
-      : topCategory
-        ? {
-            title: `Review ${topCategory.category}`,
-            body: `${Math.round(topCategory.pct)}% of spending`,
-            status: "On track",
-          }
-        : null,
-    topDebt
-      ? {
-          title: `Attack ${topDebt.party}`,
-          body: `${topDebt.apr ? `${topDebt.apr}% APR` : "Balance"} - ${formatMoney(topDebt.balance, data.currency)}`,
-          status: "Active",
-        }
-      : null,
-    primaryGoal
-      ? {
-          title: `Fund ${primaryGoal.name}`,
-          body: `${formatMoney(primaryGoal.saved, data.currency)} of ${formatMoney(primaryGoal.target, data.currency)}`,
-          status: "Tracking",
-        }
-      : {
-          title: "Create emergency fund",
-          body: "Start with a small cash buffer",
-          status: "Next",
-        },
-  ].filter(Boolean) as Array<{ title: string; body: string; status: string }>;
+  const sts = safeToSpend(data);
+  const debtTotal = data.debts.filter((d) => d.direction === "i_owe").reduce((s, d) => s + d.balance, 0);
+  const hasMoneyHistory =
+    data.transactions.length > 0 || data.recurringBills.length > 0 || data.goals.length > 0 || debtTotal > 0 || (data.accounts?.length ?? 0) > 0;
+  const cur = data.currency;
 
   return (
-    <main className="vision-page coach-dashboard">
-      <PageHeader
-        title={`Hi ${firstName === "there" ? "David" : firstName}. I'm your Money Coach.`}
-        subtitle="I'll help you build wealth, reduce stress, and take the next right step."
-        action={<span className="pro-badge">Coach Pro</span>}
-      />
+    <main className="lx lx-coach">
+      <header className="lx-top">
+        <div>
+          <p className="lx-eyebrow"><Sparkles size={13} /> Built on your real numbers</p>
+          <h1 className="lx-h1">Coach</h1>
+        </div>
+        <span className="lx-coach-avatar"><Bot size={20} /></span>
+      </header>
 
-      <section className="vision-grid coach-grid">
-        <article className="vision-card chat-panel span-7">
-          <div className="coach-message">
-            <span className="coach-avatar"><Bot size={22} /></span>
-            <div>
-              <strong>{hasMoneyHistory ? "Good morning." : "Welcome in."}</strong>
-              <p>
-                {hasMoneyHistory
-                  ? "You are making solid progress. Let's keep building momentum."
-                  : "Add a few real numbers and I will turn them into a calm first plan."}
-              </p>
-            </div>
+      {hasMoneyHistory && (
+        <div className="lx-coach-strip">
+          <div>
+            <span>Safe to spend</span>
+            <b className={sts.safe >= 0 ? "pos" : "neg"}>{formatMoney(sts.safe, cur)}</b>
           </div>
-
-          <div className="nested-insight">
-            <div className="vision-card-title"><span>Today&apos;s Insight</span><Sparkles size={16} /></div>
-            <p>
-              {!hasMoneyHistory
-                ? "Add a few transactions, bills, or goals and I will turn them into specific next steps."
-                : bestBudget
-                ? `You are within your ${bestBudget.category} budget. Small choices are adding up.`
-                : sum.safeToSpend >= 0
-                  ? "You have room to spend today while keeping bills protected."
-                  : "Your safe-to-spend is under pressure. Let's find the smallest correction."}
-            </p>
-            <div className="coach-insight-meter" aria-label="Coach confidence indicator">
-              <span style={{ width: `${insightProgress}%` }} />
-            </div>
-            <small>
-              {hasMoneyHistory
-                ? "Coach is reading your current plan, spending, and debt context."
-                : "Waiting for your first money snapshot."}
-            </small>
+          <div>
+            <span>You owe</span>
+            <b className="neg">{formatMoney(debtTotal, cur)}</b>
           </div>
-
-          <div className="chat-thread">
-            {msgs.length === 0 && (
-              <>
-                <div className="bubble me">What&apos;s the fastest way I can pay off my debt?</div>
-                <div className="bubble coach">
-                  {debtTotal > 0
-                    ? "Based on your balances, the Snowball method can help you build momentum while the Avalanche method may save the most interest."
-                    : "Add your debts and minimum payments, then I can compare Snowball and Avalanche with your real numbers."}
-                  <br />
-                  <button className="soft-button" onClick={() => send("Compare my debt payoff strategies")}>See my payoff plan <ArrowRight size={14} /></button>
-                </div>
-              </>
-            )}
-            {msgs.map((m, i) => (
-              <div key={i} className={"bubble " + (m.role === "user" ? "me" : "coach")}>
-                {m.content}
-              </div>
-            ))}
-            {busy && <div className="typing"><span /><span /><span /></div>}
-            <div ref={endRef} />
+          <div>
+            <span>Net worth</span>
+            <b>{formatMoney(netWorth(data), cur)}</b>
           </div>
+        </div>
+      )}
 
-          <div className="suggest quick-actions">
-            {STARTERS.map((s) => (
-              <button key={s} onClick={() => send(s)}>{s}</button>
-            ))}
+      <div className="lx-chat">
+        {msgs.length === 0 && (
+          <div className="lx-bubble coach">
+            {hasMoneyHistory
+              ? `Hi ${firstName === "there" ? "there" : firstName} — I can see your latest numbers. Ask me anything, or tap a starter below.`
+              : "Welcome in. Add a few transactions, bills, or balances and I'll turn them into a calm, specific plan. Ask me anything to start."}
           </div>
+        )}
+        {msgs.map((m, i) => (
+          <div key={i} className={"lx-bubble " + (m.role === "user" ? "me" : "coach")}>{m.content}</div>
+        ))}
+        {busy && <div className="lx-typing"><span /><span /><span /></div>}
+        <div ref={endRef} />
+      </div>
 
-          <div className="vision-chat-input">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") send(input);
-              }}
-              placeholder="Ask your coach anything..."
-            />
-            <button aria-label="Voice input"><Mic size={17} /></button>
-            <button aria-label="Send" onClick={() => send(input)} disabled={busy}><Send size={17} /></button>
-          </div>
-        </article>
+      {msgs.length === 0 && (
+        <div className="lx-chips lx-coach-starters">
+          {STARTERS.map((s) => (
+            <button key={s} className="lx-chip" onClick={() => send(s)}>{s} <ArrowRight size={12} /></button>
+          ))}
+        </div>
+      )}
 
-        <aside className="coach-side span-5">
-          <article className="vision-card">
-            <div className="vision-card-title"><span>Your Action Plan</span><small>View all</small></div>
-            <div className="action-plan-list">
-              {actionPlan.map(({ title, body, status }) => (
-                <div className="action-plan-row" key={title}>
-                  <span className="icon-tile"><Target size={15} /></span>
-                  <div><strong>{title}</strong><small>{body}</small></div>
-                  <b>{status}</b>
-                </div>
-              ))}
-            </div>
-            <button className="soft-button full"><Plus size={14} /> Add new action</button>
-          </article>
-
-          <article className="vision-card weekly-summary">
-            <div className="vision-card-title"><span>Weekly Coaching Summary</span></div>
-            <div className="summary-layout">
-              <Ring pct={weeklyScore} size={132} stroke={11} color="#84d6a5">
-                <strong>{hasMoneyHistory ? score : "Ready"}</strong>
-                <span>{hasMoneyHistory ? (score >= 80 ? "Great week" : "Reset week") : "First plan"}</span>
-              </Ring>
-              <ul>
-                <li>Safe to spend: {hasMoneyHistory ? formatMoney(sum.safeToSpend, data.currency) : "waiting for data"}</li>
-                <li>Debt tracked: {debtTotal > 0 ? formatMoney(debtTotal, data.currency) : "no accounts added"}</li>
-                <li>{budgets.length} budget challenge{budgets.length === 1 ? "" : "s"}</li>
-              </ul>
-            </div>
-            <button className="soft-button full">See full summary</button>
-          </article>
-        </aside>
-
-        <article className="vision-card span-3 feature-card">
-          <strong>Scenario Simulator</strong>
-          <span>See the impact of your decisions.</span>
-          {hasMoneyHistory ? (
-            <Sparkline values={trend.length ? trend : [sum.safeToSpend, sum.safeToSpend + 1]} color="#6EE7A8" height={76} />
-          ) : (
-            <EmptyState
-              Icon={Sparkles}
-              title="Build your first scenario"
-              body="Add income, bills, or goals and Coach can preview your options."
-              action="Start tracking"
-              href="/"
-            />
-          )}
-          {hasMoneyHistory && <button className="soft-button">Run a scenario</button>}
-        </article>
-
-        <article className="vision-card span-3 feature-card">
-          <strong>Habit Challenges</strong>
-          <span>Build better money habits that last.</span>
-          <div className="challenge-box">
-            <Trophy size={28} />
-            <b>{overBudget ? `${overBudget.category} reset` : topCategory ? `${topCategory.category} check-in` : "First budget week"}</b>
-            <small>{overBudget ? "Bring this category back under plan" : "Keep the streak going"}</small>
-          </div>
-        </article>
-
-        <article className="vision-card span-3 feature-card">
-          <strong>Learn & Grow</strong>
-          <span>Bite-sized lessons to build your financial IQ.</span>
-          <div className="challenge-box">
-            <BookOpen size={28} />
-            <b>{debtTotal > 0 ? "Debt payoff basics" : primaryGoal ? "Goal funding basics" : "Budgeting basics"}</b>
-            <small>5 min lesson</small>
-          </div>
-        </article>
-
-        <article className="vision-card span-3 feature-card">
-          <strong>Your Insights</strong>
-          <span>Personalized guidance just for you.</span>
-          <div className="challenge-box">
-            <Lightbulb size={28} />
-            <b>{topReceiptItem ? topReceiptItem.name : hasMoneyHistory ? (sum.safeToSpend >= 0 ? "On track" : "Needs attention") : "First snapshot"}</b>
-            <small>
-              {topReceiptItem
-                ? `${topReceiptItem.category || topReceiptItem.transactionCategory} item from receipts`
-                : hasMoneyHistory
-                  ? `${formatMoney(sum.safeToSpend, data.currency)} safe today`
-                  : "Add income, bills, or a receipt"}
-            </small>
-          </div>
-        </article>
-      </section>
+      <div className="lx-chatbar">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") send(input); }}
+          placeholder="Ask your coach anything…"
+        />
+        <button aria-label="Voice input" className="ghost"><Mic size={18} /></button>
+        <button aria-label="Send" onClick={() => send(input)} disabled={busy}><Send size={18} /></button>
+      </div>
     </main>
   );
 }
