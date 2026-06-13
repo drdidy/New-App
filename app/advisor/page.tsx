@@ -34,8 +34,12 @@ export default function AdvisorPage() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceNote, setVoiceNote] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const hasChattedRef = useRef(false);
+  const recogRef = useRef<any>(null);
+  const finalRef = useRef("");
 
   useEffect(() => {
     if (!hasChattedRef.current) return;
@@ -146,6 +150,54 @@ export default function AdvisorPage() {
     void sendMessage(text);
   }
 
+  function toggleVoice() {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceNote("Voice input isn't supported in this browser — try Chrome on Android, or just type. 🙂");
+      return;
+    }
+    if (listening) {
+      recogRef.current?.stop();
+      return;
+    }
+    const recog = new SR();
+    recog.lang = "en-US";
+    recog.interimResults = true;
+    recog.continuous = false;
+    finalRef.current = "";
+    recog.onresult = (ev: any) => {
+      let t = "";
+      for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+      finalRef.current = t;
+      setInput(t);
+    };
+    recog.onerror = (ev: any) => {
+      setListening(false);
+      if (ev?.error === "not-allowed" || ev?.error === "service-not-allowed") {
+        setVoiceNote("Microphone access is blocked. Allow the mic for this site, then try again.");
+      } else if (ev?.error === "no-speech") {
+        setVoiceNote("I didn't catch that — tap the mic and try again.");
+      } else if (ev?.error !== "aborted") {
+        setVoiceNote("Voice input had a problem. Typing still works.");
+      }
+    };
+    recog.onend = () => {
+      setListening(false);
+      const v = finalRef.current.trim();
+      finalRef.current = "";
+      if (v) send(v);
+    };
+    recogRef.current = recog;
+    setListening(true);
+    setVoiceNote("");
+    try {
+      recog.start();
+    } catch {
+      setListening(false);
+      setVoiceNote("Couldn't start the microphone. Typing still works.");
+    }
+  }
+
   if (!ready) return null;
 
   const firstName = data.members[0]?.name?.split(" ")[0] || "there";
@@ -206,14 +258,16 @@ export default function AdvisorPage() {
         </div>
       )}
 
+      {voiceNote && <p className="lx-voicenote">{voiceNote}</p>}
+
       <div className="lx-chatbar">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") send(input); }}
-          placeholder="Ask your coach anything…"
+          placeholder={listening ? "Listening…" : "Ask your coach anything…"}
         />
-        <button aria-label="Voice input" className="ghost"><Mic size={18} /></button>
+        <button aria-label={listening ? "Stop voice input" : "Voice input"} className={"ghost" + (listening ? " live" : "")} onClick={toggleVoice}><Mic size={18} /></button>
         <button aria-label="Send" onClick={() => send(input)} disabled={busy}><Send size={18} /></button>
       </div>
     </main>
