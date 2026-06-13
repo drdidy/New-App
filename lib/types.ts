@@ -41,9 +41,26 @@ export interface ReceiptLineItem {
 // (someone owes them). We track both so the dashboard shows a true net picture.
 export type DebtDirection = "i_owe" | "owed_to_me";
 
+// What kind of debt this is. The headline split the app cares about is
+// *people* (informal IOUs to/from friends & family — usually no interest, soft
+// due dates) vs *organizations* (cards, loans, buy-now-pay-later — interest,
+// minimums, hard due dates). `kind` drives that grouping + the right UI.
+export type DebtKind = "person" | "card" | "loan" | "bnpl" | "other";
+
+// A single payment recorded against a debt, kept as history so progress and
+// momentum are visible (and so a payoff isn't just a silently shrinking number).
+export interface DebtPayment {
+  id: string;
+  amount: number; // positive
+  date: string; // ISO date (YYYY-MM-DD)
+  note?: string;
+  createdAt: number;
+}
+
 export interface Debt {
   id: string;
   direction: DebtDirection;
+  kind?: DebtKind; // person vs card/loan/bnpl/other (defaults inferred on migration)
   party: string; // who you owe / who owes you (e.g. "James", "Visa card")
   balance: number; // remaining amount, positive
   original?: number; // starting balance, for payoff progress
@@ -52,6 +69,7 @@ export interface Debt {
   dueDate?: string; // ISO date of next payment, optional
   memberId?: string; // whose debt (optional; defaults to household)
   note?: string;
+  payments?: DebtPayment[]; // recorded payment history (newest first)
   createdAt: number;
   updatedAt?: number;
 }

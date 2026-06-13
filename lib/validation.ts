@@ -61,9 +61,18 @@ const transactionSchema = z.object({
   lineItems: z.array(receiptLineItemSchema).max(100).optional(),
 });
 
+const debtPaymentSchema = z.object({
+  id: shortText(80),
+  amount: money,
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  note: shortText(240).optional(),
+  createdAt: z.number().finite().nonnegative(),
+});
+
 const debtSchema = z.object({
   id: shortText(80),
   direction: z.enum(["i_owe", "owed_to_me"]),
+  kind: z.enum(["person", "card", "loan", "bnpl", "other"]).optional(),
   party: shortText(120),
   balance: money,
   original: money.optional(),
@@ -72,6 +81,7 @@ const debtSchema = z.object({
   dueDate: isoDate,
   memberId: shortText(80).optional(),
   note: shortText(500).optional(),
+  payments: z.array(debtPaymentSchema).max(2000).optional(),
   createdAt: z.number().finite().nonnegative(),
   updatedAt: timestamp,
 });

@@ -1,4 +1,4 @@
-import type { AppData, Debt, RecurringBill } from "./types";
+import type { AppData, Debt, DebtKind, RecurringBill } from "./types";
 import { monthKey, prevMonthKey } from "./format";
 
 // The household's monthly income baseline: this month's logged income if any,
@@ -217,6 +217,143 @@ export function cashOnHand(data: AppData): number {
   return (data.accounts || []).reduce((s, a) => s + a.balance, 0);
 }
 
+// Cash you can actually spend *now*: checking + cash balances. Savings and
+// investments are real assets but aren't day-to-day spending money, so they're
+// excluded from "safe to spend". Falls back to all accounts if the household
+// hasn't typed any as checking/cash.
+export function spendableCash(data: AppData): number {
+  const accounts = data.accounts || [];
+  const liquid = accounts.filter((a) => a.type === "checking" || a.type === "cash");
+  const pool = liquid.length > 0 ? liquid : accounts;
+  return pool.reduce((s, a) => s + a.balance, 0);
+}
+
+export interface SafeToSpend {
+  // "cash" = grounded in real money on hand (preferred); "income" = fallback
+  // projection from monthly income when no accounts are tracked yet.
+  mode: "cash" | "income";
+  safe: number; // free to spend before the next payday
+  spendable: number; // cash on hand (or income left, in income mode)
+  committed: number; // obligations due before payday (bills + debt minimums)
+  billsDue: number;
+  debtDue: number;
+  daysLeft: number;
+  periodLabel: string; // e.g. "until payday May 28" / "left this month"
+  dailyAllowance: number;
+  hasAccounts: boolean;
+}
+
+// The real headline number. Instead of "income minus everything", this answers
+// the question the user actually has mid-month: *of the money I have right now,
+// how much is free to spend before my next payday* — after the bills and debt
+// minimums that fall due before then. Grounded in real cash when accounts
+// exist; otherwise falls back to an income-based projection.
+export function safeToSpend(data: AppData, memberId?: string): SafeToSpend {
+  const cycle = cycleInfo(data);
+  const month = monthKey();
+  const accounts = data.accounts || [];
+  const hasAccounts = accounts.length > 0;
+
+  // Bills not yet paid this month whose due date lands on or before the next
+  // payday — only those reduce *this period's* spendable cash.
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const endTime = cycle.end.getTime();
+  const billsDue = (data.recurringBills || [])
+    .filter((b) => !memberId || b.memberId === memberId)
+    .filter((b) => b.lastPaidMonth !== month)
+    .filter((b) => {
+      const day = Math.min(b.dayOfMonth, daysInMonth);
+      const dueThisMonth = new Date(now.getFullYear(), now.getMonth(), day);
+      return dueThisMonth.getTime() <= endTime;
+    })
+    .reduce((s, b) => s + b.amount, 0);
+
+  // Debt minimums (money you owe) due before the next payday, less anything
+  // already paid toward debt this month.
+  const myDebts = (memberId ? data.debts.filter((d) => d.memberId === memberId) : data.debts)
+    .filter((d) => d.direction === "i_owe" && d.balance > 0);
+  const debtMinDue = myDebts
+    .filter((d) => {
+      if (!d.dueDate) return cycle.label === "left this month"; // monthly: assume due this month
+      return new Date(d.dueDate + "T00:00:00").getTime() <= endTime;
+    })
+    .reduce((s, d) => s + Math.min(d.minPayment || 0, d.balance), 0);
+  const debtPaidThisMonth = data.transactions
+    .filter(
+      (t) =>
+        t.type === "expense" &&
+        t.category === "Debt payment" &&
+        t.date.startsWith(month) &&
+        (!memberId || t.memberId === memberId),
+    )
+    .reduce((s, t) => s + t.amount, 0);
+  const debtDue = Math.max(0, debtMinDue - debtPaidThisMonth);
+
+  const committed = billsDue + debtDue;
+
+  if (hasAccounts) {
+    const spendable = spendableCash(data);
+    const safe = spendable - committed;
+    return {
+      mode: "cash",
+      safe,
+      spendable,
+      committed,
+      billsDue,
+      debtDue,
+      daysLeft: cycle.daysLeft,
+      periodLabel: cycle.label,
+      dailyAllowance: Math.max(0, safe) / cycle.daysLeft,
+      hasAccounts: true,
+    };
+  }
+
+  // Income-mode fallback: income left this month minus committed money.
+  const income = baselineIncome(data);
+  const expenses = data.transactions
+    .filter((t) => t.type === "expense" && t.date.startsWith(month) && (!memberId || t.memberId === memberId))
+    .reduce((s, t) => s + t.amount, 0);
+  const spendable = income - expenses;
+  const safe = spendable - committed;
+  return {
+    mode: "income",
+    safe,
+    spendable,
+    committed,
+    billsDue,
+    debtDue,
+    daysLeft: cycle.daysLeft,
+    periodLabel: cycle.label,
+    dailyAllowance: Math.max(0, safe) / cycle.daysLeft,
+    hasAccounts: false,
+  };
+}
+
+// --- debt classification -----------------------------------------------------
+
+// Infer whether a debt is owed to a person or an organization. Used to migrate
+// legacy debts that predate the explicit `kind` field, and to default the form.
+export function inferDebtKind(d: { party: string; apr?: number; kind?: DebtKind }): DebtKind {
+  if (d.kind) return d.kind;
+  const p = (d.party || "").toLowerCase();
+  if (/(visa|mastercard|amex|card|capital one|chase|barclay|discover|credit)/.test(p)) return "card";
+  if (/(klarna|afterpay|affirm|paypal pay|zip|sezzle|bnpl)/.test(p)) return "bnpl";
+  if (/(loan|finance|bank|mortgage|auto|student|sofi|lending|credit union)/.test(p)) return "loan";
+  // Cards/loans tend to carry interest; a bare APR is a strong organization tell.
+  if ((d.apr || 0) > 0) return "card";
+  // A single-word, capitalized-looking name with no APR reads as a person.
+  return /^\s*\S+\s*$/.test(d.party || "") ? "person" : "other";
+}
+
+export const DEBT_KIND_IS_ORG: Record<DebtKind, boolean> = {
+  person: false,
+  card: true,
+  loan: true,
+  bnpl: true,
+  other: true,
+};
+
 export function netWorth(data: AppData): number {
   const owedToMe = data.debts
     .filter((d) => d.direction === "owed_to_me")
@@ -368,6 +505,50 @@ export function simulatePayoff(
     }
   }
   return { months: months >= maxMonths ? null : months, totalInterest };
+}
+
+// Month-by-month total remaining balance under a given method + extra payment,
+// using the same interest-accruing engine as simulatePayoff. Drives the real
+// payoff projection chart (no more hardcoded curve).
+export function payoffProjection(
+  data: AppData,
+  method: "snowball" | "avalanche",
+  extraPerMonth: number,
+  maxMonths = 600,
+): number[] {
+  const bal = data.debts
+    .filter((d) => d.direction === "i_owe" && d.balance > 0)
+    .map((d) => ({ balance: d.balance, apr: d.apr || 0, min: d.minPayment || 0 }));
+  const series: number[] = [bal.reduce((s, d) => s + d.balance, 0)];
+  if (bal.length === 0) return series;
+  const order = [...bal].sort((a, b) =>
+    method === "snowball" ? a.balance - b.balance : b.apr - a.apr,
+  );
+  let months = 0;
+  while (bal.some((d) => d.balance > 0.01) && months < maxMonths) {
+    months++;
+    for (const d of bal) {
+      if (d.balance > 0) d.balance += d.balance * (d.apr / 100 / 12);
+    }
+    let pool = bal.reduce((s, d) => s + (d.balance > 0 ? d.min : 0), 0) + extraPerMonth;
+    for (const d of bal) {
+      if (d.balance > 0 && pool > 0) {
+        const pay = Math.min(d.min, d.balance, pool);
+        d.balance -= pay;
+        pool -= pay;
+      }
+    }
+    for (const d of order) {
+      if (pool <= 0) break;
+      if (d.balance > 0) {
+        const pay = Math.min(pool, d.balance);
+        d.balance -= pay;
+        pool -= pay;
+      }
+    }
+    series.push(Math.max(0, bal.reduce((s, d) => s + d.balance, 0)));
+  }
+  return series;
 }
 
 export interface PayoffPlan {
