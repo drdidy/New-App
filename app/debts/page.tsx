@@ -1,203 +1,518 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  ArrowRight,
-  BadgeDollarSign,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   CreditCard,
-  Flag,
+  HandCoins,
   Landmark,
   Mountain,
+  Pencil,
+  Plus,
   Snowflake,
-  TrendingDown,
+  Sparkles,
+  Trash2,
+  Users,
+  X,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { payoffPlan, simulatePayoff } from "@/lib/insights";
-import { clampPct, formatMoney } from "@/lib/format";
+import {
+  DEBT_KIND_IS_ORG,
+  inferDebtKind,
+  payoffPlan,
+  payoffProjection,
+  simulatePayoff,
+} from "@/lib/insights";
+import { clampPct, formatMoney, friendlyDate } from "@/lib/format";
+import type { Debt, DebtDirection, DebtKind } from "@/lib/types";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
-import { EmptyState, PageHeader } from "@/components/PremiumUI";
+
+const KIND_META: Record<DebtKind, { label: string; icon: typeof CreditCard }> = {
+  person: { label: "Person", icon: Users },
+  card: { label: "Credit card", icon: CreditCard },
+  loan: { label: "Loan", icon: Landmark },
+  bnpl: { label: "Buy now, pay later", icon: HandCoins },
+  other: { label: "Other", icon: CreditCard },
+};
+
+interface DraftDebt {
+  id?: string;
+  direction: DebtDirection;
+  kind: DebtKind;
+  party: string;
+  balance: string;
+  apr: string;
+  minPayment: string;
+  dueDate: string;
+  note: string;
+}
+
+function emptyDraft(direction: DebtDirection = "i_owe", kind: DebtKind = "card"): DraftDebt {
+  return { direction, kind, party: "", balance: "", apr: "", minPayment: "", dueDate: "", note: "" };
+}
 
 export default function DebtsPage() {
-  const { data, ready, payDebt } = useStore();
-  if (!ready) return null;
+  const { data, ready, addDebt, updateDebt, payDebt, deleteDebt } = useStore();
+  const [extra, setExtra] = useState(75);
+  const [method, setMethod] = useState<"snowball" | "avalanche">("snowball");
+  const [draft, setDraft] = useState<DraftDebt | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [payAmt, setPayAmt] = useState("");
 
-  const debts = data.debts.filter((d) => d.direction === "i_owe" && d.balance > 0);
-  const total = debts.reduce((sum, d) => sum + d.balance, 0);
-  const original = debts.reduce((sum, d) => sum + (d.original || d.balance), 0);
+  const cur = data?.currency || "USD";
+
+  const all = useMemo(() => (data?.debts || []).filter((d) => d.balance > 0), [data]);
+  const iOwe = all.filter((d) => d.direction === "i_owe");
+  const orgs = iOwe.filter((d) => DEBT_KIND_IS_ORG[d.kind ?? inferDebtKind(d)]);
+  const peopleIOwe = iOwe.filter((d) => !DEBT_KIND_IS_ORG[d.kind ?? inferDebtKind(d)]);
+  const owedToMe = all.filter((d) => d.direction === "owed_to_me");
+
+  const planTargets = orgs.concat(peopleIOwe);
+  const total = planTargets.reduce((s, d) => s + d.balance, 0);
+  const original = planTargets.reduce((s, d) => s + (d.original || d.balance), 0);
   const paidPct = original ? clampPct(((original - total) / original) * 100) : 0;
-  const snowball = payoffPlan(data, "snowball", 75);
-  const avalanche = payoffPlan(data, "avalanche", 75);
-  const sim = simulatePayoff(data, "snowball", 75);
-  const base = simulatePayoff(data, "snowball", 0);
-  const interestSaved = Math.max(0, base.totalInterest - sim.totalInterest);
-  const monthlyMin = debts.reduce((sum, d) => sum + (d.minPayment || 0), 0);
-  const targetDate = snowball.months
-    ? new Date(new Date().getFullYear(), new Date().getMonth() + snowball.months, 1)
+  const monthlyMin = planTargets.reduce((s, d) => s + (d.minPayment || 0), 0);
+
+  // Real what-if math — interest-accruing simulation, not a guessed curve.
+  const sim = simulatePayoff(data!, method, extra);
+  const baseline = simulatePayoff(data!, method, 0);
+  const interestSaved = Math.max(0, baseline.totalInterest - sim.totalInterest);
+  const projection = payoffProjection(data!, method, extra);
+  const plan = payoffPlan(data!, method, extra);
+  const targetDate = sim.months
+    ? new Date(new Date().getFullYear(), new Date().getMonth() + sim.months, 1)
     : null;
-  const nextDebt = [...debts].sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""))[0];
-  const hasDebt = debts.length > 0;
+
+  if (!ready) return null;
+  const hasDebt = iOwe.length > 0;
+
+  function startEdit(d: Debt) {
+    setDraft({
+      id: d.id,
+      direction: d.direction,
+      kind: d.kind ?? inferDebtKind(d),
+      party: d.party,
+      balance: String(d.balance),
+      apr: d.apr != null ? String(d.apr) : "",
+      minPayment: d.minPayment != null ? String(d.minPayment) : "",
+      dueDate: d.dueDate || "",
+      note: d.note || "",
+    });
+  }
+
+  function saveDraft() {
+    if (!draft) return;
+    const balance = Math.max(0, parseFloat(draft.balance) || 0);
+    if (!draft.party.trim() || balance <= 0) return;
+    const patch = {
+      direction: draft.direction,
+      kind: draft.kind,
+      party: draft.party.trim(),
+      balance,
+      apr: draft.apr ? Math.max(0, parseFloat(draft.apr)) : undefined,
+      minPayment: draft.minPayment ? Math.max(0, parseFloat(draft.minPayment)) : undefined,
+      dueDate: draft.dueDate || undefined,
+      note: draft.note.trim() || undefined,
+    };
+    if (draft.id) updateDebt(draft.id, patch);
+    else addDebt(patch);
+    setDraft(null);
+  }
+
+  function submitPayment(id: string) {
+    const amt = Math.max(0, parseFloat(payAmt) || 0);
+    if (amt <= 0) return;
+    payDebt(id, amt);
+    setPayAmt("");
+    setPayingId(null);
+  }
 
   return (
-    <main className="vision-page debt-dashboard">
-      <PageHeader
-        title={hasDebt ? "You have a plan. Let's crush this debt." : "Protect your debt-free progress"}
-        subtitle={hasDebt ? "Stay disciplined, follow your plan, and freedom is closer than you think." : "Add debts if you have them, or keep this page as your payoff safety plan."}
-        action={<div className="encouragement"><Flag size={20} aria-hidden="true" /> {hasDebt ? "Keep it up. You are doing great." : "Protection mode"}</div>}
-      />
+    <main className="lx lx-debt">
+      <header className="lx-top">
+        <div>
+          <p className="lx-eyebrow">Owe to people & organizations</p>
+          <h1 className="lx-h1">Debt</h1>
+        </div>
+        <button className="lx-addbtn" onClick={() => setDraft(emptyDraft())} aria-label="Add a debt">
+          <Plus size={20} />
+        </button>
+      </header>
 
-      <section className="vision-grid debt-grid">
-        <article className="vision-card metric-card span-3">
-          <span>Total Debt Balance</span>
-          <strong>{formatMoney(total, data.currency)}</strong>
-          <small>{hasDebt ? `Across ${debts.length} account${debts.length === 1 ? "" : "s"}` : "No active debt added"}</small>
-        </article>
-
-        <article className="vision-card center-card span-3">
-          <div className="vision-card-title"><span>Debt Free Progress</span></div>
-          <Ring pct={paidPct} size={150} stroke={12} color="#84d6a5">
-            <strong>{hasDebt ? `${Math.round(paidPct)}%` : "✓"}</strong>
-            <span>{hasDebt ? `${formatMoney(original - total, data.currency)} paid off` : "Protected"}</span>
-          </Ring>
-          <div className="mini-progress"><span style={{ width: `${paidPct}%` }} /></div>
-        </article>
-
-        <article className="vision-card metric-card span-3">
-          <span>Target Debt Free Date</span>
-          <strong className={!targetDate ? "metric-phrase" : undefined}>{targetDate ? targetDate.toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Add payments"}</strong>
-          <small>{snowball.months ? `In ${snowball.months} months` : "Ready to calculate"}</small>
-        </article>
-
-        <article className="vision-card metric-card span-3">
-          <span>Interest Saved</span>
-          <strong className={!hasDebt ? "metric-phrase" : undefined}>{hasDebt ? formatMoney(interestSaved, data.currency) : "Ready"}</strong>
-          <small>{hasDebt ? "By adding $75 monthly" : "Ready to calculate"}</small>
-        </article>
-
-        <article className="vision-card span-5">
-          <div className="vision-card-title">
-            <span>Choose Your Payoff Strategy</span>
-            <small>Pick the strategy that motivates you most.</small>
-          </div>
-          <div className={"strategy-choice" + (!hasDebt ? " muted-preview" : "")}>
-            <div className="strategy-option selected">
-              <div><Snowflake size={22} /><strong>Snowball</strong><span>Recommended</span></div>
-              <p>{hasDebt ? "Pay off smallest balances first to build momentum." : "Add debts to compare payoff strategies."}</p>
-              <small>Estimated time: {snowball.months ? `${snowball.months} months` : "Add debts first"}</small>
-            </div>
-            <div className="strategy-option">
-              <div><Mountain size={22} /><strong>Avalanche</strong></div>
-              <p>{hasDebt ? "Save the most by paying highest interest debt first." : "Compare APR impact once accounts are added."}</p>
-              <small>Estimated time: {avalanche.months ? `${avalanche.months} months` : "Add debts first"}</small>
+      {/* SUMMARY HERO */}
+      <div className="lx-hero">
+        <div className="lx-hero-inner lx-debt-hero">
+          <div>
+            <div className="lx-hero-label">You owe in total</div>
+            <div className="lx-hero-num neg">{formatMoney(total, cur)}</div>
+            <div className="lx-hero-sub">
+              {hasDebt
+                ? `Across ${iOwe.length} ${iOwe.length === 1 ? "debt" : "debts"}${owedToMe.length ? ` · ${formatMoney(owedToMe.reduce((s, d) => s + d.balance, 0), cur)} owed to you` : ""}`
+                : "Nothing owed — you're debt-free. 🎉"}
             </div>
           </div>
-        </article>
-
-        <article className="vision-card span-7">
-          <div className="vision-card-title">
-            <span>Payoff Projection</span>
-            <small>Payoff by {targetDate ? targetDate.toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "plan date"}</small>
-          </div>
-          {hasDebt ? (
-            <>
-              <Sparkline
-                values={[total, total * 0.86, total * 0.7, total * 0.52, total * 0.34, total * 0.18, 0]}
-                labels={["Now", "+3m", "+6m", "+9m", "+12m", "+15m", "Free"]}
-                color="#6EE7A8"
-                height={210}
-              />
-              <p className="plan-note">Stick to your plan and you will be debt free faster.</p>
-            </>
-          ) : (
-            <EmptyState
-              Icon={TrendingDown}
-              title="Your payoff projection will appear here"
-              body="Add credit cards, loans, or payment plans to generate a payoff path."
-              action="Add debt account"
-              href="/settings"
-            />
+          {hasDebt && (
+            <Ring pct={paidPct} size={92} stroke={9} color="#14b8a6" track="rgba(15,30,45,0.08)">
+              <strong>{Math.round(paidPct)}%</strong>
+              <span>paid</span>
+            </Ring>
           )}
-        </article>
+        </div>
+      </div>
 
-        <article className="vision-card span-8">
-          <div className="vision-card-title"><span>Your Debt Accounts</span></div>
-          <div className="debt-table">
-            <div className="debt-head">
-              <span>Account</span><span>Balance</span><span>APR</span><span>Min.</span><span>Progress</span>
+      {/* WHAT-IF PLANNER */}
+      {hasDebt && (
+        <section className="lx-card lx-plan">
+          <div className="lx-card-head">
+            <h2>Payoff planner</h2>
+            <span className="lx-plan-free">
+              {targetDate ? `Debt-free ${targetDate.toLocaleDateString(undefined, { month: "short", year: "numeric" })}` : "Add a payment"}
+            </span>
+          </div>
+
+          <div className="lx-method">
+            <button
+              className={"lx-method-opt" + (method === "snowball" ? " on" : "")}
+              onClick={() => setMethod("snowball")}
+            >
+              <Snowflake size={16} /> Snowball
+              <small>Smallest first</small>
+            </button>
+            <button
+              className={"lx-method-opt" + (method === "avalanche" ? " on" : "")}
+              onClick={() => setMethod("avalanche")}
+            >
+              <Mountain size={16} /> Avalanche
+              <small>Highest APR first</small>
+            </button>
+          </div>
+
+          <div className="lx-slider-row">
+            <span>Extra per month</span>
+            <b>{formatMoney(extra, cur)}</b>
+          </div>
+          <input
+            className="lx-slider"
+            type="range"
+            min={0}
+            max={1000}
+            step={25}
+            value={extra}
+            onChange={(e) => setExtra(Number(e.target.value))}
+            aria-label="Extra payment per month"
+          />
+
+          <div className="lx-plan-stats">
+            <div>
+              <span>Payoff time</span>
+              <b>{sim.months != null ? `${sim.months} mo` : "—"}</b>
             </div>
-            {debts.map((d) => {
-              const pct = d.original ? clampPct(((d.original - d.balance) / d.original) * 100) : 0;
-              return (
-                <div className="debt-row" key={d.id}>
-                  <span><CreditCard size={15} /> {d.party}</span>
-                  <b>{formatMoney(d.balance, data.currency)}</b>
-                  <span>{d.apr ? `${d.apr}%` : "0%"}</span>
-                  <span>{formatMoney(d.minPayment || 0, data.currency)}</span>
-                  <span className="table-progress"><i style={{ width: `${pct}%` }} />{Math.round(pct)}%</span>
+            <div>
+              <span>Interest saved</span>
+              <b className="pos">{formatMoney(interestSaved, cur)}</b>
+            </div>
+            <div>
+              <span>Monthly total</span>
+              <b>{formatMoney(monthlyMin + extra, cur)}</b>
+            </div>
+          </div>
+
+          {projection.length > 1 && (
+            <div className="lx-proj">
+              <Sparkline values={projection} color="#14b8a6" height={120} />
+              <p className="lx-proj-note">
+                <Sparkles size={13} /> Projected balance with {formatMoney(extra, cur)}/mo extra, interest included.
+              </p>
+            </div>
+          )}
+
+          {plan.order.length > 1 && (
+            <div className="lx-order">
+              <span className="lx-order-label">Order to attack</span>
+              {plan.order.map((d, i) => (
+                <span key={d.id} className="lx-order-chip">
+                  {i + 1}. {d.party}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ORGANIZATIONS */}
+      {orgs.length > 0 && (
+        <DebtGroup
+          title="Cards & loans"
+          subtitle="Organizations — interest, minimums, due dates"
+          debts={orgs}
+          {...{ cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
+        />
+      )}
+
+      {/* PEOPLE YOU OWE */}
+      {peopleIOwe.length > 0 && (
+        <DebtGroup
+          title="People you owe"
+          subtitle="Informal IOUs to friends & family"
+          debts={peopleIOwe}
+          {...{ cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
+        />
+      )}
+
+      {/* OWED TO YOU */}
+      {owedToMe.length > 0 && (
+        <DebtGroup
+          title="Owed to you"
+          subtitle="Money people owe you"
+          debts={owedToMe}
+          incoming
+          {...{ cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
+        />
+      )}
+
+      {!hasDebt && owedToMe.length === 0 && (
+        <section className="lx-card">
+          <div className="lx-debt-empty">
+            <div className="lx-debt-empty-ic"><CheckCircle2 size={26} /></div>
+            <h3>No debts tracked</h3>
+            <p>Add a credit card, a loan, or money you owe a friend — then plan the payoff.</p>
+            <button className="lx-primary" onClick={() => setDraft(emptyDraft())}>
+              <Plus size={16} /> Add a debt
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ADD / EDIT SHEET */}
+      {draft && (
+        <DebtSheet
+          draft={draft}
+          setDraft={setDraft}
+          onSave={saveDraft}
+          onClose={() => setDraft(null)}
+        />
+      )}
+    </main>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+
+function DebtGroup(props: {
+  title: string;
+  subtitle: string;
+  debts: Debt[];
+  incoming?: boolean;
+  cur: string;
+  expanded: string | null;
+  setExpanded: (id: string | null) => void;
+  payingId: string | null;
+  setPayingId: (id: string | null) => void;
+  payAmt: string;
+  setPayAmt: (v: string) => void;
+  submitPayment: (id: string) => void;
+  startEdit: (d: Debt) => void;
+  deleteDebt: (id: string) => void;
+}) {
+  const { title, subtitle, debts, incoming, cur } = props;
+  return (
+    <section className="lx-card lx-group">
+      <div className="lx-card-head">
+        <h2>{title}</h2>
+        <span className="lx-group-total">{formatMoney(debts.reduce((s, d) => s + d.balance, 0), cur)}</span>
+      </div>
+      <p className="lx-group-sub">{subtitle}</p>
+      {debts.map((d) => (
+        <DebtCard key={d.id} debt={d} incoming={incoming} {...props} />
+      ))}
+    </section>
+  );
+}
+
+function DebtCard(props: {
+  debt: Debt;
+  incoming?: boolean;
+  cur: string;
+  expanded: string | null;
+  setExpanded: (id: string | null) => void;
+  payingId: string | null;
+  setPayingId: (id: string | null) => void;
+  payAmt: string;
+  setPayAmt: (v: string) => void;
+  submitPayment: (id: string) => void;
+  startEdit: (d: Debt) => void;
+  deleteDebt: (id: string) => void;
+}) {
+  const { debt: d, incoming, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt } = props;
+  const kind = d.kind ?? inferDebtKind(d);
+  const Meta = KIND_META[kind];
+  const pct = d.original ? clampPct(((d.original - d.balance) / d.original) * 100) : 0;
+  const open = expanded === d.id;
+  const paying = payingId === d.id;
+  const dueSoon = d.dueDate
+    ? Math.ceil((new Date(d.dueDate + "T00:00:00").getTime() - Date.now()) / 86400000)
+    : null;
+
+  return (
+    <div className={"lx-debt-card" + (open ? " open" : "")}>
+      <button className="lx-debt-main" onClick={() => setExpanded(open ? null : d.id)}>
+        <span className="lx-debt-ic"><Meta.icon size={18} /></span>
+        <div className="lx-debt-meta">
+          <div className="lx-debt-name">{d.party}</div>
+          <div className="lx-debt-tags">
+            {d.apr ? <span>{d.apr}% APR</span> : null}
+            {d.minPayment ? <span>{formatMoney(d.minPayment, cur)}/mo min</span> : null}
+            {dueSoon != null ? (
+              <span className={dueSoon <= 5 ? "warn" : ""}>
+                {dueSoon < 0 ? "overdue" : dueSoon === 0 ? "due today" : `due in ${dueSoon}d`}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="lx-debt-right">
+          <div className={"lx-debt-bal " + (incoming ? "pos" : "neg")}>{formatMoney(d.balance, cur)}</div>
+          <ChevronDown size={16} className="lx-debt-chev" />
+        </div>
+      </button>
+
+      {d.original && d.original > d.balance ? (
+        <div className="lx-debt-bar"><span style={{ width: `${pct}%` }} /></div>
+      ) : null}
+
+      {open && (
+        <div className="lx-debt-detail">
+          <div className="lx-debt-progress">
+            <span>{formatMoney((d.original || d.balance) - d.balance, cur)} {incoming ? "received" : "paid"}</span>
+            <span>{Math.round(pct)}% of {formatMoney(d.original || d.balance, cur)}</span>
+          </div>
+
+          {paying ? (
+            <div className="lx-pay-row">
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="Amount"
+                value={payAmt}
+                onChange={(e) => setPayAmt(e.target.value)}
+                autoFocus
+              />
+              <button className="lx-primary sm" onClick={() => submitPayment(d.id)}>
+                {incoming ? "Log received" : "Log payment"}
+              </button>
+              <button className="lx-ghost sm" onClick={() => setPayingId(null)}>Cancel</button>
+            </div>
+          ) : (
+            <div className="lx-debt-actions">
+              <button className="lx-primary sm" onClick={() => { setPayingId(d.id); setPayAmt(""); }}>
+                <HandCoins size={14} /> {incoming ? "Received" : "Pay"}
+              </button>
+              <button className="lx-ghost sm" onClick={() => startEdit(d)}>
+                <Pencil size={14} /> Edit
+              </button>
+              <button className="lx-ghost sm danger" onClick={() => { if (confirm(`Delete "${d.party}"?`)) deleteDebt(d.id); }}>
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          )}
+
+          {(d.payments?.length ?? 0) > 0 && (
+            <div className="lx-history">
+              <span className="lx-history-label"><CalendarClock size={13} /> Payment history</span>
+              {d.payments!.slice(0, 6).map((p) => (
+                <div className="lx-history-row" key={p.id}>
+                  <span>{friendlyDate(p.date)}</span>
+                  <b className={incoming ? "pos" : "neg"}>{incoming ? "+" : "−"}{formatMoney(p.amount, cur)}</b>
                 </div>
+              ))}
+            </div>
+          )}
+          {d.note ? <p className="lx-debt-note">{d.note}</p> : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+
+function DebtSheet(props: {
+  draft: DraftDebt;
+  setDraft: (d: DraftDebt) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  const { draft, setDraft, onSave, onClose } = props;
+  const isPerson = draft.kind === "person";
+  const set = (patch: Partial<DraftDebt>) => setDraft({ ...draft, ...patch });
+
+  return (
+    <div className="lx-sheet-backdrop" onClick={onClose}>
+      <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="lx-sheet-head">
+          <h3>{draft.id ? "Edit debt" : "Add a debt"}</h3>
+          <button className="lx-sheet-x" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+
+        <div className="lx-seg">
+          <button className={draft.direction === "i_owe" ? "on" : ""} onClick={() => set({ direction: "i_owe" })}>I owe</button>
+          <button className={draft.direction === "owed_to_me" ? "on" : ""} onClick={() => set({ direction: "owed_to_me", kind: "person" })}>Owed to me</button>
+        </div>
+
+        {draft.direction === "i_owe" && (
+          <div className="lx-kinds">
+            {(Object.keys(KIND_META) as DebtKind[]).map((k) => {
+              const M = KIND_META[k];
+              return (
+                <button key={k} className={"lx-kind" + (draft.kind === k ? " on" : "")} onClick={() => set({ kind: k })}>
+                  <M.icon size={15} /> {M.label}
+                </button>
               );
             })}
-            {debts.length === 0 && (
-              <EmptyState
-                Icon={CreditCard}
-                title="No debt accounts added"
-                body="Add credit cards, loans, or payment plans to track progress."
-                action="Add debt account"
-                href="/settings"
-                secondary="Not carrying debt? Great — keep this section as your protection plan."
-              />
-            )}
           </div>
-        </article>
+        )}
 
-        <article className="vision-card span-4">
-          <div className="vision-card-title"><span>Your Monthly Debt Plan</span></div>
-          {hasDebt ? (
-            <>
-              <div className="debt-plan-list">
-                <div><span>Minimum Payments</span><b>{formatMoney(monthlyMin, data.currency)}</b></div>
-                <div><span>Extra Payment</span><b>{formatMoney(75, data.currency)}</b></div>
-                <div className="total"><span>Total Monthly Payment</span><b>{formatMoney(monthlyMin + 75, data.currency)}</b></div>
-              </div>
-              {nextDebt && (
-                <button className="soft-button full" onClick={() => payDebt(nextDebt.id, 75)}>
-                  Add $75 to {nextDebt.party}
-                </button>
-              )}
-              <div className="next-payment">
-                <CalendarClock size={15} />
-                <span>Next payment due</span>
-                <b>{nextDebt?.dueDate || "Not set"}</b>
-              </div>
-            </>
-          ) : (
-            <EmptyState
-              Icon={CalendarClock}
-              title="No minimum payments yet"
-              body="Add accounts to build your monthly debt plan."
-              action="Add debt account"
-              href="/settings"
-            />
-          )}
-        </article>
+        <label className="lx-field">
+          <span>{draft.direction === "i_owe" ? "Who do you owe?" : "Who owes you?"}</span>
+          <input value={draft.party} onChange={(e) => set({ party: e.target.value })} placeholder={isPerson ? "e.g. James" : "e.g. Visa card"} autoFocus />
+        </label>
 
-        <article className="vision-card span-12 debt-advice">
-          {[
-            ["Strategic Payoff Plans", "Snowball or Avalanche. Choose what drives you.", BadgeDollarSign],
-            ["Clear Progress Tracking", "See how close you are and stay motivated.", TrendingDown],
-            ["Smart Projections", "Know your payoff date and interest savings.", CalendarClock],
-            ["Actionable Guidance", "Personalized tips to help you stay on track.", CheckCircle2],
-            ["Debt Freedom", "A clear path to a stronger financial life.", Landmark],
-          ].map(([title, body, Icon]) => (
-            <div key={String(title)}>
-              <Icon size={24} />
-              <strong>{String(title)}</strong>
-              <span>{String(body)}</span>
-            </div>
-          ))}
-        </article>
-      </section>
-    </main>
+        <label className="lx-field">
+          <span>Balance</span>
+          <input type="number" inputMode="decimal" value={draft.balance} onChange={(e) => set({ balance: e.target.value })} placeholder="0" />
+        </label>
+
+        {!isPerson && (
+          <div className="lx-field-row">
+            <label className="lx-field">
+              <span>APR %</span>
+              <input type="number" inputMode="decimal" value={draft.apr} onChange={(e) => set({ apr: e.target.value })} placeholder="0" />
+            </label>
+            <label className="lx-field">
+              <span>Min / month</span>
+              <input type="number" inputMode="decimal" value={draft.minPayment} onChange={(e) => set({ minPayment: e.target.value })} placeholder="0" />
+            </label>
+          </div>
+        )}
+
+        <label className="lx-field">
+          <span>Next due {isPerson ? "(optional)" : ""}</span>
+          <input type="date" value={draft.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
+        </label>
+
+        <label className="lx-field">
+          <span>Note (optional)</span>
+          <input value={draft.note} onChange={(e) => set({ note: e.target.value })} placeholder="Anything to remember" />
+        </label>
+
+        <button className="lx-primary full" onClick={onSave} disabled={!draft.party.trim() || !(parseFloat(draft.balance) > 0)}>
+          {draft.id ? "Save changes" : "Add debt"}
+        </button>
+      </div>
+    </div>
   );
 }

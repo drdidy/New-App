@@ -19,10 +19,12 @@ import {
   budgetStatus,
   cashOnHand,
   categoryBreakdown,
+  inferDebtKind,
   moneyPlan,
   monthOverMonth,
   netWorth,
   pace,
+  safeToSpend,
 } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
 import Ring from "@/components/Ring";
@@ -81,6 +83,9 @@ export default function AdvisorPage() {
       currency: data.currency,
       moneyPlan: moneyPlan(data),
       pace: pace(data, sum.safeToSpend),
+      // The real, cash-grounded headline: spendable cash now minus what's due
+      // before the next payday. This is what the user actually feels mid-month.
+      safeToSpendNow: safeToSpend(data),
       netWorth: netWorth(data),
       cashOnHand: cashOnHand(data),
       goals: (data.goals || []).map((g) => ({
@@ -111,10 +116,12 @@ export default function AdvisorPage() {
       debts: data.debts.map((d) => ({
         party: d.party,
         direction: d.direction,
+        kind: d.kind ?? inferDebtKind(d),
         balance: d.balance,
         apr: d.apr ?? null,
         minPayment: d.minPayment ?? null,
         dueDate: d.dueDate ?? null,
+        paymentsMade: d.payments?.length ?? 0,
         whose: nameOf(d.memberId),
       })),
       recentExpenses: data.transactions.filter((t) => t.type === "expense").slice(0, 24).map((t) => ({

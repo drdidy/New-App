@@ -17,7 +17,7 @@ import {
   billsThisMonth,
   netWorth,
   cashOnHand,
-  pace,
+  safeToSpend,
   quickInsights,
 } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
@@ -68,13 +68,14 @@ export default function TodayPage() {
   const firstName = data.members[0]?.name?.split(" ")[0] || "there";
   const cash = cashOnHand(data);
   const nw = netWorth(data);
-  const daily = pace(data, summary.safeToSpend);
+  const sts = safeToSpend(data);
   const bills = billsThisMonth(data).filter((b) => !b.paid);
   const recent = data.transactions.slice(0, 5);
   const goal = data.goals[0];
   const insights = quickInsights(data, data.currency, 2);
-  const safePos = summary.safeToSpend >= 0;
+  const safePos = sts.safe >= 0;
   const cur = data.currency;
+  const barPct = sts.spendable > 0 ? Math.max(0, Math.min(100, (sts.safe / sts.spendable) * 100)) : safePos ? 60 : 8;
 
   return (
     <main className="lx" ref={root}>
@@ -91,16 +92,30 @@ export default function TodayPage() {
       {/* HERO */}
       <div className="lx-hero">
         <div className="lx-hero-inner">
-          <div className="lx-hero-label">Safe to spend</div>
+          <div className="lx-hero-label">
+            Safe to spend
+            <span className="lx-hero-tag">{sts.mode === "cash" ? "from real cash" : "from income"}</span>
+          </div>
           <div className={"lx-hero-num " + (safePos ? "pos" : "neg")}>
-            <AnimatedNumber value={summary.safeToSpend} currency={cur} />
+            <AnimatedNumber value={sts.safe} currency={cur} />
           </div>
           <div className="lx-hero-sub">
             {safePos
-              ? `About ${formatMoney(daily.dailyAllowance, cur)} a day for the ${daily.daysLeft} days ${daily.periodLabel}.`
-              : "You're over — tap Coach for a recovery plan."}
+              ? `About ${formatMoney(sts.dailyAllowance, cur)} a day for the ${sts.daysLeft} days ${sts.periodLabel}.`
+              : "You're short for what's due before payday — tap Coach for a plan."}
           </div>
-          <div className="lx-bar"><span style={{ width: `${safePos ? 72 : 16}%` }} /></div>
+          <div className="lx-bar"><span style={{ width: `${barPct}%` }} /></div>
+          {sts.committed > 0 && (
+            <div className="lx-hero-math">
+              <span>{formatMoney(sts.spendable, cur)} {sts.mode === "cash" ? "on hand" : "income left"}</span>
+              <span className="lx-hero-minus">− {formatMoney(sts.committed, cur)} due before payday</span>
+            </div>
+          )}
+          {!sts.hasAccounts && (
+            <Link href="/insights" className="lx-hero-hint">
+              Add your account balances to base this on real cash →
+            </Link>
+          )}
         </div>
       </div>
 

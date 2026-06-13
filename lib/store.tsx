@@ -23,6 +23,7 @@ import type {
   ParsedEntry,
 } from "./types";
 import { uid, todayISO, monthKey } from "./format";
+import { inferDebtKind } from "./insights";
 import { mergeData, sanitizeForSync } from "./merge";
 import { parseAppDataInput } from "./validation";
 
@@ -91,6 +92,8 @@ function migrate(raw: any): AppData {
   const debts: Debt[] = (raw.debts || []).map((d: Debt) => ({
     ...touch(attribute(d), d.updatedAt || d.createdAt || now),
     original: d.original ?? d.balance,
+    kind: d.kind ?? inferDebtKind(d),
+    payments: Array.isArray(d.payments) ? d.payments : [],
   }));
   const recurringBills: RecurringBill[] = (Array.isArray(raw.recurringBills) ? raw.recurringBills : []).map(
     (b: RecurringBill) => touch(attribute(b), b.updatedAt || b.createdAt || now),
@@ -390,7 +393,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({
       ...d,
       debts: [
-        { ...dbt, original: dbt.original ?? dbt.balance, id: uid(), createdAt: now, updatedAt: now },
+        {
+          ...dbt,
+          original: dbt.original ?? dbt.balance,
+          kind: dbt.kind ?? inferDebtKind(dbt),
+          payments: dbt.payments ?? [],
+          id: uid(),
+          createdAt: now,
+          updatedAt: now,
+        },
         ...d.debts,
       ],
     }));
@@ -408,8 +419,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => {
       const target = d.debts.find((x) => x.id === id);
       const now = Date.now();
+      const payment = { id: uid(), amount: Math.abs(amount), date: todayISO(), createdAt: now };
       const debts = d.debts.map((x) =>
-        x.id === id ? { ...x, balance: Math.max(0, x.balance - amount), updatedAt: now } : x,
+        x.id === id
+          ? {
+              ...x,
+              balance: Math.max(0, x.balance - amount),
+              payments: [payment, ...(x.payments || [])],
+              updatedAt: now,
+            }
+          : x,
       );
       // Log repayments so cash flow and net worth do not silently drift.
       let transactions = d.transactions;
@@ -508,10 +527,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 {
                   id: uid(),
                   direction,
+                  kind: inferDebtKind({ party, apr: e.apr }),
                   party,
                   balance: Math.abs(e.amount),
                   original: Math.abs(e.amount),
                   apr: e.apr,
+                  payments: [],
                   memberId: owner,
                   createdAt: now,
                   updatedAt: now,
@@ -527,7 +548,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             if (match) {
               debts = debts.map((x) =>
                 x.id === match.id
-                  ? { ...x, balance: Math.max(0, x.balance - Math.abs(e.amount)), updatedAt: now }
+                  ? {
+                      ...x,
+                      balance: Math.max(0, x.balance - Math.abs(e.amount)),
+                      payments: [
+                        { id: uid(), amount: Math.abs(e.amount), date: todayISO(), createdAt: now },
+                        ...(x.payments || []),
+                      ],
+                      updatedAt: now,
+                    }
                   : x,
               );
             }
