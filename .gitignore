@@ -30,3 +30,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# local operational notes (not part of the app)
+VERCEL_RUNBOOK.md

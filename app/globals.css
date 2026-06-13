@@ -7901,3 +7901,48 @@ body::after {
 @keyframes mc-mic { 0%,100% { box-shadow: 0 0 0 0 rgba(192,69,59,0.5); } 50% { box-shadow: 0 0 0 8px rgba(192,69,59,0); } }
 .lx-voicenote { margin: 0 0 8px; font-size: 12.5px; color: var(--mc-ink-2); background: rgba(217,154,78,0.12); border: 1px solid rgba(217,154,78,0.2); border-radius: 12px; padding: 9px 13px; }
 @media (prefers-reduced-motion: reduce) { .lx-chatbar button.live { animation: none; } }
+
+/* ============================================================
+   SPEAK-ANYWHERE — global voice capture (FAB + sheet bits)
+   ============================================================ */
+.mc-fab {
+  position: fixed; z-index: 55;
+  right: 18px; bottom: calc(92px + env(safe-area-inset-bottom));
+  width: 58px; height: 58px; border-radius: 19px; display: grid; place-items: center;
+  color: #fff; border: none; cursor: pointer;
+  background: linear-gradient(135deg, #19c8b1, #0f766e);
+  box-shadow: 0 16px 34px -10px rgba(15,118,110,0.75), inset 0 1px 0 rgba(255,255,255,0.35);
+  transition: transform 0.18s var(--mc-spring);
+}
+.mc-fab:hover { transform: translateY(-2px) scale(1.04); }
+.mc-fab:active { transform: scale(0.92); }
+
+.mc-bigmic {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 26px; border-radius: 20px; cursor: pointer; color: var(--mc-teal-ink);
+  background: linear-gradient(160deg, rgba(20,184,166,0.12), rgba(15,118,110,0.07));
+  border: 1.5px solid rgba(20,184,166,0.3); font-weight: 750; font-size: 15px;
+  transition: transform 0.15s var(--mc-spring);
+}
+.mc-bigmic:active { transform: scale(0.98); }
+.mc-bigmic svg { color: var(--mc-teal); }
+.mc-bigmic.live {
+  background: linear-gradient(160deg, rgba(240,121,95,0.16), rgba(192,69,59,0.10));
+  border-color: rgba(192,69,59,0.45); color: var(--mc-neg);
+  animation: mc-mic 1.2s ease-in-out infinite;
+}
+.mc-bigmic.live svg { color: var(--mc-neg); }
+.mc-bigmic .spin { animation: mc-spin 0.9s linear infinite; }
+@keyframes mc-spin { to { transform: rotate(360deg); } }
+
+.mc-or { text-align: center; font-size: 12px; color: var(--mc-mut); margin: 14px 0 10px; font-weight: 600; }
+
+.mc-hints { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.mc-hints-label { width: 100%; font-size: 11.5px; font-weight: 700; color: var(--mc-mut); margin-bottom: 2px; }
+
+.mc-confirms { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+.mc-confirm { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--mc-teal-ink); background: rgba(15,118,110,0.08); border: 1px solid rgba(15,118,110,0.16); border-radius: 12px; padding: 10px 13px; }
+.mc-confirm svg { color: var(--mc-teal); flex: none; }
+
+@media (min-width: 900px) { .mc-fab { right: 28px; bottom: 28px; } }
+@media (prefers-reduced-motion: reduce) { .mc-fab, .mc-bigmic.live { animation: none !important; transition: none !important; } }

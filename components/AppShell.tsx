@@ -5,6 +5,7 @@ import { Bell, Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
 import BottomNav from "@/components/BottomNav";
 import Onboarding from "@/components/Onboarding";
+import SpeakButton from "@/components/SpeakButton";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, data } = useStore();
@@ -48,6 +49,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <div className="app">{children}</div>
+      <SpeakButton />
       <BottomNav />
     </div>
   );
