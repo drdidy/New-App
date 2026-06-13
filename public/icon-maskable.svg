@@ -1,21 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Money Coach">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="74" y1="38" x2="430" y2="468" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#115f52"/>
-      <stop offset="0.52" stop-color="#0b4038"/>
-      <stop offset="1" stop-color="#06251f"/>
+    <linearGradient id="bg" x1="40" y1="20" x2="472" y2="492" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#19c8b1"/>
+      <stop offset="0.48" stop-color="#0f8e7b"/>
+      <stop offset="1" stop-color="#0a5b50"/>
     </linearGradient>
-    <linearGradient id="gold" x1="142" y1="152" x2="372" y2="360" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fff0c5"/>
-      <stop offset="0.55" stop-color="#e4bd70"/>
-      <stop offset="1" stop-color="#b87835"/>
+    <radialGradient id="sheen" cx="0.28" cy="0.22" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="150" y1="150" x2="360" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe9b0"/>
+      <stop offset="1" stop-color="#e9b25c"/>
     </linearGradient>
+    <linearGradient id="arrow" x1="256" y1="150" x2="256" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eafff9"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#063b33" flood-opacity="0.35"/>
+    </filter>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <g transform="translate(24 24) scale(.90625)">
-    <path d="M128 150c0-17 13-30 30-30h196c17 0 30 13 30 30v212c0 17-13 30-30 30H158c-17 0-30-13-30-30V150Z" fill="none" stroke="#f8edcf" stroke-width="20"/>
-    <path d="M168 324V208l50 82 50-82v116" fill="none" stroke="url(#gold)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M360 222c-15-17-43-24-68-9-39 23-39 83 0 106 25 15 53 8 68-9" fill="none" stroke="#f8edcf" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M168 358h176" stroke="#d6a75e" stroke-width="18" stroke-linecap="round"/>
+
+  <rect width="512" height="512" rx="0" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="0" fill="url(#sheen)"/>
+
+  <g transform="translate(256 256) scale(0.8) translate(-256 -256)" filter="url(#soft)">
+    <!-- faint full track -->
+    <circle cx="256" cy="262" r="132" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="34"/>
+    <!-- 3/4 gauge ring, gap at the bottom, rounded caps -->
+    <path d="M 158 354 A 132 132 0 1 1 354 354"
+          fill="none" stroke="url(#arrow)" stroke-width="34" stroke-linecap="round"/>
+    <!-- gold terminal dot at the ring's leading end (top-right of the open gap) -->
+    <circle cx="354" cy="354" r="20" fill="url(#gold)"/>
+    <!-- upward arrow inside: shaft + head -->
+    <path d="M 256 330 L 256 196" fill="none" stroke="url(#arrow)" stroke-width="34" stroke-linecap="round"/>
+    <path d="M 200 248 L 256 188 L 312 248" fill="none" stroke="url(#arrow)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>
