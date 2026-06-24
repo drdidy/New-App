@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Calendar, Check, CreditCard, Landmark, Pencil, Plus, Repeat, Trash2, X, Zap } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { billsThisMonth } from "@/lib/insights";
 import { formatMoney, monthLabel, monthKey } from "@/lib/format";
@@ -14,7 +15,7 @@ const ICON: Record<string, string> = {
 };
 
 export default function BillsPage() {
-  const { data, ready, addBill, updateBill, deleteBill, markBillPaid, member } = useStore();
+  const { data, ready, addBill, updateBill, deleteBill, markBillPaid, member, payDebt } = useStore();
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -44,6 +45,20 @@ export default function BillsPage() {
   const remaining = monthlyTotal - paidTotal;
   const paidPct = monthlyTotal ? (paidTotal / monthlyTotal) * 100 : 0;
 
+  // Recurring loan / card payments come from debts that carry a monthly minimum.
+  const month = monthKey();
+  const loans = data.debts
+    .filter((d) => d.direction === "i_owe" && (d.minPayment || 0) > 0 && d.balance > 0)
+    .map((d) => ({
+      debt: d,
+      amount: Math.min(d.minPayment || 0, d.balance),
+      day: d.paymentDay || (d.dueDate ? parseInt(d.dueDate.slice(8, 10), 10) || undefined : undefined),
+      paidThisMonth: d.lastPaidMonth === month,
+    }))
+    .sort((a, b) => (a.day || 99) - (b.day || 99));
+  const loanTotal = loans.reduce((s, l) => s + l.amount, 0);
+  const committedTotal = monthlyTotal + loanTotal;
+
   function save() {
     const amt = parseFloat(amount);
     const d = parseInt(day, 10);
@@ -58,20 +73,20 @@ export default function BillsPage() {
     <main className="lx">
       <header className="lx-top">
         <div>
-          <p className="lx-eyebrow"><Calendar size={13} /> Committed each month</p>
-          <h1 className="lx-h1">Bills</h1>
+          <p className="lx-eyebrow"><Repeat size={13} /> Committed each month</p>
+          <h1 className="lx-h1">Recurring</h1>
         </div>
         <button className="lx-addbtn" onClick={openAdd} aria-label="Add a bill"><Plus size={20} /></button>
       </header>
 
       <div className="lx-hero">
         <div className="lx-hero-inner">
-          <div className="lx-hero-label">Fixed costs · {monthLabel(monthKey())}</div>
-          <div className="lx-hero-num neg">{formatMoney(monthlyTotal, cur)}</div>
+          <div className="lx-hero-label">Recurring this month · {monthLabel(monthKey())}</div>
+          <div className="lx-hero-num neg">{formatMoney(committedTotal, cur)}</div>
           <div className="lx-bar"><span style={{ width: `${paidPct}%` }} /></div>
           <div className="lx-hero-math">
-            <span className="pos">{formatMoney(paidTotal, cur)} paid</span>
-            <span>{formatMoney(remaining, cur)} left this month</span>
+            <span>{formatMoney(monthlyTotal, cur)} bills</span>
+            {loanTotal > 0 && <span>+ {formatMoney(loanTotal, cur)} loans & cards</span>}
           </div>
         </div>
       </div>
@@ -111,6 +126,43 @@ export default function BillsPage() {
               );
             })}
           </div>
+        )}
+      </section>
+
+      {/* LOAN & CARD PAYMENTS (from debts) */}
+      <section className="lx-card">
+        <div className="lx-card-head"><h2>Loan & card payments</h2><Link href="/debt">Manage</Link></div>
+        {loans.length === 0 ? (
+          <div className="lx-blank">
+            <div className="ic"><Landmark size={22} /></div>
+            <h4>No loan payments</h4>
+            <p>Car payments, student loans, and card minimums live in Debt. Add one with a minimum + due date and it shows here.</p>
+            <Link href="/debt" className="lx-primary"><Plus size={16} /> Add a loan or card</Link>
+          </div>
+        ) : (
+          <div className="lx-list">
+            {loans.map(({ debt: d, amount, day, paidThisMonth }) => (
+              <div className="lx-li" key={d.id}>
+                <span className="ic">{(d.kind ?? "loan") === "card" ? <CreditCard size={16} /> : <Landmark size={16} />}</span>
+                <div className="meta">
+                  <div className="t">{d.party}</div>
+                  <div className="s">
+                    {day ? `Due the ${day}` : "Monthly"}{d.autoPay ? " · auto-pay ⚡" : ""}{paidThisMonth ? " · ✓ paid" : ""}
+                  </div>
+                </div>
+                <div className="amt neg" style={{ opacity: paidThisMonth ? 0.45 : 1 }}>{formatMoney(amount, cur)}</div>
+                {paidThisMonth
+                  ? <span className="lx-paid"><Check size={15} /></span>
+                  : <button className="lx-ghost sm" onClick={() => payDebt(d.id, amount)}>Pay</button>}
+                <Link href="/debt" className="lx-icon-btn" aria-label="Manage debt"><ArrowRight size={14} /></Link>
+              </div>
+            ))}
+          </div>
+        )}
+        {loans.some((l) => !l.debt.autoPay) && (
+          <p className="lx-group-sub" style={{ marginTop: 10 }}>
+            <Zap size={12} style={{ verticalAlign: "-2px" }} /> Tip: open a loan in Debt and turn on <b>auto-pay</b> so its minimum logs itself each month.
+          </p>
         )}
       </section>
 
