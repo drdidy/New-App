@@ -137,7 +137,10 @@ export default function SettingsPage() {
               ))}
             </div>
             <input className="lx-member-income" value={m.monthlyIncome ?? ""} inputMode="decimal" placeholder="Monthly income (optional)"
-              onChange={(e) => updateMember(m.id, { monthlyIncome: e.target.value ? parseFloat(e.target.value) : undefined })} />
+              onChange={(e) => {
+                const n = parseFloat(e.target.value.replace(/[$,\s]/g, ""));
+                updateMember(m.id, { monthlyIncome: Number.isFinite(n) && n >= 0 ? n : undefined });
+              }} />
           </div>
         ))}
         {data.members.length < 6 && (

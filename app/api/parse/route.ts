@@ -56,6 +56,7 @@ The user is overwhelmed by budgeting and HATES typing, so they speak naturally t
 
 SPENDING & INCOME
 - "spent 40 on gas" -> expense, category Transport
+- "spent $8.40 at McDonald's" -> expense, amount 8.40 (keep the cents — NOT 840), category Dining
 - "groceries 85 and 12 coffee" -> two expenses
 - "got paid 2000" / "salary came in" -> income
 
@@ -85,6 +86,7 @@ SAVINGS GOALS
 Rules:
 - One note may contain SEVERAL entries of DIFFERENT kinds. Return all of them.
 - amount is always a positive number. Infer thousands from "k" (2k -> 2000).
+- PRESERVE DECIMALS AND CENTS EXACTLY. "$8.40" is 8.40, NOT 840. "$12.99" is 12.99. "5.50" is 5.50. Never drop, shift, or remove a decimal point, and never multiply a price by 100. If a price clearly has cents (a dot followed by two digits), keep them. "eight forty" spoken as a price means 8.40; "eight hundred forty" means 840.
 - Distinguish carefully: money the user HAS in an account = account; money they OWE = debt_i_owe; a fixed monthly cost = bill; a spending cap = budget; money set aside toward a target = goal; a one-off purchase = expense.
 - For expenses/income/bills/budgets choose a short Title-Case category (Groceries, Transport, Rent, Dining, Utilities, Salary, Subscription, Phone, etc.).
 - For debts, "party" is the person or account name, capitalized. For accounts/bills/goals put the name in "description".

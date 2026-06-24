@@ -16,6 +16,7 @@ import {
   safeToSpend,
 } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
+import { postJson } from "@/lib/clientApi";
 
 interface Msg {
   role: "user" | "assistant";
@@ -127,23 +128,20 @@ export default function AdvisorPage() {
       })),
     };
 
-    try {
-      const res = await fetch("/api/advisor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, snapshot }),
-      });
-      const dataR = await res.json();
-      if (!res.ok) throw new Error(dataR.error || "Coach is unavailable.");
-      setMsgs((m) => [...m, { role: "assistant", content: dataR.reply }]);
-    } catch (e: any) {
+    const r = await postJson<{ reply?: string }>("/api/advisor", { messages: next, snapshot });
+    setBusy(false);
+    if (!r.ok) {
       setMsgs((m) => [
         ...m,
-        { role: "assistant", content: "Coach could not connect right now. Your local plan is still available." },
+        { role: "assistant", content: r.error || "Coach couldn’t connect right now. Your local plan is still available." },
       ]);
-    } finally {
-      setBusy(false);
+      return;
     }
+    const reply = (r.data?.reply || "").trim();
+    setMsgs((m) => [
+      ...m,
+      { role: "assistant", content: reply || "I’m here — could you say a bit more about what you’d like help with?" },
+    ]);
   }
 
   function send(text: string) {

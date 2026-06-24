@@ -5,7 +5,17 @@ import { Camera, CheckCircle2, Loader2, Mic, Send } from "lucide-react";
 import { useStore } from "@/lib/store";
 import type { ParsedEntry } from "@/lib/types";
 import { todayISO } from "@/lib/format";
+import { postJson, compressImage } from "@/lib/clientApi";
 import MemberPicker from "@/components/MemberPicker";
+
+interface ReceiptResp {
+  found: boolean;
+  amount: number;
+  merchant?: string;
+  category?: string;
+  items?: Array<{ name: string; amount: number; category?: string; quantity?: number }>;
+  summary?: string;
+}
 
 export default function QuickCapture() {
   const { data, applyParsedEntries, addTransaction } = useStore();
@@ -24,29 +34,22 @@ export default function QuickCapture() {
     if (!value || busy) return;
     setBusy(true);
     setErr("");
-    try {
-      const res = await fetch("/api/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value }),
-      });
-      const parsed = await res.json();
-      if (!res.ok) throw new Error(parsed.error || "Something went wrong.");
-      const entries: ParsedEntry[] = parsed.entries || [];
-      if (entries.length === 0) {
-        setErr('Try a money sentence like "spent 20 on lunch" or "paid Visa 75".');
-      } else {
-        applyParsedEntries(entries, who);
-        setConfirms(entries.map((e) => e.summary));
-        setText("");
-        if (navigator.vibrate) navigator.vibrate(18);
-        setTimeout(() => setConfirms([]), 6000);
-      }
-    } catch (e: any) {
-      setErr(e.message || "Network error.");
-    } finally {
-      setBusy(false);
+    const r = await postJson<{ entries: ParsedEntry[] }>("/api/parse", { text: value });
+    setBusy(false);
+    if (!r.ok) {
+      setErr(r.error || "Something went wrong.");
+      return;
     }
+    const entries: ParsedEntry[] = r.data?.entries || [];
+    if (entries.length === 0) {
+      setErr('Try a money sentence like "spent 20 on lunch" or "paid Visa 75".');
+      return;
+    }
+    applyParsedEntries(entries, who);
+    setConfirms(entries.map((e) => e.summary));
+    setText("");
+    if (navigator.vibrate) navigator.vibrate(18);
+    setTimeout(() => setConfirms([]), 6000);
   }
 
   function toggleVoice() {
@@ -107,50 +110,49 @@ export default function QuickCapture() {
     if (!file) return;
     setBusy(true);
     setErr("");
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      const res = await fetch("/api/parse-receipt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl }),
-      });
-      const parsed = await res.json();
-      if (!res.ok) throw new Error(parsed.error || "Could not read that image.");
-      if (!parsed.found) {
-        setErr("I could not read a total. Try a clearer receipt photo, or type the total.");
-      } else {
-        const items = Array.isArray(parsed.items)
-          ? parsed.items
-              .filter((x: any) => x && typeof x.name === "string" && Number(x.amount) > 0)
-              .slice(0, 80)
-              .map((x: any) => ({
-                name: String(x.name).slice(0, 80),
-                amount: Math.abs(Number(x.amount)),
-                category: String(x.category || "Other").slice(0, 40),
-                quantity: x.quantity ? Number(x.quantity) : undefined,
-              }))
-          : undefined;
-        addTransaction({
-          type: "expense",
-          amount: Math.abs(parsed.amount),
-          category: parsed.category || "Other",
-          description: parsed.merchant || "Receipt",
-          date: todayISO(),
-          memberId: who,
-          lineItems: items && items.length > 0 ? items : undefined,
-        });
-        setConfirms([
-          parsed.summary || `Logged ${parsed.amount}`,
-          ...(items?.length ? [`Captured ${items.length} receipt line items`] : []),
-        ]);
-        if (navigator.vibrate) navigator.vibrate(18);
-        setTimeout(() => setConfirms([]), 6000);
-      }
-    } catch (e: any) {
-      setErr(e.message || "Network error.");
-    } finally {
+    const dataUrl = await compressImage(file);
+    if (!dataUrl) {
       setBusy(false);
+      setErr("Couldn’t read that image. Try another photo or type the total.");
+      return;
     }
+    const r = await postJson<ReceiptResp>("/api/parse-receipt", { image: dataUrl });
+    setBusy(false);
+    if (!r.ok) {
+      setErr(r.error || "Could not read that image.");
+      return;
+    }
+    const parsed = r.data;
+    if (!parsed || !parsed.found || !(Number(parsed.amount) > 0)) {
+      setErr("I couldn’t read a total. Try a clearer receipt photo, or type the total.");
+      return;
+    }
+    const items = Array.isArray(parsed.items)
+      ? parsed.items
+          .filter((x) => x && typeof x.name === "string" && Number.isFinite(Number(x.amount)) && Number(x.amount) > 0)
+          .slice(0, 80)
+          .map((x) => ({
+            name: String(x.name).slice(0, 80),
+            amount: Math.abs(Number(x.amount)),
+            category: String(x.category || "Other").slice(0, 40),
+            quantity: x.quantity && Number.isFinite(Number(x.quantity)) ? Number(x.quantity) : undefined,
+          }))
+      : undefined;
+    addTransaction({
+      type: "expense",
+      amount: Math.abs(Number(parsed.amount)),
+      category: parsed.category || "Other",
+      description: parsed.merchant || "Receipt",
+      date: todayISO(),
+      memberId: who,
+      lineItems: items && items.length > 0 ? items : undefined,
+    });
+    setConfirms([
+      parsed.summary || `Logged ${parsed.amount}`,
+      ...(items?.length ? [`Captured ${items.length} receipt line items`] : []),
+    ]);
+    if (navigator.vibrate) navigator.vibrate(18);
+    setTimeout(() => setConfirms([]), 6000);
   }
 
   return (
@@ -224,13 +226,4 @@ export default function QuickCapture() {
       {err && <p className="err">{err}</p>}
     </div>
   );
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
 }

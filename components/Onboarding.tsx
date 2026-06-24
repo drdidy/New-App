@@ -399,7 +399,10 @@ export default function Onboarding() {
         name: person.name.trim(),
         emoji: i === 0 ? "A" : "B",
         color: person.color,
-        monthlyIncome: person.income ? parseFloat(person.income.replace(/[$,]/g, "")) : undefined,
+        monthlyIncome: (() => {
+          const n = parseFloat((person.income || "").replace(/[$,\s]/g, ""));
+          return Number.isFinite(n) && n >= 0 ? n : undefined;
+        })(),
         updatedAt: Date.now(),
       }));
 
