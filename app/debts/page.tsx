@@ -48,11 +48,12 @@ interface DraftDebt {
   apr: string;
   minPayment: string;
   dueDate: string;
+  autoPay: boolean;
   note: string;
 }
 
 function emptyDraft(direction: DebtDirection = "i_owe", kind: DebtKind = "card"): DraftDebt {
-  return { direction, kind, party: "", balance: "", apr: "", minPayment: "", dueDate: "", note: "" };
+  return { direction, kind, party: "", balance: "", apr: "", minPayment: "", dueDate: "", autoPay: false, note: "" };
 }
 
 export default function DebtsPage() {
@@ -101,6 +102,7 @@ export default function DebtsPage() {
       apr: d.apr != null ? String(d.apr) : "",
       minPayment: d.minPayment != null ? String(d.minPayment) : "",
       dueDate: d.dueDate || "",
+      autoPay: Boolean(d.autoPay),
       note: d.note || "",
     });
   }
@@ -117,6 +119,8 @@ export default function DebtsPage() {
       apr: draft.apr ? Math.max(0, parseFloat(draft.apr)) : undefined,
       minPayment: draft.minPayment ? Math.max(0, parseFloat(draft.minPayment)) : undefined,
       dueDate: draft.dueDate || undefined,
+      paymentDay: draft.dueDate ? parseInt(draft.dueDate.slice(8, 10), 10) || undefined : undefined,
+      autoPay: draft.autoPay,
       note: draft.note.trim() || undefined,
     };
     if (draft.id) updateDebt(draft.id, patch);
@@ -504,6 +508,13 @@ function DebtSheet(props: {
           <input type="date" value={draft.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
         </label>
 
+        {!isPerson && draft.dueDate && parseFloat(draft.minPayment) > 0 && (
+          <label className="lx-toggle">
+            <input type="checkbox" checked={draft.autoPay} onChange={(e) => set({ autoPay: e.target.checked })} />
+            <span>Auto-pay the minimum each month on the {ordinal(parseInt(draft.dueDate.slice(8, 10), 10) || 1)}</span>
+          </label>
+        )}
+
         <label className="lx-field">
           <span>Note (optional)</span>
           <input value={draft.note} onChange={(e) => set({ note: e.target.value })} placeholder="Anything to remember" />
@@ -515,4 +526,10 @@ function DebtSheet(props: {
       </div>
     </div>
   );
+}
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

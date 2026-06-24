@@ -373,6 +373,68 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, [ready]);
 
+  // Auto-pay recurring debt payments (car loan, student loan, card minimums).
+  // On/after the payment day each month, log the minimum, shrink the balance,
+  // and record it in the debt's history — once per month per debt.
+  useEffect(() => {
+    if (!ready) return;
+    const month = monthKey();
+    const now = new Date();
+    const today = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const dayOf = (dbt: Debt): number | null => {
+      if (dbt.paymentDay) return Math.min(dbt.paymentDay, daysInMonth);
+      if (dbt.dueDate) {
+        const day = parseInt(dbt.dueDate.slice(8, 10), 10);
+        if (day >= 1 && day <= 31) return Math.min(day, daysInMonth);
+      }
+      return null;
+    };
+    setData((d) => {
+      const due = d.debts.filter((x) => {
+        if (x.direction !== "i_owe" || !x.autoPay || x.lastPaidMonth === month) return false;
+        if (!(x.minPayment && x.minPayment > 0) || x.balance <= 0) return false;
+        const day = dayOf(x);
+        return day != null && today >= day;
+      });
+      if (due.length === 0) return d;
+      const dueIds = new Set(due.map((x) => x.id));
+      const nowMs = Date.now();
+      const pays = new Map(due.map((x) => [x.id, Math.min(x.minPayment || 0, x.balance)]));
+      return {
+        ...d,
+        debts: d.debts.map((x) =>
+          dueIds.has(x.id)
+            ? {
+                ...x,
+                balance: Math.max(0, x.balance - (pays.get(x.id) || 0)),
+                lastPaidMonth: month,
+                payments: [
+                  { id: uid(), amount: pays.get(x.id) || 0, date: todayISO(), createdAt: nowMs, note: "Auto-pay" },
+                  ...(x.payments || []),
+                ],
+                updatedAt: nowMs,
+              }
+            : x,
+        ),
+        transactions: [
+          ...due.map((x) => ({
+            id: uid(),
+            type: "expense" as const,
+            amount: pays.get(x.id) || 0,
+            category: "Debt payment",
+            description: `Payment to ${x.party}`,
+            date: todayISO(),
+            memberId: x.memberId,
+            createdAt: nowMs,
+            updatedAt: nowMs,
+          })),
+          ...d.transactions,
+        ],
+      };
+    });
+  }, [ready]);
+
   // Record (or refresh) the current month's net-worth snapshot so we can chart
   // a trend over time. Net worth = accounts + owed-to-you − you-owe.
   useEffect(() => {

@@ -67,6 +67,9 @@ export interface Debt {
   apr?: number; // annual interest rate %, optional (for payoff planning)
   minPayment?: number; // minimum monthly payment, optional
   dueDate?: string; // ISO date of next payment, optional
+  paymentDay?: number; // 1-31, day of month the payment recurs (for auto-pay)
+  autoPay?: boolean; // automatically log the minimum each month on the due day
+  lastPaidMonth?: string; // "YYYY-MM" the recurring payment was last auto-logged
   memberId?: string; // whose debt (optional; defaults to household)
   note?: string;
   payments?: DebtPayment[]; // recorded payment history (newest first)
