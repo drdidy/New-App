@@ -1,9 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Loader2, Mic, Send, Sparkles, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import type { ParsedEntry } from "@/lib/types";
+import { postJson } from "@/lib/clientApi";
 
 const EXAMPLES = [
   "spent 40 on gas",
@@ -19,6 +21,7 @@ const EXAMPLES = [
 // bill, a budget, or a savings goal — no forms.
 export default function SpeakButton() {
   const { applyParsedEntries, data } = useStore();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -43,28 +46,21 @@ export default function SpeakButton() {
     setBusy(true);
     setErr("");
     setConfirms([]);
-    try {
-      const res = await fetch("/api/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value }),
-      });
-      const parsed = await res.json();
-      if (!res.ok) throw new Error(parsed.error || "Something went wrong.");
-      const entries: ParsedEntry[] = parsed.entries || [];
-      if (entries.length === 0) {
-        setErr('I didn’t catch anything to add. Try "spent 20 on lunch" or "rent is 1400 on the 1st".');
-      } else {
-        applyParsedEntries(entries, data.members[0]?.id);
-        setConfirms(entries.map((e) => e.summary));
-        setText("");
-        if (navigator.vibrate) navigator.vibrate(18);
-      }
-    } catch (e: any) {
-      setErr(e.message || "Network error.");
-    } finally {
-      setBusy(false);
+    const r = await postJson<{ entries: ParsedEntry[] }>("/api/parse", { text: value });
+    setBusy(false);
+    if (!r.ok) {
+      setErr(r.error || "Something went wrong.");
+      return;
     }
+    const entries: ParsedEntry[] = r.data?.entries || [];
+    if (entries.length === 0) {
+      setErr('I didn’t catch anything to add. Try "spent 20 on lunch" or "rent is 1400 on the 1st".');
+      return;
+    }
+    applyParsedEntries(entries, data.members[0]?.id);
+    setConfirms(entries.map((e) => e.summary));
+    setText("");
+    if (navigator.vibrate) navigator.vibrate(18);
   }
 
   function toggleVoice() {
@@ -114,6 +110,10 @@ export default function SpeakButton() {
       setErr("Couldn’t start the microphone. Typing still works.");
     }
   }
+
+  // The Coach tab has its own mic + input, so the global FAB would collide with
+  // it — hide it there.
+  if (pathname === "/coach" || pathname.startsWith("/advisor")) return null;
 
   return (
     <>

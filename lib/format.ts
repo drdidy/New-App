@@ -1,9 +1,11 @@
 export function formatMoney(amount: number, currency = "USD"): string {
+  // Never render "$NaN" / "$∞" — coerce bad inputs to 0 defensively.
+  const n = Number.isFinite(amount) ? amount : 0;
   return new Intl.NumberFormat(undefined, {
     style: "currency",
     currency,
-    maximumFractionDigits: Math.abs(amount) % 1 === 0 ? 0 : 2,
-  }).format(amount);
+    maximumFractionDigits: Math.abs(n) % 1 === 0 ? 0 : 2,
+  }).format(n);
 }
 
 // Compact money for tight chart labels: $1.2k, $850.
@@ -71,6 +73,7 @@ export function initials(name: string): string {
 }
 
 export function clampPct(n: number): number {
+  if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, n));
 }
 

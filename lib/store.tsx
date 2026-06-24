@@ -86,24 +86,58 @@ function migrate(raw: any): AppData {
   const attribute = <T extends { memberId?: string }>(x: T): T =>
     x.memberId ? x : { ...x, memberId: members[0]?.id };
 
-  const transactions: Transaction[] = (raw.transactions || []).map((t: Transaction) =>
-    touch(attribute(t), t.updatedAt || t.createdAt || now),
-  );
-  const debts: Debt[] = (raw.debts || []).map((d: Debt) => ({
-    ...touch(attribute(d), d.updatedAt || d.createdAt || now),
-    original: d.original ?? d.balance,
-    kind: d.kind ?? inferDebtKind(d),
-    payments: Array.isArray(d.payments) ? d.payments : [],
-  }));
-  const recurringBills: RecurringBill[] = (Array.isArray(raw.recurringBills) ? raw.recurringBills : []).map(
-    (b: RecurringBill) => touch(attribute(b), b.updatedAt || b.createdAt || now),
-  );
-  const goals: Goal[] = (Array.isArray(raw.goals) ? raw.goals : []).map((g: Goal) =>
-    touch(attribute(g), g.updatedAt || g.createdAt || now),
-  );
-  const accounts: Account[] = (Array.isArray(raw.accounts) ? raw.accounts : []).map((a: Account) =>
-    touch(attribute(a), a.updatedAt || a.createdAt || now),
-  );
+  // Defensive coercion: a single malformed record (e.g. a non-string `date` or
+  // NaN `balance`) must never crash every selector or render "$NaN". We sanitize
+  // on the way in so the rest of the app can trust the shapes.
+  const num = (v: unknown, fallback = 0): number =>
+    typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  const safeDate = (v: unknown): string =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : todayISO();
+
+  const transactions: Transaction[] = (Array.isArray(raw.transactions) ? raw.transactions : [])
+    .filter((t: any) => t && typeof t === "object")
+    .map((t: Transaction) => ({
+      ...touch(attribute(t), t.updatedAt || t.createdAt || now),
+      type: t.type === "income" ? "income" : "expense",
+      amount: Math.abs(num(t.amount)),
+      category: typeof t.category === "string" && t.category ? t.category : "Other",
+      date: safeDate(t.date),
+    }));
+  const debts: Debt[] = (Array.isArray(raw.debts) ? raw.debts : [])
+    .filter((d: any) => d && typeof d === "object")
+    .map((d: Debt) => ({
+      ...touch(attribute(d), d.updatedAt || d.createdAt || now),
+      balance: Math.max(0, num(d.balance)),
+      original: num(d.original ?? d.balance),
+      apr: d.apr != null ? num(d.apr) : undefined,
+      minPayment: d.minPayment != null ? num(d.minPayment) : undefined,
+      direction: d.direction === "owed_to_me" ? "owed_to_me" : "i_owe",
+      party: typeof d.party === "string" && d.party ? d.party : "Someone",
+      kind: d.kind ?? inferDebtKind(d),
+      payments: Array.isArray(d.payments) ? d.payments : [],
+    }));
+  const recurringBills: RecurringBill[] = (Array.isArray(raw.recurringBills) ? raw.recurringBills : [])
+    .filter((b: any) => b && typeof b === "object")
+    .map((b: RecurringBill) => ({
+      ...touch(attribute(b), b.updatedAt || b.createdAt || now),
+      amount: Math.abs(num(b.amount)),
+      dayOfMonth: Math.min(31, Math.max(1, Math.round(num(b.dayOfMonth, 1)))),
+      category: typeof b.category === "string" && b.category ? b.category : "Other",
+    }));
+  const goals: Goal[] = (Array.isArray(raw.goals) ? raw.goals : [])
+    .filter((g: any) => g && typeof g === "object")
+    .map((g: Goal) => ({
+      ...touch(attribute(g), g.updatedAt || g.createdAt || now),
+      target: Math.max(0, num(g.target)),
+      saved: Math.max(0, num(g.saved)),
+      monthlyContribution: g.monthlyContribution != null ? Math.max(0, num(g.monthlyContribution)) : undefined,
+    }));
+  const accounts: Account[] = (Array.isArray(raw.accounts) ? raw.accounts : [])
+    .filter((a: any) => a && typeof a === "object")
+    .map((a: Account) => ({
+      ...touch(attribute(a), a.updatedAt || a.createdAt || now),
+      balance: num(a.balance),
+    }));
 
   const hadData = transactions.length > 0 || debts.length > 0;
 
@@ -117,7 +151,13 @@ function migrate(raw: any): AppData {
     transactions,
     debts,
     budgets: Array.isArray(raw.budgets)
-      ? raw.budgets.map((b: Budget) => ({ ...b, updatedAt: b.updatedAt || raw.settingsUpdatedAt || now }))
+      ? raw.budgets
+          .filter((b: any) => b && typeof b === "object" && typeof b.category === "string")
+          .map((b: Budget) => ({
+            category: b.category,
+            limit: Math.max(0, num(b.limit)),
+            updatedAt: b.updatedAt || raw.settingsUpdatedAt || now,
+          }))
       : [],
     recurringBills,
     goals,
@@ -142,6 +182,7 @@ interface StoreContextValue {
   storageError?: string;
   member: (id?: string) => Member | undefined;
   addTransaction: (t: Omit<Transaction, "id" | "createdAt">) => void;
+  updateTransaction: (id: string, patch: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   addDebt: (d: Omit<Debt, "id" | "createdAt">) => void;
   updateDebt: (id: string, patch: Partial<Debt>) => void;
@@ -292,13 +333,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // Only updates state when something actually changed, to avoid render loops.
   const applyRemote = useCallback((remote: AppData | null) => {
     if (!remote) return;
+    // Sanitize untrusted remote data through migrate() (coerces shapes) and
+    // guard the merge so a corrupt peer blob can never crash the app.
+    let safe: AppData;
+    try {
+      safe = migrate(remote);
+    } catch {
+      return;
+    }
     setData((local) => {
-      const merged = mergeData(local, remote);
-      merged.syncCode = local.syncCode;
-      merged.syncEnabled = local.syncEnabled;
-      const before = JSON.stringify(sanitizeForSync(local));
-      const after = JSON.stringify(sanitizeForSync(merged));
-      return before === after ? local : merged;
+      try {
+        const merged = mergeData(local, safe);
+        merged.syncCode = local.syncCode;
+        merged.syncEnabled = local.syncEnabled;
+        const before = JSON.stringify(sanitizeForSync(local));
+        const after = JSON.stringify(sanitizeForSync(merged));
+        return before === after ? local : merged;
+      } catch {
+        return local;
+      }
     });
   }, []);
 
@@ -380,6 +433,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const updateTransaction = useCallback((id: string, patch: Partial<Transaction>) => {
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      transactions: d.transactions.map((t) =>
+        t.id === id ? { ...t, ...patch, updatedAt: now } : t,
+      ),
+    }));
+  }, []);
+
   const deleteTransaction = useCallback((id: string) => {
     setData((d) => ({
       ...d,
@@ -415,11 +478,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const payDebt = useCallback((id: string, amount: number, memberId?: string) => {
+  const payDebt = useCallback((id: string, rawAmount: number, memberId?: string) => {
+    const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : 0;
+    if (amount <= 0) return;
     setData((d) => {
       const target = d.debts.find((x) => x.id === id);
       const now = Date.now();
-      const payment = { id: uid(), amount: Math.abs(amount), date: todayISO(), createdAt: now };
+      const payment = { id: uid(), amount, date: todayISO(), createdAt: now };
       const debts = d.debts.map((x) =>
         x.id === id
           ? {
@@ -644,11 +709,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                   : g,
               );
             } else {
+              const target = Number.isFinite(e.amount) && e.amount > 0 ? Math.abs(e.amount) : 0;
               goals = [
                 {
                   id: uid(), name, emoji: "🎯", color: PALETTE[goals.length % PALETTE.length],
-                  target: Math.abs(e.amount), saved: 0,
-                  monthlyContribution: e.monthlyContribution, memberId: owner,
+                  target, saved: 0,
+                  monthlyContribution:
+                    Number.isFinite(e.monthlyContribution as number) ? e.monthlyContribution : undefined,
+                  memberId: owner,
                   createdAt: now, updatedAt: now,
                 },
                 ...goals,
@@ -958,6 +1026,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       storageError,
       member,
       addTransaction,
+      updateTransaction,
       deleteTransaction,
       addDebt,
       updateDebt,
@@ -1000,6 +1069,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       storageError,
       member,
       addTransaction,
+      updateTransaction,
       deleteTransaction,
       addDebt,
       updateDebt,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import gsap from "gsap";
 import {
@@ -8,13 +8,19 @@ import {
   CalendarDays,
   Home,
   PiggyBank,
+  Plus,
   Target,
   TrendingUp,
+  Trash2,
   Wallet,
+  X,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { billsThisMonth, budgetStatus, moneyPlan, monthlyTotals } from "@/lib/insights";
 import { clampPct, formatMoney } from "@/lib/format";
+import type { Goal } from "@/lib/types";
+
+const GOAL_EMOJIS = ["🎯", "🛟", "🏠", "🚗", "✈️", "🎄", "💍", "🎓", "🏖️", "💻"];
 import Donut from "@/components/Donut";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
@@ -26,9 +32,42 @@ const ALLOC = [
   { key: "budgeted", label: "Everyday budgets", color: "#d99a4e" },
 ];
 
+interface GoalDraft { id?: string; name: string; emoji: string; target: string; monthly: string; }
+
 export default function PlanPage() {
-  const { data, ready } = useStore();
+  const { data, ready, addGoal, updateGoal, deleteGoal, contributeGoal } = useStore();
   const root = useRef<HTMLElement>(null);
+  const [gDraft, setGDraft] = useState<GoalDraft | null>(null);
+  const [addAmt, setAddAmt] = useState("");
+
+  function openGoal(g?: Goal) {
+    setAddAmt("");
+    setGDraft(g
+      ? { id: g.id, name: g.name, emoji: g.emoji || "🎯", target: String(g.target), monthly: g.monthlyContribution != null ? String(g.monthlyContribution) : "" }
+      : { name: "", emoji: "🎯", target: "", monthly: "" });
+  }
+  function saveGoal() {
+    if (!gDraft) return;
+    const target = parseFloat(gDraft.target);
+    if (!gDraft.name.trim() || !(target > 0)) return;
+    const monthly = parseFloat(gDraft.monthly);
+    const patch = {
+      name: gDraft.name.trim(),
+      emoji: gDraft.emoji,
+      target,
+      monthlyContribution: Number.isFinite(monthly) && monthly > 0 ? monthly : undefined,
+    };
+    if (gDraft.id) updateGoal(gDraft.id, patch);
+    else addGoal({ ...patch, color: "#14b8a6" });
+    setGDraft(null);
+  }
+  function addToGoal() {
+    if (!gDraft?.id) return;
+    const a = parseFloat(addAmt);
+    if (!(a > 0)) return;
+    contributeGoal(gDraft.id, a);
+    setGDraft(null);
+  }
 
   useEffect(() => {
     if (!ready) return;
@@ -177,17 +216,19 @@ export default function PlanPage() {
       )}
 
       <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Savings goals</h2><Link href="/settings">Manage</Link></div>
+        <div className="lx-card-head"><h2>Savings goals</h2>
+          <button className="lx-headadd" onClick={() => openGoal()}><Plus size={16} /> Add</button>
+        </div>
         {goals.length ? (
           <div className="lx-barlist">
-            {goals.slice(0, 5).map((g) => (
-              <div className="lx-barrow" key={g.id}>
+            {goals.map((g) => (
+              <button className="lx-barrow lx-barrow-tap" key={g.id} onClick={() => openGoal(g)}>
                 <div className="top">
                   <span className="nm">{g.emoji} {g.name}</span>
                   <span className="vals">{formatMoney(g.saved, cur)} / {formatMoney(g.target, cur)}</span>
                 </div>
-                <div className="track"><span style={{ width: `${clampPct((g.saved / g.target) * 100)}%` }} /></div>
-              </div>
+                <div className="track"><span style={{ width: `${g.target > 0 ? clampPct((g.saved / g.target) * 100) : 0}%` }} /></div>
+              </button>
             ))}
           </div>
         ) : (
@@ -195,7 +236,7 @@ export default function PlanPage() {
             <div className="ic"><PiggyBank size={22} /></div>
             <h4>No goals yet</h4>
             <p>Create your first goal to protect money before you spend it.</p>
-            <Link href="/settings" className="lx-primary">Create a goal</Link>
+            <button className="lx-primary" onClick={() => openGoal()}><Plus size={16} /> Create a goal</button>
           </div>
         )}
       </section>
@@ -214,6 +255,48 @@ export default function PlanPage() {
           </div>
           <Link href="/bills" className="lx-proj-note" style={{ marginTop: 10 }}>Manage bills <ArrowRight size={13} /></Link>
         </section>
+      )}
+
+      {gDraft && (
+        <div className="lx-sheet-backdrop" onClick={() => setGDraft(null)}>
+          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lx-sheet-head">
+              <h3>{gDraft.id ? "Edit goal" : "New goal"}</h3>
+              <button className="lx-sheet-x" onClick={() => setGDraft(null)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="lx-emoji-row" style={{ flexWrap: "wrap" }}>
+              {GOAL_EMOJIS.map((em) => (
+                <button key={em} className={"lx-emoji" + (gDraft.emoji === em ? " on" : "")} onClick={() => setGDraft({ ...gDraft, emoji: em })}>{em}</button>
+              ))}
+            </div>
+            <label className="lx-field"><span>Goal name</span>
+              <input value={gDraft.name} onChange={(e) => setGDraft({ ...gDraft, name: e.target.value })} placeholder="Emergency fund" autoFocus />
+            </label>
+            <div className="lx-field-row">
+              <label className="lx-field"><span>Target</span>
+                <input type="number" inputMode="decimal" value={gDraft.target} onChange={(e) => setGDraft({ ...gDraft, target: e.target.value })} placeholder="6000" />
+              </label>
+              <label className="lx-field"><span>Per month</span>
+                <input type="number" inputMode="decimal" value={gDraft.monthly} onChange={(e) => setGDraft({ ...gDraft, monthly: e.target.value })} placeholder="300" />
+              </label>
+            </div>
+            <button className="lx-primary full" onClick={saveGoal} disabled={!gDraft.name.trim() || !(parseFloat(gDraft.target) > 0)}>
+              {gDraft.id ? "Save changes" : "Create goal"}
+            </button>
+            {gDraft.id && (
+              <>
+                <div className="lx-pay-row" style={{ marginTop: 12 }}>
+                  <input type="number" inputMode="decimal" placeholder="Add money" value={addAmt} onChange={(e) => setAddAmt(e.target.value)} />
+                  <button className="lx-primary sm" onClick={addToGoal} disabled={!(parseFloat(addAmt) > 0)}>Add to saved</button>
+                </div>
+                <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }}
+                  onClick={() => { if (confirm(`Delete "${gDraft.name}"?`)) { deleteGoal(gDraft.id!); setGDraft(null); } }}>
+                  <Trash2 size={15} /> Delete goal
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </main>
   );

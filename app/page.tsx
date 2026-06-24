@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import gsap from "gsap";
 import {
@@ -11,7 +11,10 @@ import {
   Wallet,
   Landmark,
   Sparkles,
+  Trash2,
+  X,
 } from "lucide-react";
+import type { Transaction } from "@/lib/types";
 import { useStore, summarize } from "@/lib/store";
 import {
   billsThisMonth,
@@ -37,8 +40,24 @@ const CAT_ICON: Record<string, string> = {
 };
 
 export default function TodayPage() {
-  const { data, ready } = useStore();
+  const { data, ready, updateTransaction, deleteTransaction } = useStore();
   const root = useRef<HTMLElement>(null);
+  const [editTx, setEditTx] = useState<Transaction | null>(null);
+  const [amt, setAmt] = useState("");
+  const [desc, setDesc] = useState("");
+
+  function openEdit(t: Transaction) {
+    setEditTx(t);
+    setAmt(String(t.amount));
+    setDesc(t.description || "");
+  }
+  function saveEdit() {
+    if (!editTx) return;
+    const a = parseFloat(amt);
+    if (!Number.isFinite(a) || a <= 0) return;
+    updateTransaction(editTx.id, { amount: Math.abs(a), description: desc.trim() });
+    setEditTx(null);
+  }
 
   useEffect(() => {
     if (!ready) return;
@@ -180,7 +199,7 @@ export default function TodayPage() {
         <section className="lx-card lx-reveal lx-goal">
           <div className="lx-card-head"><h2>{goal.emoji} {goal.name}</h2><Link href="/plan">Plan</Link></div>
           <div className="lx-goal-num">{formatMoney(goal.saved, cur)} <small>of {formatMoney(goal.target, cur)}</small></div>
-          <div className="lx-bar"><span style={{ width: `${Math.min(100, (goal.saved / goal.target) * 100)}%` }} /></div>
+          <div className="lx-bar"><span style={{ width: `${goal.target > 0 ? Math.min(100, (goal.saved / goal.target) * 100) : 0}%` }} /></div>
         </section>
       )}
 
@@ -189,7 +208,7 @@ export default function TodayPage() {
         {recent.length === 0 ? (
           <div className="lx-empty">Nothing yet — say <b>“spent 12 on coffee”</b> above.</div>
         ) : recent.map((t) => (
-          <div className="lx-row" key={t.id}>
+          <button className="lx-row lx-row-tap" key={t.id} onClick={() => openEdit(t)}>
             <span className="lx-row-ic">{CAT_ICON[t.category] || "💸"}</span>
             <div className="lx-row-meta">
               <div className="lx-row-t">{t.description || t.category}</div>
@@ -198,8 +217,9 @@ export default function TodayPage() {
             <div className={"lx-row-amt " + (t.type === "income" ? "pos" : "neg")}>
               {t.type === "income" ? "+" : "−"}{formatMoney(t.amount, cur)}
             </div>
-          </div>
+          </button>
         ))}
+        {recent.length > 0 && <div className="lx-row-hint">Tap an entry to edit or delete it.</div>}
       </section>
 
       <Link href="/coach" className="lx-card lx-cta lx-reveal">
@@ -210,6 +230,29 @@ export default function TodayPage() {
         </div>
         <ArrowRight size={18} className="lx-cta-arrow" />
       </Link>
+
+      {editTx && (
+        <div className="lx-sheet-backdrop" onClick={() => setEditTx(null)}>
+          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lx-sheet-head">
+              <h3>Edit entry</h3>
+              <button className="lx-sheet-x" onClick={() => setEditTx(null)} aria-label="Close"><X size={18} /></button>
+            </div>
+            <p className="lx-group-sub">{editTx.category} · {friendlyDate(editTx.date)} · {editTx.type}</p>
+            <label className="lx-field"><span>Amount</span>
+              <input type="number" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} autoFocus />
+            </label>
+            <label className="lx-field"><span>Description</span>
+              <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={editTx.category} />
+            </label>
+            <button className="lx-primary full" onClick={saveEdit} disabled={!(parseFloat(amt) > 0)}>Save changes</button>
+            <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }}
+              onClick={() => { deleteTransaction(editTx.id); setEditTx(null); }}>
+              <Trash2 size={15} /> Delete this entry
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
