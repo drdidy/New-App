@@ -128,6 +128,25 @@ describe("safeToSpend", () => {
   });
 });
 
+describe("baselineIncome", () => {
+  it("uses recurring income when no income is logged this month", async () => {
+    const { baselineIncome } = await import("./insights");
+    const data = base({
+      recurringIncome: [{ id: "i1", name: "Salary", amount: 4200, dayOfMonth: 30, createdAt: 0 }],
+    });
+    expect(baselineIncome(data)).toBe(4200);
+  });
+  it("prefers actually-logged income over the recurring estimate", async () => {
+    const { baselineIncome } = await import("./insights");
+    const month = monthKey();
+    const data = base({
+      recurringIncome: [{ id: "i1", name: "Salary", amount: 4200, dayOfMonth: 30, createdAt: 0 }],
+      transactions: [{ id: "t1", type: "income", amount: 5000, category: "Salary", description: "", date: `${month}-30`, createdAt: 0 }],
+    });
+    expect(baselineIncome(data)).toBe(5000);
+  });
+});
+
 describe("payoffProjection", () => {
   it("returns a decreasing series that reaches zero", () => {
     const data = base({

@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CalendarDays,
   Home,
+  Layers,
   PiggyBank,
   Plus,
   Target,
@@ -144,6 +145,15 @@ export default function PlanPage() {
           </Ring>
         </div>
       </div>
+
+      <Link href="/buckets" className="lx-card lx-cta lx-reveal">
+        <div className="lx-cta-ic"><Layers size={22} /></div>
+        <div className="lx-cta-meta">
+          <div className="lx-cta-t">Income & buckets</div>
+          <div className="lx-cta-s">Set your salary date · set aside for savings, investing, tithes & giving.</div>
+        </div>
+        <ArrowRight size={18} className="lx-cta-arrow" />
+      </Link>
 
       <div className="lx-mgrid three lx-reveal">
         <div className="lx-metric">

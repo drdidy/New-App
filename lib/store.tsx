@@ -12,12 +12,14 @@ import {
 import type {
   Account,
   AppData,
+  Bucket,
   Budget,
   Debt,
   Goal,
   Member,
   PayCycle,
   RecurringBill,
+  RecurringIncome,
   ThemeName,
   Transaction,
   ParsedEntry,
@@ -42,6 +44,8 @@ function freshData(): AppData {
     debts: [],
     budgets: [],
     recurringBills: [],
+    recurringIncome: [],
+    buckets: [],
     goals: [],
     accounts: [],
     netWorthHistory: [],
@@ -132,6 +136,24 @@ function migrate(raw: any): AppData {
       saved: Math.max(0, num(g.saved)),
       monthlyContribution: g.monthlyContribution != null ? Math.max(0, num(g.monthlyContribution)) : undefined,
     }));
+  const recurringIncome: RecurringIncome[] = (Array.isArray(raw.recurringIncome) ? raw.recurringIncome : [])
+    .filter((x: any) => x && typeof x === "object")
+    .map((x: RecurringIncome) => ({
+      ...touch(attribute(x), x.updatedAt || x.createdAt || now),
+      amount: Math.abs(num(x.amount)),
+      dayOfMonth: Math.min(31, Math.max(1, Math.round(num(x.dayOfMonth, 1)))),
+      name: typeof x.name === "string" && x.name ? x.name : "Income",
+    }));
+  const buckets: Bucket[] = (Array.isArray(raw.buckets) ? raw.buckets : [])
+    .filter((x: any) => x && typeof x === "object")
+    .map((x: Bucket) => ({
+      ...touch(attribute(x), x.updatedAt || x.createdAt || now),
+      balance: num(x.balance),
+      target: x.target != null ? Math.max(0, num(x.target)) : undefined,
+      allocValue: x.allocValue != null ? Math.max(0, num(x.allocValue)) : undefined,
+      kind: (["save", "invest", "give", "spend", "other"] as const).includes(x.kind) ? x.kind : "save",
+      name: typeof x.name === "string" && x.name ? x.name : "Bucket",
+    }));
   const accounts: Account[] = (Array.isArray(raw.accounts) ? raw.accounts : [])
     .filter((a: any) => a && typeof a === "object")
     .map((a: Account) => ({
@@ -160,6 +182,8 @@ function migrate(raw: any): AppData {
           }))
       : [],
     recurringBills,
+    recurringIncome,
+    buckets,
     goals,
     accounts,
     netWorthHistory: Array.isArray(raw.netWorthHistory) ? raw.netWorthHistory : [],
@@ -199,6 +223,15 @@ interface StoreContextValue {
   updateBill: (id: string, patch: Partial<RecurringBill>) => void;
   deleteBill: (id: string) => void;
   markBillPaid: (id: string, month?: string) => void;
+  addIncome: (x: Omit<RecurringIncome, "id" | "createdAt">) => void;
+  updateIncome: (id: string, patch: Partial<RecurringIncome>) => void;
+  deleteIncome: (id: string) => void;
+  receiveIncome: (id: string, month?: string) => void;
+  addBucket: (b: Omit<Bucket, "id" | "createdAt" | "balance"> & { balance?: number }) => void;
+  updateBucket: (id: string, patch: Partial<Bucket>) => void;
+  deleteBucket: (id: string) => void;
+  fundBucket: (id: string, amount: number) => void;
+  distributePaycheck: (amount: number) => void;
   addGoal: (g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => void;
   updateGoal: (id: string, patch: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
@@ -292,6 +325,45 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: b.name,
             date: todayISO(),
             memberId: b.memberId,
+            createdAt: nowMs,
+            updatedAt: nowMs,
+          })),
+          ...d.transactions,
+        ],
+      };
+    });
+  }, [ready]);
+
+  // Auto-log recurring income (e.g. a salary) on/after its day each month, the
+  // money-IN twin of the bills auto-log above.
+  useEffect(() => {
+    if (!ready) return;
+    const month = monthKey();
+    const now = new Date();
+    const today = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    setData((d) => {
+      const due = (d.recurringIncome || []).filter((x) => {
+        if (!x.autoLog || x.lastPaidMonth === month) return false;
+        return today >= Math.min(x.dayOfMonth, daysInMonth);
+      });
+      if (due.length === 0) return d;
+      const dueIds = new Set(due.map((x) => x.id));
+      const nowMs = Date.now();
+      return {
+        ...d,
+        recurringIncome: (d.recurringIncome || []).map((x) =>
+          dueIds.has(x.id) ? { ...x, lastPaidMonth: month, updatedAt: nowMs } : x,
+        ),
+        transactions: [
+          ...due.map((x) => ({
+            id: uid(),
+            type: "income" as const,
+            amount: Math.abs(x.amount),
+            category: "Salary",
+            description: x.name,
+            date: todayISO(),
+            memberId: x.memberId,
             createdAt: nowMs,
             updatedAt: nowMs,
           })),
@@ -843,6 +915,102 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // --- recurring income -----------------------------------------------------
+  const addIncome = useCallback((x: Omit<RecurringIncome, "id" | "createdAt">) => {
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      recurringIncome: [{ ...x, id: uid(), createdAt: now, updatedAt: now }, ...(d.recurringIncome || [])],
+    }));
+  }, []);
+  const updateIncome = useCallback((id: string, patch: Partial<RecurringIncome>) => {
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      recurringIncome: (d.recurringIncome || []).map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
+    }));
+  }, []);
+  const deleteIncome = useCallback((id: string) => {
+    setData((d) => ({
+      ...d,
+      recurringIncome: (d.recurringIncome || []).filter((x) => x.id !== id),
+      tombstones: [...(d.tombstones || []), id],
+    }));
+  }, []);
+  // Mark an income as received now: log an income transaction + stamp the month.
+  const receiveIncome = useCallback((id: string, month: string = monthKey()) => {
+    setData((d) => {
+      const inc = (d.recurringIncome || []).find((x) => x.id === id);
+      if (!inc || inc.lastPaidMonth === month) return d;
+      const now = Date.now();
+      return {
+        ...d,
+        recurringIncome: (d.recurringIncome || []).map((x) =>
+          x.id === id ? { ...x, lastPaidMonth: month, updatedAt: now } : x,
+        ),
+        transactions: [
+          {
+            id: uid(), type: "income" as const, amount: Math.abs(inc.amount), category: "Salary",
+            description: inc.name, date: todayISO(), memberId: inc.memberId, createdAt: now, updatedAt: now,
+          },
+          ...d.transactions,
+        ],
+      };
+    });
+  }, []);
+
+  // --- allocation buckets ---------------------------------------------------
+  const addBucket = useCallback((b: Omit<Bucket, "id" | "createdAt" | "balance"> & { balance?: number }) => {
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      buckets: [{ ...b, balance: b.balance ?? 0, id: uid(), createdAt: now, updatedAt: now }, ...(d.buckets || [])],
+    }));
+  }, []);
+  const updateBucket = useCallback((id: string, patch: Partial<Bucket>) => {
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      buckets: (d.buckets || []).map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
+    }));
+  }, []);
+  const deleteBucket = useCallback((id: string) => {
+    setData((d) => ({
+      ...d,
+      buckets: (d.buckets || []).filter((x) => x.id !== id),
+      tombstones: [...(d.tombstones || []), id],
+    }));
+  }, []);
+  // Move money into (+) or out of (−) a bucket's set-aside balance.
+  const fundBucket = useCallback((id: string, amount: number) => {
+    const delta = Number.isFinite(amount) ? amount : 0;
+    if (delta === 0) return;
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      buckets: (d.buckets || []).map((x) =>
+        x.id === id ? { ...x, balance: Math.max(0, x.balance + delta), updatedAt: now } : x,
+      ),
+    }));
+  }, []);
+  // Split a paycheck amount across buckets by their rules (percent of income or
+  // a fixed amount), topping up each bucket's balance. Returns nothing; the
+  // leftover simply stays as free cash.
+  const distributePaycheck = useCallback((amount: number) => {
+    const total = Number.isFinite(amount) && amount > 0 ? amount : 0;
+    if (total <= 0) return;
+    const now = Date.now();
+    setData((d) => ({
+      ...d,
+      buckets: (d.buckets || []).map((x) => {
+        if (!x.allocType || !x.allocValue) return x;
+        const add = x.allocType === "percent" ? (total * x.allocValue) / 100 : x.allocValue;
+        if (add <= 0) return x;
+        return { ...x, balance: Math.max(0, x.balance + add), updatedAt: now };
+      }),
+    }));
+  }, []);
+
   const addGoal = useCallback((g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => {
     const now = Date.now();
     setData((d) => ({
@@ -1042,6 +1210,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateBill,
       deleteBill,
       markBillPaid,
+      addIncome,
+      updateIncome,
+      deleteIncome,
+      receiveIncome,
+      addBucket,
+      updateBucket,
+      deleteBucket,
+      fundBucket,
+      distributePaycheck,
       addGoal,
       updateGoal,
       deleteGoal,
@@ -1085,6 +1262,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateBill,
       deleteBill,
       markBillPaid,
+      addIncome,
+      updateIncome,
+      deleteIncome,
+      receiveIncome,
+      addBucket,
+      updateBucket,
+      deleteBucket,
+      fundBucket,
+      distributePaycheck,
       addGoal,
       updateGoal,
       deleteGoal,
