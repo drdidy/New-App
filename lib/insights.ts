@@ -217,6 +217,59 @@ export function cashOnHand(data: AppData): number {
   return (data.accounts || []).reduce((s, a) => s + a.balance, 0);
 }
 
+// --- engagement: daily logging streak --------------------------------------
+
+function localDayMinus(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export interface Streak {
+  count: number; // consecutive days (up to today) with at least one logged entry
+  loggedToday: boolean;
+  best: number; // longest streak ever
+}
+
+// A gentle habit loop: how many days in a row the household has logged something.
+// Counts any day with at least one transaction. If today isn't logged yet the
+// streak is still "alive" (counted through yesterday) so we can nudge to keep it.
+export function loggingStreak(data: AppData): Streak {
+  const days = new Set<string>();
+  for (const t of data.transactions) days.add(t.date.slice(0, 10));
+  const loggedToday = days.has(localDayMinus(0));
+
+  let count = 0;
+  let offset = loggedToday ? 0 : 1; // if not logged today, start from yesterday
+  while (days.has(localDayMinus(offset))) {
+    count++;
+    offset++;
+  }
+
+  // Longest run anywhere in history.
+  const sorted = [...days].sort();
+  let best = 0;
+  let run = 0;
+  let prev: string | null = null;
+  for (const d of sorted) {
+    if (prev) {
+      const a = new Date(prev + "T00:00:00");
+      const b = new Date(d + "T00:00:00");
+      const gap = Math.round((b.getTime() - a.getTime()) / 86400000);
+      run = gap === 1 ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    best = Math.max(best, run);
+    prev = d;
+  }
+
+  return { count, loggedToday, best: Math.max(best, count) };
+}
+
 // Cash you can actually spend *now*: checking + cash balances. Savings and
 // investments are real assets but aren't day-to-day spending money, so they're
 // excluded from "safe to spend". Falls back to all accounts if the household

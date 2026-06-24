@@ -11,6 +11,7 @@ import {
   Wallet,
   Landmark,
   Sparkles,
+  Flame,
   Trash2,
   X,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import {
   netWorth,
   cashOnHand,
   safeToSpend,
+  loggingStreak,
   quickInsights,
 } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
@@ -95,6 +97,7 @@ export default function TodayPage() {
   const safePos = sts.safe >= 0;
   const cur = data.currency;
   const barPct = sts.spendable > 0 ? Math.max(0, Math.min(100, (sts.safe / sts.spendable) * 100)) : safePos ? 60 : 8;
+  const streak = loggingStreak(data);
 
   return (
     <main className="lx" ref={root}>
@@ -103,13 +106,19 @@ export default function TodayPage() {
           <p className="lx-eyebrow">{greeting()}, {firstName}</p>
           <h1 className="lx-h1">Today</h1>
         </div>
-        <Link href="/coach" className="lx-coachbtn" aria-label="Open coach">
-          <MessageCircleHeart size={20} />
-        </Link>
+        <div className="lx-top-actions">
+          <div className={"lx-streak" + (streak.loggedToday ? " on" : "")} title={`${streak.count}-day streak`}>
+            <Flame size={16} /> {streak.count}
+          </div>
+          <Link href="/coach" className="lx-coachbtn" aria-label="Open coach">
+            <MessageCircleHeart size={20} />
+          </Link>
+        </div>
       </header>
 
       {/* HERO */}
-      <div className="lx-hero">
+      <div className="lx-hero lx-hero-glow">
+        <div className="lx-hero-aura" aria-hidden="true" />
         <div className="lx-hero-inner">
           <div className="lx-hero-label">
             Safe to spend
@@ -135,6 +144,26 @@ export default function TodayPage() {
               Add your account balances to base this on real cash →
             </Link>
           )}
+        </div>
+      </div>
+
+      {/* STREAK / MOMENTUM */}
+      <div className="lx-momentum lx-reveal">
+        <div className="lx-momentum-flame"><Flame size={20} /></div>
+        <div className="lx-momentum-meta">
+          <strong>{streak.count > 0 ? `${streak.count}-day streak` : "Start your streak"}</strong>
+          <span>
+            {streak.loggedToday
+              ? "Logged today — nice. Keep the fire going tomorrow. 🔥"
+              : streak.count > 0
+                ? "Log one thing today to keep it alive."
+                : "Log anything below to light it up."}
+          </span>
+        </div>
+        <div className="lx-momentum-dots">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <span key={n} className={n < Math.min(5, streak.count) ? "on" : ""} />
+          ))}
         </div>
       </div>
 

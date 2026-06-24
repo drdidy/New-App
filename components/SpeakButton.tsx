@@ -6,6 +6,7 @@ import { Loader2, Mic, Send, Sparkles, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import type { ParsedEntry } from "@/lib/types";
 import { postJson } from "@/lib/clientApi";
+import Burst from "@/components/Burst";
 
 const EXAMPLES = [
   "spent 40 on gas",
@@ -28,6 +29,7 @@ export default function SpeakButton() {
   const [listening, setListening] = useState(false);
   const [confirms, setConfirms] = useState<string[]>([]);
   const [err, setErr] = useState("");
+  const [pop, setPop] = useState(0);
   const recogRef = useRef<any>(null);
   const finalRef = useRef("");
 
@@ -60,6 +62,7 @@ export default function SpeakButton() {
     applyParsedEntries(entries, data.members[0]?.id);
     setConfirms(entries.map((e) => e.summary));
     setText("");
+    setPop((n) => n + 1);
     if (navigator.vibrate) navigator.vibrate(18);
   }
 
@@ -155,6 +158,7 @@ export default function SpeakButton() {
 
             {confirms.length > 0 ? (
               <div className="mc-confirms">
+                {pop > 0 && <Burst key={pop} />}
                 {confirms.map((c, i) => (
                   <div className="mc-confirm" key={i}><Sparkles size={13} /> {c}</div>
                 ))}
