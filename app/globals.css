@@ -8033,18 +8033,24 @@ body::after {
 /* ── HERO ─────────────────────────────────────────────────────────────── */
 .lx-hero, .lx-hero-glow {
   position: relative; overflow: hidden;
-  background: linear-gradient(160deg, rgba(18,24,44,0.72), rgba(11,15,28,0.62)) !important;
-  border: 1px solid rgba(129,140,248,0.22) !important;
+  /* Near-opaque so the bright background aurora can't bleed through and wash the
+     card out — keeps it a rich dark glass that matches the rest of the app. */
+  background:
+    linear-gradient(160deg, rgba(26,32,58,0.97), rgba(13,17,33,0.96)) !important;
+  border: 1px solid rgba(129,140,248,0.28) !important;
   border-radius: 28px !important; padding: 26px 24px !important;
-  box-shadow: var(--au-glow) !important; backdrop-filter: blur(22px) saturate(1.1) !important;
+  box-shadow: var(--au-glow) !important; backdrop-filter: blur(8px) !important;
 }
 .lx-hero-aura {
-  position: absolute; inset: -40% -10% auto -10%; height: 80%; z-index: 0;
-  background: radial-gradient(60% 80% at 30% 0%, rgba(129,140,248,0.5), transparent 70%),
-              radial-gradient(50% 70% at 85% 10%, rgba(46,230,192,0.4), transparent 70%);
-  filter: blur(24px); opacity: 0.8; animation: au-drift 18s ease-in-out infinite alternate;
+  position: absolute; inset: -45% -15% auto -15%; height: 70%; z-index: 0; pointer-events: none;
+  background: radial-gradient(55% 80% at 28% 0%, rgba(129,140,248,0.28), transparent 72%),
+              radial-gradient(45% 70% at 86% 6%, rgba(46,230,192,0.20), transparent 72%);
+  filter: blur(30px); opacity: 0.55; animation: au-drift 18s ease-in-out infinite alternate;
 }
-.lx-hero-inner { position: relative; z-index: 1; }
+.lx-hero-inner {
+  position: relative; z-index: 1;
+  background: transparent !important; backdrop-filter: none !important; padding: 0 !important;
+}
 .lx-hero-label { color: var(--au-mut) !important; }
 .lx-hero-tag {
   color: #c7f9ee !important; background: rgba(46,230,192,0.14) !important; border: 1px solid rgba(46,230,192,0.3) !important;
