@@ -8374,4 +8374,6 @@ body::after {
 .onb2-privacy { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--au-mut); font-size: 12.5px; margin-top: 4px; }
 .onb2-privacy svg { color: var(--au-teal); }
 .onb2-err { color: #ffb4c2; font-size: 13px; margin: 2px 0 0; }
+.onb2-hint { margin: -6px 2px 2px; font-size: 12.5px; line-height: 1.5; color: var(--au-mut); }
+.onb2-hint b { color: var(--au-teal); font-weight: 750; }
 @media (prefers-reduced-motion: reduce) { .onb2-aura, .onb2-mark.big { animation: none !important; } }
