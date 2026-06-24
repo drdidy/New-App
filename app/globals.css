@@ -8405,3 +8405,11 @@ body::after {
 .lx-syncwrap .sync-status { display: flex; align-items: center; gap: 8px; color: #e8edf7; font-weight: 650; }
 .lx-syncwrap .sync-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--au-teal); box-shadow: 0 0 10px -1px var(--au-teal); }
 .lx-syncwrap .field { margin-top: 4px; }
+
+/* Inline "set your real balance" quick-setter on Today */
+.lx-balset { display: flex; gap: 8px; margin-top: 12px; }
+.lx-balset input {
+  flex: 1; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid rgba(46,230,192,0.4);
+  color: #fff; border-radius: 12px; padding: 11px 13px; font-size: 14px;
+}
+.lx-balset input::placeholder { color: var(--au-mut); }
