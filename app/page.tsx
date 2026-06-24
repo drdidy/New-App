@@ -42,11 +42,23 @@ const CAT_ICON: Record<string, string> = {
 };
 
 export default function TodayPage() {
-  const { data, ready, updateTransaction, deleteTransaction } = useStore();
+  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount } = useStore();
   const root = useRef<HTMLElement>(null);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [amt, setAmt] = useState("");
   const [desc, setDesc] = useState("");
+  const [balOpen, setBalOpen] = useState(false);
+  const [balInput, setBalInput] = useState("");
+
+  function saveBalance() {
+    const v = parseFloat(balInput.replace(/[$,\s]/g, ""));
+    if (!Number.isFinite(v) || v < 0) return;
+    const liquid = (data.accounts || []).find((a) => a.type === "checking" || a.type === "cash");
+    if (liquid) updateAccount(liquid.id, { balance: v });
+    else addAccount({ name: "Cash on hand", type: "checking", balance: v, emoji: "💵", color: "#5e7fa6" });
+    setBalOpen(false);
+    setBalInput("");
+  }
 
   function openEdit(t: Transaction) {
     setEditTx(t);
@@ -139,10 +151,20 @@ export default function TodayPage() {
               <span className="lx-hero-minus">− {formatMoney(sts.committed, cur)} due before payday</span>
             </div>
           )}
-          {!sts.hasAccounts && (
-            <Link href="/insights" className="lx-hero-hint">
-              Add your account balances to base this on real cash →
-            </Link>
+          {!sts.hasAccounts && !balOpen && (
+            <button className="lx-hero-hint" onClick={() => setBalOpen(true)}>
+              Set your real balance to make this exact →
+            </button>
+          )}
+          {!sts.hasAccounts && balOpen && (
+            <div className="lx-balset">
+              <input
+                type="number" inputMode="decimal" autoFocus placeholder="What's in your account now?"
+                value={balInput} onChange={(e) => setBalInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveBalance()}
+              />
+              <button className="lx-primary sm" onClick={saveBalance} disabled={!(parseFloat(balInput) >= 0)}>Save</button>
+            </div>
           )}
         </div>
       </div>
