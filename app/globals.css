@@ -8377,3 +8377,31 @@ body::after {
 .onb2-hint { margin: -6px 2px 2px; font-size: 12.5px; line-height: 1.5; color: var(--au-mut); }
 .onb2-hint b { color: var(--au-teal); font-weight: 750; }
 @media (prefers-reduced-motion: reduce) { .onb2-aura, .onb2-mark.big { animation: none !important; } }
+
+/* ── Private Sync card (legacy classes) → aurora dark, scoped to settings ── */
+.lx-syncwrap .card {
+  background: var(--au-card) !important; border: 1px solid var(--au-line) !important;
+  border-radius: 22px !important; padding: 18px !important; box-shadow: var(--au-glow) !important;
+  backdrop-filter: blur(12px); color: #e8edf7;
+}
+.lx-syncwrap .card-h { color: #fff !important; font-weight: 820 !important; font-size: 17px !important; margin-bottom: 10px !important; }
+.lx-syncwrap .h-sub, .lx-syncwrap .hint { color: var(--au-mut) !important; font-size: 13px; line-height: 1.55; }
+.lx-syncwrap .h-sub strong, .lx-syncwrap .hint strong { color: #c7f9ee !important; }
+.lx-syncwrap .field label { color: #aeb9d2 !important; font-size: 12px; font-weight: 700; }
+.lx-syncwrap .row { display: flex; gap: 8px; align-items: center; }
+.lx-syncwrap .mini-input {
+  background: rgba(255,255,255,0.05) !important; border: 1px solid var(--au-line) !important;
+  color: #fff !important; border-radius: 12px !important; padding: 11px 13px !important; flex: 1; min-width: 0;
+}
+.lx-syncwrap .btn {
+  border-radius: 12px !important; font-weight: 750 !important; padding: 11px 16px !important; cursor: pointer;
+  border: 1px solid var(--au-line) !important; background: rgba(255,255,255,0.05) !important; color: #e8edf7 !important;
+}
+.lx-syncwrap .btn-primary { background: var(--au-grad) !important; color: #06121f !important; border: none !important; box-shadow: 0 12px 30px -12px rgba(129,140,248,0.8) !important; }
+.lx-syncwrap .btn-block { width: 100% !important; }
+.lx-syncwrap .btn.danger { color: #ffb4c2 !important; }
+.lx-syncwrap .capture-actions { display: flex; gap: 8px; margin-top: 12px; }
+.lx-syncwrap .capture-actions .btn { flex: 1; }
+.lx-syncwrap .sync-status { display: flex; align-items: center; gap: 8px; color: #e8edf7; font-weight: 650; }
+.lx-syncwrap .sync-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--au-teal); box-shadow: 0 0 10px -1px var(--au-teal); }
+.lx-syncwrap .field { margin-top: 4px; }
