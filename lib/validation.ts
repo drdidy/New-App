@@ -124,6 +124,33 @@ const billSchema = z.object({
   updatedAt: timestamp,
 });
 
+const recurringIncomeSchema = z.object({
+  id: shortText(80),
+  name: shortText(120),
+  amount: money,
+  dayOfMonth: z.number().int().min(1).max(31),
+  memberId: shortText(80).optional(),
+  autoLog: z.boolean().optional(),
+  lastPaidMonth: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  createdAt: z.number().finite().nonnegative(),
+  updatedAt: timestamp,
+});
+
+const bucketSchema = z.object({
+  id: shortText(80),
+  name: shortText(120),
+  emoji: shortText(20).default(""),
+  color: shortText(40).default("#14b8a6"),
+  kind: z.enum(["save", "invest", "give", "spend", "other"]).default("save"),
+  allocType: z.enum(["percent", "fixed"]).optional(),
+  allocValue: z.number().finite().nonnegative().max(1_000_000_000).optional(),
+  balance: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
+  target: money.optional(),
+  memberId: shortText(80).optional(),
+  createdAt: z.number().finite().nonnegative(),
+  updatedAt: timestamp,
+});
+
 const accountSchema = z.object({
   id: shortText(80),
   name: shortText(120),
@@ -151,6 +178,8 @@ export const appDataInputSchema = z
     debts: z.array(debtSchema).max(2000).optional(),
     budgets: z.array(budgetSchema).max(500).optional(),
     recurringBills: z.array(billSchema).max(1000).optional(),
+    recurringIncome: z.array(recurringIncomeSchema).max(500).optional(),
+    buckets: z.array(bucketSchema).max(500).optional(),
     goals: z.array(goalSchema).max(1000).optional(),
     accounts: z.array(accountSchema).max(1000).optional(),
     netWorthHistory: z

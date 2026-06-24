@@ -9,6 +9,9 @@ export function baselineIncome(data: AppData): number {
     .filter((t) => t.type === "income" && t.date.startsWith(month))
     .reduce((s, t) => s + t.amount, 0);
   if (logged > 0) return logged;
+  // Planned recurring income (e.g. a salary) is the next-best baseline.
+  const recurring = (data.recurringIncome || []).reduce((s, x) => s + (x.amount || 0), 0);
+  if (recurring > 0) return recurring;
   const members = data.members.reduce((s, m) => s + (m.monthlyIncome || 0), 0);
   return members || data.monthlyIncome || 0;
 }

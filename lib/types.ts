@@ -113,6 +113,41 @@ export interface RecurringBill {
   updatedAt?: number;
 }
 
+// Recurring income (a salary, benefit, etc.). Mirrors RecurringBill but on the
+// money-IN side: it can auto-log an income transaction on its day each month.
+export interface RecurringIncome {
+  id: string;
+  name: string; // e.g. "Salary", "Paycheck"
+  amount: number;
+  dayOfMonth: number; // 1-31, when it lands
+  memberId?: string;
+  autoLog?: boolean; // automatically log it on/after the day
+  lastPaidMonth?: string; // "YYYY-MM" it was last received
+  createdAt: number;
+  updatedAt?: number;
+}
+
+// An allocation "bucket" / envelope — money set aside for a purpose. Built to
+// support values-based budgeting: savings, investments, tithes, offerings, and
+// supporting others, alongside ordinary sinking funds. When a paycheck is
+// distributed, each bucket fills by its rule (a % of income or a fixed amount).
+export type BucketKind = "save" | "invest" | "give" | "spend" | "other";
+
+export interface Bucket {
+  id: string;
+  name: string; // "Tithe", "Investments", "Emergency fund", "Bless others"
+  emoji: string;
+  color: string;
+  kind: BucketKind;
+  allocType?: "percent" | "fixed"; // how it fills from a paycheck
+  allocValue?: number; // percent (0-100) or a fixed amount
+  balance: number; // amount currently set aside
+  target?: number; // optional cap / goal for this bucket
+  memberId?: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
 // A real-money account the household holds (checking, savings, cash…). These
 // are assets; credit cards / loans live under Debts. Net worth = accounts +
 // owed-to-you − you-owe.
@@ -155,6 +190,8 @@ export interface AppData {
   debts: Debt[];
   budgets: Budget[];
   recurringBills: RecurringBill[];
+  recurringIncome?: RecurringIncome[];
+  buckets?: Bucket[];
   goals: Goal[];
   accounts: Account[];
   netWorthHistory: NetWorthPoint[];
