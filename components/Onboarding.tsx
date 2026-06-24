@@ -39,6 +39,7 @@ export default function Onboarding() {
   const [joining, setJoining] = useState(false);
   const [name, setName] = useState("");
   const [income, setIncome] = useState("");
+  const [onHand, setOnHand] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [partner, setPartner] = useState("");
   const [partnerIncome, setPartnerIncome] = useState("");
@@ -67,7 +68,20 @@ export default function Onboarding() {
     if (partner.trim()) {
       members.push({ id: uid(), name: partner.trim(), emoji: "🐧", color: MEMBER_COLORS[1 % MEMBER_COLORS.length], monthlyIncome: num(partnerIncome), updatedAt: Date.now() });
     }
-    completeOnboarding({ householdName: name.trim() ? `${me}'s money` : "My money", currency, members });
+    // Seed a starting cash balance so "safe to spend" is grounded in the money
+    // they actually have right now — not their full monthly income. This is what
+    // makes the headline accurate when starting mid-month.
+    const cash = num(onHand);
+    const accounts =
+      cash !== undefined
+        ? [{ id: uid(), name: "Cash on hand", type: "checking" as const, balance: cash, emoji: "💵", color: MEMBER_COLORS[0], createdAt: Date.now(), updatedAt: Date.now() }]
+        : undefined;
+    completeOnboarding({
+      householdName: name.trim() ? `${me}'s money` : "My money",
+      currency,
+      members,
+      ...(accounts ? { accounts } : {}),
+    });
   }
 
   async function joinHousehold() {
@@ -149,6 +163,10 @@ export default function Onboarding() {
           <label className="lx-field onb2-rise"><span>Your name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Dave" autoFocus />
           </label>
+          <label className="lx-field onb2-rise"><span>How much do you have right now?</span>
+            <input value={onHand} onChange={(e) => setOnHand(e.target.value)} inputMode="decimal" placeholder="e.g. 19" />
+          </label>
+          <p className="onb2-hint onb2-rise">Your real checking + cash balance today. This is what makes <b>“safe to spend” accurate</b> — even starting mid-month.</p>
           <label className="lx-field onb2-rise"><span>Monthly take-home income (optional)</span>
             <input value={income} onChange={(e) => setIncome(e.target.value)} inputMode="decimal" placeholder="e.g. 4,200" />
           </label>
