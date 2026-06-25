@@ -13,6 +13,8 @@ import {
   Sparkles,
   Flame,
   Trash2,
+  Plus,
+  Moon,
   X,
 } from "lucide-react";
 import type { Transaction } from "@/lib/types";
@@ -45,7 +47,7 @@ const CAT_ICON: Record<string, string> = {
 };
 
 export default function TodayPage() {
-  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed } = useStore();
+  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed, addWish, decideWish, deleteWish } = useStore();
   const root = useRef<HTMLElement>(null);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [amt, setAmt] = useState("");
@@ -53,6 +55,8 @@ export default function TodayPage() {
   const [balOpen, setBalOpen] = useState(false);
   const [balInput, setBalInput] = useState("");
   const [affordQ, setAffordQ] = useState("");
+  const [wishName, setWishName] = useState("");
+  const [wishAmt, setWishAmt] = useState("");
 
   function saveBalance() {
     const v = parseFloat(balInput.replace(/[$,\s]/g, ""));
@@ -272,6 +276,61 @@ export default function TodayPage() {
           );
         })()}
       </div>
+
+      {/* SLEEP ON IT — cooling-off wishlist that rewards patience */}
+      {(() => {
+        const COOL_DAYS = 3;
+        const pending = (data.wishlist || []).filter((w) => !w.outcome).sort((a, b) => a.createdAt - b.createdAt);
+        const saved = (data.wishlist || []).filter((w) => w.outcome === "skipped").reduce((s, w) => s + w.amount, 0);
+        const addW = () => {
+          const a = parseFloat(wishAmt);
+          if (!wishName.trim() || !(a > 0)) return;
+          addWish(wishName.trim(), a); success(); setWishName(""); setWishAmt("");
+        };
+        return (
+          <section className="lx-card lx-wish lx-reveal">
+            <div className="lx-card-head">
+              <h2><Moon size={15} style={{ verticalAlign: "-2px" }} /> Sleep on it</h2>
+              {saved > 0 && <span className="lx-wish-saved">{formatMoney(saved, cur)} saved by waiting</span>}
+            </div>
+            <div className="lx-wish-add">
+              <input placeholder="Something you want…" value={wishName} onChange={(e) => setWishName(e.target.value)} />
+              <input className="amt" type="number" inputMode="decimal" placeholder="$" value={wishAmt} onChange={(e) => setWishAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addW()} />
+              <button className="lx-primary sm" onClick={addW} disabled={!wishName.trim() || !(parseFloat(wishAmt) > 0)} aria-label="Add to wishlist"><Plus size={16} /></button>
+            </div>
+            {pending.length > 0 ? (
+              <div className="lx-list">
+                {pending.map((w) => {
+                  const days = Math.floor((Date.now() - w.createdAt) / 86400000);
+                  const left = Math.max(0, COOL_DAYS - days);
+                  const ready = left <= 0;
+                  const v = ready ? affordCheck(data, w.amount) : null;
+                  return (
+                    <div className="lx-wish-row" key={w.id}>
+                      <span className="ic">{ready ? "✨" : "💤"}</span>
+                      <div className="meta">
+                        <div className="t">{w.name}</div>
+                        <div className={"s" + (v ? " " + v.verdict : "")}>{ready ? (v ? v.headline : "Ready to decide") : `${left} day${left === 1 ? "" : "s"} to think it over`}</div>
+                      </div>
+                      <div className="amt">{formatMoney(w.amount, cur)}</div>
+                      {ready ? (
+                        <>
+                          <button className="lx-ghost sm" onClick={() => { decideWish(w.id, "skipped"); success(); }}>Skip</button>
+                          <button className="lx-primary sm" onClick={() => { decideWish(w.id, "bought"); success(); }}>Buy</button>
+                        </>
+                      ) : (
+                        <button className="lx-icon-btn danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="lx-wish-hint">Tempted by something? Add it here. I’ll hold it for {COOL_DAYS} days — most urges fade, and you’ll see if you can truly afford it then.</p>
+            )}
+          </section>
+        );
+      })()}
 
       <div className="lx-reveal"><QuickCapture /></div>
 
