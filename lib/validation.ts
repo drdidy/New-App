@@ -200,6 +200,7 @@ export const appDataInputSchema = z
     monthlyIncome: money.optional(),
     remindersEnabled: z.boolean().optional(),
     lastCheckIn: timestamp,
+    lastPaycheckDistributed: z.string().regex(/^\d{4}-\d{2}$/).optional(),
     tombstones: z.array(shortText(120)).max(50_000).optional(),
     settingsUpdatedAt: timestamp,
     syncCode: shortText(200).optional(),

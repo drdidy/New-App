@@ -205,6 +205,9 @@ export interface AppData {
   // reminders / weekly check-in
   remindersEnabled?: boolean;
   lastCheckIn?: number; // epoch ms of the last weekly check-in
+  // "YYYY-MM" the paycheck-allocation prompt was acted on / dismissed, so the
+  // "give & save first" nudge shows at most once per month.
+  lastPaycheckDistributed?: string;
 
   // --- multi-device sync (optional) ---
   // Deleted item ids / budget categories, so deletions propagate across phones
