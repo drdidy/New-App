@@ -71,7 +71,11 @@ export default function SpendingPage() {
   const lastMonthNw = nwHist.length >= 2 ? nwHist[nwHist.length - 2].value : null;
   const nwDelta = lastMonthNw != null ? nw - lastMonthNw : null;
 
-  const slices = cats.slice(0, 6).map((c, i) => ({ label: c.category, value: c.amount, color: CHART[i % CHART.length] }));
+  // Pass every category to the donut so the arcs are proportional to the true
+  // total; the legend below still lists the top few. Center total = sum of the
+  // slices shown, so the ring and the number always agree.
+  const slices = cats.map((c, i) => ({ label: c.category, value: c.amount, color: CHART[i % CHART.length] }));
+  const catTotal = cats.reduce((s, c) => s + c.amount, 0);
   const trendVals = trend.map((m) => m.expense);
   const hasExpenses = data.transactions.some((t) => t.type === "expense");
 
@@ -182,7 +186,7 @@ export default function SpendingPage() {
         <section className="lx-card lx-reveal">
           <div className="lx-card-head"><h2>By category</h2></div>
           <div className="lx-donutwrap">
-            <Donut slices={slices} centerTop={formatMoney(summary.expenses, cur)} centerSub="total" size={168} stroke={24} />
+            <Donut slices={slices} centerTop={formatMoney(catTotal, cur)} centerSub="total" size={168} stroke={24} />
             <div className="lx-legend">
               {cats.slice(0, 6).map((c, i) => (
                 <div className="lx-legend-row" key={c.category}>

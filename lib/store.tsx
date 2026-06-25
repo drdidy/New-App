@@ -26,7 +26,7 @@ import type {
   ParsedEntry,
 } from "./types";
 import { uid, todayISO, monthKey } from "./format";
-import { inferDebtKind } from "./insights";
+import { inferDebtKind, netWorth as computeNetWorth } from "./insights";
 import { mergeData, sanitizeForSync } from "./merge";
 import { parseAppDataInput } from "./validation";
 
@@ -460,10 +460,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     const month = monthKey();
     setData((d) => {
-      const nw =
-        (d.accounts || []).reduce((s, a) => s + a.balance, 0) +
-        d.debts.filter((x) => x.direction === "owed_to_me").reduce((s, x) => s + x.balance, 0) -
-        d.debts.filter((x) => x.direction === "i_owe").reduce((s, x) => s + x.balance, 0);
+      // Use the same net-worth definition as the headline (includes cash logged
+      // since the balance was set) so the chart never disagrees with the number.
+      const nw = computeNetWorth(d);
       const hist = d.netWorthHistory || [];
       const existing = hist.find((p) => p.month === month);
       if (existing && existing.value === nw) return d;
@@ -472,7 +471,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         : [...hist, { month, value: nw }];
       return { ...d, netWorthHistory: next };
     });
-  }, [ready, data.accounts, data.debts]);
+  }, [ready, data.accounts, data.debts, data.transactions]);
 
   // --- sync engine ---------------------------------------------------------
   const [syncState, setSyncState] = useState<SyncState>("idle");
@@ -644,6 +643,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               ...x,
               balance: Math.max(0, x.balance - amount),
               payments: [payment, ...(x.payments || [])],
+              // A manual payment this month means auto-pay shouldn't also fire
+              // and double-charge the minimum on next load.
+              lastPaidMonth: x.direction === "i_owe" ? monthKey() : x.lastPaidMonth,
               updatedAt: now,
             }
           : x,

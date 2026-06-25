@@ -202,12 +202,16 @@ export function monthOverMonth(data: AppData): {
 } {
   const cur = monthKey();
   const prev = prevMonthKey();
+  // Compare like-for-like: this month so far vs the previous month up to the
+  // SAME day, so early in the month we don't claim a huge spurious drop.
+  const dayCap = new Date().getDate();
   let thisMonth = 0;
   let lastMonth = 0;
   for (const t of data.transactions) {
     if (t.type !== "expense") continue;
+    const dom = parseInt(t.date.slice(8, 10), 10) || 1;
     if (t.date.startsWith(cur)) thisMonth += t.amount;
-    else if (t.date.startsWith(prev)) lastMonth += t.amount;
+    else if (t.date.startsWith(prev) && dom <= dayCap) lastMonth += t.amount;
   }
   const changePct =
     lastMonth > 0 ? ((thisMonth - lastMonth) / lastMonth) * 100 : null;
@@ -223,9 +227,10 @@ export function monthOverMonth(data: AppData): {
 function loggedSinceBalance(data: AppData): number {
   const accounts = data.accounts || [];
   if (accounts.length === 0) return 0;
-  const liquid = accounts.filter((a) => a.type === "checking" || a.type === "cash");
-  const anchor = liquid[0] || accounts[0];
-  const since = anchor.balanceAsOf ?? anchor.createdAt ?? 0;
+  // Anchor to the most recently hand-set balance across accounts, so a freshly
+  // re-set balance (which already reflects prior activity) is never double-
+  // counted against older logged transactions.
+  const since = accounts.reduce((m, a) => Math.max(m, a.balanceAsOf ?? a.createdAt ?? 0), 0);
   let adj = 0;
   for (const t of data.transactions) {
     if ((t.createdAt ?? 0) <= since) continue;
@@ -654,14 +659,25 @@ export function cycleInfo(data: AppData): CycleInfo {
   // Walk forward from the anchor in steps of `len` to the next payday > today.
   let next = new Date(anchor);
   if (pc.type === "semimonthly") {
-    // Paydays on the anchor day and ~15 days later, each month.
+    // Two paydays a month: the anchor day and ~15 days later, wrapping the
+    // second into the next month when day+15 overflows (so high anchor days
+    // like the 20th give the 20th + ~5th, not a clamped 28th).
     const day = anchor.getDate();
+    const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+    const onDay = (y: number, m: number, d: number) => new Date(y, m, Math.min(d, dim(y, m)));
+    const second = (y: number, m: number) => {
+      const d = day + 15;
+      return d <= dim(y, m) ? new Date(y, m, d) : onDay(y, m + 1, d - dim(y, m));
+    };
+    const y = now.getFullYear();
+    const mo = now.getMonth();
     const candidates = [
-      new Date(now.getFullYear(), now.getMonth(), day),
-      new Date(now.getFullYear(), now.getMonth(), Math.min(day + 15, 28)),
-      new Date(now.getFullYear(), now.getMonth() + 1, day),
-    ];
-    next = candidates.find((c) => c.getTime() > today.getTime()) || candidates[2];
+      onDay(y, mo, day),
+      second(y, mo),
+      onDay(y, mo + 1, day),
+      second(y, mo + 1),
+    ].sort((c1, c2) => c1.getTime() - c2.getTime());
+    next = candidates.find((c) => c.getTime() > today.getTime()) || candidates[candidates.length - 1];
   } else {
     while (next.getTime() <= today.getTime()) next = addDays(next, len);
   }

@@ -24,6 +24,28 @@ function base(overrides: Partial<AppData> = {}): AppData {
   };
 }
 
+describe("mergeData preserves all entities (no silent wipe)", () => {
+  it("keeps buckets, recurring income, wishlist, and lastPaycheckDistributed", () => {
+    const a = base({
+      buckets: [{ id: "bk1", name: "Tithe", emoji: "🙏", color: "#111", kind: "give", balance: 420, createdAt: 1, updatedAt: 5 }],
+      recurringIncome: [{ id: "ri1", name: "Salary", amount: 4200, dayOfMonth: 30, createdAt: 1, updatedAt: 5, lastPaidMonth: "2026-06" }],
+      wishlist: [{ id: "w1", name: "AirPods", amount: 250, createdAt: 1 }],
+      lastPaycheckDistributed: "2026-06",
+    });
+    const b = base({ settingsUpdatedAt: 2 });
+    const merged = mergeData(b, a); // other device has none of it
+    expect(merged.buckets).toHaveLength(1);
+    expect(merged.recurringIncome?.[0].lastPaidMonth).toBe("2026-06");
+    expect(merged.wishlist).toHaveLength(1);
+    expect(merged.lastPaycheckDistributed).toBe("2026-06");
+  });
+  it("honors a bucket deletion via tombstones", () => {
+    const a = base({ buckets: [{ id: "bk1", name: "Tithe", emoji: "", color: "#111", kind: "give", balance: 1, createdAt: 1, updatedAt: 5 }] });
+    const b = base({ tombstones: ["bk1"], settingsUpdatedAt: 9 });
+    expect(mergeData(a, b).buckets).toHaveLength(0);
+  });
+});
+
 describe("mergeData", () => {
   it("is commutative for tied members and budgets", () => {
     const a = base({
