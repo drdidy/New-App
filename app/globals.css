@@ -8582,3 +8582,9 @@ a.lx-stat::after, a.lx-metric::after {
 .lx-generosity-ic { font-size: 26px; flex: none; }
 .lx-generosity-num { font-size: 22px; font-weight: 860; color: #fff; letter-spacing: -0.02em; }
 .lx-generosity-lbl { font-size: 12.5px; line-height: 1.45; color: #d7e2f2; margin-top: 2px; }
+
+/* Debt-payment disambiguation in capture ("which James?") */
+.capture-resolve { margin-top: 12px; padding: 13px 14px; border-radius: 14px; background: rgba(245,196,90,0.1); border: 1px solid rgba(245,196,90,0.3); }
+.capture-resolve-q { font-size: 13.5px; line-height: 1.5; color: #f3e7c8; }
+.capture-resolve-q b { color: #fff; }
+.capture-resolve-opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }

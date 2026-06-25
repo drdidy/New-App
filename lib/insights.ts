@@ -571,6 +571,29 @@ export function affordCheck(data: AppData, amount: number): AffordVerdict | null
   };
 }
 
+// Match a spoken/typed payee ("James") against debts you owe, tolerant of
+// partial names ("James" ⇄ "James Allen"). Returns an exact hit if there is
+// one, plus all loose candidates so the UI can confirm when it's ambiguous.
+export function matchPersonDebts(
+  debts: Debt[],
+  party: string,
+): { exact?: Debt; candidates: Debt[] } {
+  const p = (party || "").trim().toLowerCase();
+  if (!p) return { candidates: [] };
+  const owed = (debts || []).filter((d) => d.direction === "i_owe" && d.balance > 0);
+  const exact = owed.find((d) => d.party.trim().toLowerCase() === p);
+  if (exact) return { exact, candidates: [exact] };
+  const tokens = (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean);
+  const pTok = tokens(p);
+  const candidates = owed.filter((d) => {
+    const dp = d.party.trim().toLowerCase();
+    if (dp.includes(p) || p.includes(dp)) return true; // substring either way
+    const dTok = tokens(dp);
+    return pTok.some((t) => t.length >= 2 && dTok.includes(t)); // shared name token
+  });
+  return { candidates };
+}
+
 // --- debt classification -----------------------------------------------------
 
 // Infer whether a debt is owed to a person or an organization. Used to migrate
