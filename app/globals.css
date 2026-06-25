@@ -8515,3 +8515,19 @@ a.lx-stat::after, a.lx-metric::after {
 .lx-know-row.info .lx-know-ic { color: #a9b6ff; background: rgba(129,140,248,0.14); }
 .lx-know-row.warn .lx-know-ic { color: #ffb4c2; background: rgba(255,120,150,0.13); }
 .lx-know-txt { font-size: 13.5px; line-height: 1.5; color: #d7e2f2; padding-top: 5px; }
+
+/* Debt-free countdown + milestone track */
+.lx-burst-anchor { position: relative; height: 0; display: grid; place-items: center; z-index: 5; }
+.lx-freedom { background: var(--au-card); border: 1px solid var(--au-line); border-radius: 20px; padding: 16px 16px 18px; box-shadow: var(--au-glow); backdrop-filter: blur(14px); }
+.lx-freedom-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.lx-freedom-lbl { font-weight: 780; font-size: 14.5px; color: #eef2fb; }
+.lx-freedom-when { font-size: 12.5px; font-weight: 750; color: #06121f; background: var(--au-grad); padding: 4px 10px; border-radius: 999px; }
+.lx-freedom-track { position: relative; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.09); margin: 22px 6px 26px; }
+.lx-freedom-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 999px; background: var(--au-grad); transition: width .5s var(--mc-spring); }
+.lx-freedom-tick { position: absolute; top: 50%; transform: translate(-50%, -50%); }
+.lx-freedom-tick i {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; font-size: 10px; font-weight: 800; font-style: normal;
+  background: #1a2138; border: 1px solid var(--au-line); color: var(--au-mut);
+}
+.lx-freedom-tick.hit i { background: var(--au-grad); color: #06121f; border: none; box-shadow: 0 0 12px -2px rgba(46,230,192,0.8); }
+.lx-freedom-sub { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--au-mut); text-align: center; }
