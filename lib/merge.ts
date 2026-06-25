@@ -40,6 +40,9 @@ export function mergeData(a: AppData, b: AppData): AppData {
   );
   const goals = unionById(a.goals, b.goals, dead, recordTime);
   const accounts = unionById(a.accounts, b.accounts, dead, recordTime);
+  const recurringIncome = unionById(a.recurringIncome, b.recurringIncome, dead, recordTime);
+  const buckets = unionById(a.buckets, b.buckets, dead, recordTime);
+  const wishlist = unionById(a.wishlist, b.wishlist, dead, wishTime);
   // Net-worth history: one point per month, prefer the most recent writer.
   const nwMap = new Map<string, NetWorthPoint>();
   for (const p of [...(a.netWorthHistory || []), ...(b.netWorthHistory || [])]) {
@@ -74,9 +77,16 @@ export function mergeData(a: AppData, b: AppData): AppData {
     debts,
     budgets,
     recurringBills,
+    recurringIncome,
+    buckets,
+    wishlist,
     goals,
     accounts,
     netWorthHistory,
+    lastPaycheckDistributed:
+      (a.lastPaycheckDistributed || "") >= (b.lastPaycheckDistributed || "")
+        ? a.lastPaycheckDistributed
+        : b.lastPaycheckDistributed,
     tombstones,
     // Sync config is local-only; callers re-attach it after merging.
     syncCode: a.syncCode ?? b.syncCode,
@@ -94,6 +104,10 @@ function recordTime<T extends { createdAt: number; updatedAt?: number }>(x: T): 
 
 function memberTime(m: Member): number {
   return m.updatedAt || 0;
+}
+
+function wishTime(w: { createdAt: number; decidedAt?: number }): number {
+  return w.decidedAt || w.createdAt;
 }
 
 function budgetTime(b: Budget): number {
