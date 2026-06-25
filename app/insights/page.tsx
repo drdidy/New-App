@@ -119,7 +119,7 @@ export default function SpendingPage() {
           <div className="lx-hero-label">Money to your name</div>
           <div className="lx-hero-num pos">{formatMoney(cash, cur)}</div>
           <div className="lx-hero-sub">Across {accounts.length} account{accounts.length === 1 ? "" : "s"} — what you actually have right now.</div>
-          <div className="lx-nw">
+          <Link href="/debt" className="lx-nw">
             <span className="lx-nw-lbl">Net worth</span>
             <span className={"lx-nw-val " + (nw >= 0 ? "pos" : "")}>{formatMoney(nw, cur)}</span>
             {nwDelta != null && nwDelta !== 0 && (
@@ -128,7 +128,8 @@ export default function SpendingPage() {
                 {formatMoney(Math.abs(nwDelta), cur)} this month
               </span>
             )}
-          </div>
+            <ArrowRight size={14} className="lx-nw-go" />
+          </Link>
           {nw < 0 && (
             <p className="lx-nw-note">
               Most people building wealth start below zero — what matters is the direction, not today’s number. Every debt payment moves this up. 📈

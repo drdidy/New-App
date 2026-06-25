@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowRight, Bot, Mic, Send, Sparkles } from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
 import {
@@ -218,18 +219,18 @@ export default function AdvisorPage() {
 
       {hasMoneyHistory && (
         <div className="lx-coach-strip">
-          <div>
+          <Link href="/">
             <span>Safe to spend</span>
             <b className={sts.safe >= 0 ? "pos" : "neg"}>{formatMoney(sts.safe, cur)}</b>
-          </div>
-          <div>
+          </Link>
+          <Link href="/debt">
             <span>You owe</span>
             <b className="neg">{formatMoney(debtTotal, cur)}</b>
-          </div>
-          <div>
+          </Link>
+          <Link href="/spending">
             <span>Net worth</span>
             <b>{formatMoney(netWorth(data), cur)}</b>
-          </div>
+          </Link>
         </div>
       )}
 
