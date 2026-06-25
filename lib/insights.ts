@@ -736,8 +736,53 @@ export function worthKnowing(data: AppData, max = 3): Knowable[] {
   }
 
   // ℹ️ Useful heads-ups.
+  // Payday runway: project current discretionary pace forward to payday.
+  if (sts.daysLeft > 0) {
+    const dayOfMonth = new Date().getDate();
+    const monthSpend = data.transactions
+      .filter((t) => t.type === "expense" && t.date.startsWith(monthKey()) && t.category !== "Debt payment")
+      .reduce((s, t) => s + t.amount, 0);
+    const dailyAvg = dayOfMonth > 0 ? monthSpend / dayOfMonth : 0;
+    if (dailyAvg > 0) {
+      const atPayday = sts.safe - dailyAvg * sts.daysLeft;
+      if (atPayday >= 0) {
+        info.push({ tone: "info", text: `On your current pace you'll reach payday with about ${m(atPayday)} to spare.` });
+      } else {
+        const easeOff = Math.ceil(-atPayday / sts.daysLeft);
+        warn.push({ tone: "warn", text: `At this pace you'd come up short before payday — easing off about ${m(easeOff)}/day keeps you safe.` });
+      }
+    }
+  }
   if (sts.committed > 0) {
     info.push({ tone: "info", text: `${m(sts.committed)} in bills & payments land before payday — already set aside.` });
+  }
+  // Subscription / recurring radar: a merchant that keeps charging but isn't a
+  // tracked bill — likely a subscription worth planning for (or cancelling).
+  {
+    const billNames = new Set((data.recurringBills || []).map((b) => b.name.toLowerCase().trim()));
+    const now = new Date();
+    const recent = [0, 1, 2].map((i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    });
+    const monthsSeen = new Map<string, Set<string>>();
+    const lastAmt = new Map<string, number>();
+    for (const t of data.transactions) {
+      if (t.type !== "expense" || t.category === "Debt payment") continue;
+      const mo = t.date.slice(0, 7);
+      if (!recent.includes(mo)) continue;
+      const key = (t.description || t.category).trim();
+      if (!key || billNames.has(key.toLowerCase())) continue;
+      if (!monthsSeen.has(key)) monthsSeen.set(key, new Set());
+      monthsSeen.get(key)!.add(mo);
+      lastAmt.set(key, t.amount);
+    }
+    for (const [key, set] of monthsSeen) {
+      if (set.size >= 2) {
+        info.push({ tone: "info", text: `${key} (~${m(lastAmt.get(key) || 0)}) has charged ${set.size} months running — make it a bill so it's planned for?` });
+        break;
+      }
+    }
   }
   // A category running hot vs last month (subscription / spending creep).
   const thisCats = categoryBreakdown(data);
