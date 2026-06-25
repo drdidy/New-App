@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { billsThisMonth, budgetStatus, moneyPlan, monthlyTotals } from "@/lib/insights";
+import { billsThisMonth, budgetStatus, moneyPlan, monthlyTotals, futureProjection } from "@/lib/insights";
 import { clampPct, formatMoney } from "@/lib/format";
 import type { Goal } from "@/lib/types";
 
@@ -154,6 +154,38 @@ export default function PlanPage() {
         </div>
         <ArrowRight size={18} className="lx-cta-arrow" />
       </Link>
+
+      {/* FUTURE YOU — where the current pace leads */}
+      {(() => {
+        const f = futureProjection(data, 12);
+        if (!f) return null;
+        const debtFree = f.debtFreeInMonths != null && f.debtFreeInMonths <= 12;
+        return (
+          <section className="lx-future lx-reveal">
+            <div className="lx-future-head">🔮 Future you · 12 months</div>
+            <p className="lx-future-lead">If you keep this up:</p>
+            <div className="lx-future-grid">
+              {f.debtNow > 0 && (
+                <div className="lx-future-item">
+                  <span className="l">Debt</span>
+                  <span className="v">{debtFree ? "Debt-free 🎉" : `${formatMoney(f.debtNow, cur)} → ${formatMoney(f.debtThen, cur)}`}</span>
+                </div>
+              )}
+              {f.savedAdded > 0 && (
+                <div className="lx-future-item">
+                  <span className="l">Saved</span>
+                  <span className="v pos">+{formatMoney(f.savedAdded, cur)}</span>
+                </div>
+              )}
+              <div className="lx-future-item">
+                <span className="l">Net worth</span>
+                <span className="v">about {formatMoney(f.netWorthThen, cur)}</span>
+              </div>
+            </div>
+            <p className="lx-future-foot">An estimate from your current saving & payment pace — every extra dollar beats it.</p>
+          </section>
+        );
+      })()}
 
       <div className="lx-mgrid three lx-reveal">
         <Link href="/buckets" className="lx-metric">

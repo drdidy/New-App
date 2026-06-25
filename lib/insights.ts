@@ -415,6 +415,36 @@ export function suggestPersonPayment(data: AppData, debt: Debt): PersonPaymentAd
   return { mode: "partial", amount, months, spare };
 }
 
+// "Future you" — a motivating, honest projection of where the current pace
+// leads: debt down, savings up, net worth climbing. Clearly an estimate.
+export interface FutureProjection {
+  months: number;
+  debtNow: number;
+  debtThen: number;
+  savedAdded: number;
+  netWorthThen: number;
+  debtFreeInMonths: number | null;
+  monthlySave: number;
+}
+
+export function futureProjection(data: AppData, months = 12): FutureProjection | null {
+  const income = baselineIncome(data);
+  const iOwe = (data.debts || []).filter((d) => d.direction === "i_owe" && d.balance > 0);
+  const debtNow = iOwe.reduce((s, d) => s + d.balance, 0);
+  const monthlyDebtPay = iOwe.reduce((s, d) => s + (d.minPayment || 0), 0);
+  const goalSave = (data.goals || []).reduce((s, g) => s + (g.monthlyContribution || 0), 0);
+  const bucketSave = (data.buckets || [])
+    .filter((b) => (b.kind === "save" || b.kind === "invest") && b.allocType && b.allocValue)
+    .reduce((s, b) => s + (b.allocType === "percent" ? (income * (b.allocValue || 0)) / 100 : (b.allocValue || 0)), 0);
+  const monthlySave = goalSave + bucketSave;
+  if (debtNow <= 0 && monthlySave <= 0) return null;
+  const debtThen = Math.max(0, debtNow - monthlyDebtPay * months);
+  const savedAdded = monthlySave * months;
+  const netWorthThen = netWorth(data) + savedAdded + (debtNow - debtThen);
+  const sim = simulatePayoff(data, "avalanche", 0);
+  return { months, debtNow, debtThen, savedAdded, netWorthThen, debtFreeInMonths: sim.months, monthlySave };
+}
+
 // "Give & save first" — when income has landed this month and the household has
 // buckets with auto-fill rules, preview how a paycheck would split so we can
 // nudge them to set aside their tithe / savings before it gets spent.
