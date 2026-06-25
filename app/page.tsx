@@ -23,7 +23,7 @@ import {
   cashOnHand,
   safeToSpend,
   loggingStreak,
-  quickInsights,
+  worthKnowing,
   affordCheck,
 } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
@@ -109,7 +109,7 @@ export default function TodayPage() {
   const bills = billsThisMonth(data).filter((b) => !b.paid);
   const recent = data.transactions.slice(0, 5);
   const goal = data.goals[0];
-  const insights = quickInsights(data, data.currency, 2);
+  const knowables = worthKnowing(data, 3);
   const safePos = sts.safe >= 0;
   const cur = data.currency;
   const barPct = sts.spendable > 0 ? Math.max(0, Math.min(100, (sts.safe / sts.spendable) * 100)) : safePos ? 60 : 8;
@@ -253,12 +253,18 @@ export default function TodayPage() {
 
       <div className="lx-reveal"><QuickCapture /></div>
 
-      {insights.length > 0 && (
-        <div className="lx-reveal">
-          {insights.map((t, i) => (
-            <div className="lx-insight" key={i}><Sparkles size={15} /> <span>{t}</span></div>
+      {knowables.length > 0 && (
+        <section className="lx-card lx-reveal lx-know">
+          <div className="lx-card-head"><h2>Worth knowing</h2></div>
+          {knowables.map((k, i) => (
+            <div className={"lx-know-row " + k.tone} key={i}>
+              <span className="lx-know-ic">
+                {k.tone === "good" ? <Sparkles size={15} /> : k.tone === "warn" ? <ArrowDownRight size={15} /> : <ArrowRight size={15} />}
+              </span>
+              <span className="lx-know-txt">{k.text}</span>
+            </div>
           ))}
-        </div>
+        </section>
       )}
 
       {bills.length > 0 && (
