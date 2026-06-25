@@ -198,7 +198,7 @@ export default function TodayPage() {
         </div>
         <div className="lx-stat">
           <Landmark size={16} className="lx-stat-ic" />
-          <div className={"lx-stat-num " + (nw >= 0 ? "pos" : "neg")}>{formatMoney(nw, cur)}</div>
+          <div className={"lx-stat-num " + (nw >= 0 ? "pos" : "calm")}>{formatMoney(nw, cur)}</div>
           <div className="lx-stat-lbl">Net worth</div>
         </div>
         <Link href="/debt" className="lx-stat">
