@@ -25,10 +25,11 @@ import {
   payoffPlan,
   payoffProjection,
   simulatePayoff,
+  suggestPersonPayment,
 } from "@/lib/insights";
 import { clampPct, formatMoney, friendlyDate, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
-import type { Debt, DebtDirection, DebtKind } from "@/lib/types";
+import type { AppData, Debt, DebtDirection, DebtKind } from "@/lib/types";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
 
@@ -256,7 +257,7 @@ export default function DebtsPage() {
           title="Cards & loans"
           subtitle="Organizations — interest, minimums, due dates"
           debts={orgs}
-          {...{ cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
+          {...{ data, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
         />
       )}
 
@@ -266,7 +267,7 @@ export default function DebtsPage() {
           title="People you owe"
           subtitle="Informal IOUs to friends & family"
           debts={peopleIOwe}
-          {...{ cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
+          {...{ data, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
         />
       )}
 
@@ -277,7 +278,7 @@ export default function DebtsPage() {
           subtitle="Money people owe you"
           debts={owedToMe}
           incoming
-          {...{ cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
+          {...{ data, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt }}
         />
       )}
 
@@ -314,6 +315,7 @@ function DebtGroup(props: {
   subtitle: string;
   debts: Debt[];
   incoming?: boolean;
+  data: AppData;
   cur: string;
   expanded: string | null;
   setExpanded: (id: string | null) => void;
@@ -343,6 +345,7 @@ function DebtGroup(props: {
 function DebtCard(props: {
   debt: Debt;
   incoming?: boolean;
+  data: AppData;
   cur: string;
   expanded: string | null;
   setExpanded: (id: string | null) => void;
@@ -354,9 +357,19 @@ function DebtCard(props: {
   startEdit: (d: Debt) => void;
   deleteDebt: (id: string) => void;
 }) {
-  const { debt: d, incoming, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt } = props;
+  const { debt: d, incoming, data, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt } = props;
+  const [copied, setCopied] = useState(false);
   const kind = d.kind ?? inferDebtKind(d);
   const Meta = KIND_META[kind];
+  const money = (n: number) => formatMoney(n, cur);
+  const advice = !incoming && kind === "person" ? suggestPersonPayment(data, d) : null;
+  const script = !advice
+    ? ""
+    : advice.mode === "full"
+      ? `Hey — I can settle the ${money(d.balance)} I owe you. Sending it over now. 🙏`
+      : advice.mode === "partial"
+        ? `Hey — I know I owe you ${money(d.balance)}. I can't do it all at once, but can I send ${money(advice.amount)} now and keep chipping away until it's cleared?`
+        : `Hey — I haven't forgotten the ${money(d.balance)} I owe you. This month is tight, but I'll send what I can as soon as I'm able. Thanks for being patient. 🙏`;
   const pct = d.original ? clampPct(((d.original - d.balance) / d.original) * 100) : 0;
   const open = expanded === d.id;
   const paying = payingId === d.id;
@@ -400,6 +413,32 @@ function DebtCard(props: {
             <span>{formatMoney((d.original || d.balance) - d.balance, cur)} {incoming ? "received" : "paid"}</span>
             <span>{Math.round(pct)}% of {formatMoney(d.original || d.balance, cur)}</span>
           </div>
+
+          {advice && !paying && (
+            <div className={"lx-advice " + advice.mode}>
+              <div className="lx-advice-head">
+                <Sparkles size={14} />
+                {advice.mode === "full" ? (
+                  <span>You can clear this in full and still keep <b>{money(advice.spare - d.balance)}</b> safe to spend.</span>
+                ) : advice.mode === "partial" ? (
+                  <span>Suggested: send <b>{money(advice.amount)}</b> now — affordable from your {money(advice.spare)} safe to spend, and it clears in about {advice.months} month{advice.months === 1 ? "" : "s"}.</span>
+                ) : (
+                  <span>Too tight to send anything safely this month — a short, honest note keeps trust intact.</span>
+                )}
+              </div>
+              <div className="lx-advice-actions">
+                {advice.mode !== "tight" && (
+                  <button className="lx-primary sm" onClick={() => { setPayingId(d.id); setPayAmt(String(advice.amount)); }}>
+                    <HandCoins size={14} /> Pay {money(advice.amount)}
+                  </button>
+                )}
+                <button className="lx-ghost sm" onClick={() => { setCopied(true); navigator.clipboard?.writeText(script).catch(() => {}); }}>
+                  {copied ? "Copied ✓" : "What to say"}
+                </button>
+              </div>
+              {copied && <p className="lx-advice-script">“{script}”</p>}
+            </div>
+          )}
 
           {paying ? (
             <div className="lx-pay-row">

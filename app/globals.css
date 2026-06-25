@@ -8468,3 +8468,18 @@ a.lx-stat::after, a.lx-metric::after {
 }
 @media (hover: hover) { .lx-hero-link:hover { border-bottom-color: var(--au-teal); color: #fff; } }
 .lx-hero-link:active { opacity: .7; }
+
+/* Person-debt payment advice — a kind, concrete suggestion + what to say */
+.lx-advice {
+  margin: 12px 0 4px; padding: 13px 14px; border-radius: 16px;
+  background: rgba(46,230,192,0.07); border: 1px solid rgba(46,230,192,0.22);
+}
+.lx-advice.tight { background: rgba(255,255,255,0.04); border-color: var(--au-line); }
+.lx-advice-head { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; line-height: 1.5; color: #d7e2f2; }
+.lx-advice-head svg { color: var(--au-teal); flex: none; margin-top: 2px; }
+.lx-advice-head b { color: #fff; font-weight: 820; }
+.lx-advice-actions { display: flex; gap: 8px; margin-top: 11px; }
+.lx-advice-script {
+  margin: 11px 0 0; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.05);
+  font-size: 13px; line-height: 1.5; color: #cdd7ea; font-style: italic;
+}

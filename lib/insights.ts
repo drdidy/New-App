@@ -386,6 +386,35 @@ export function safeToSpend(data: AppData, memberId?: string): SafeToSpend {
   };
 }
 
+// People you owe rarely give you a payment plan — they just want it back. When
+// you can't pay in full, this suggests a fair, affordable amount to send now,
+// grounded in what's actually safe to spend, so you can chip away without going
+// broke (and so you have something concrete to offer them).
+export interface PersonPaymentAdvice {
+  mode: "full" | "partial" | "tight";
+  amount: number; // suggested to send now
+  months: number; // months to clear at that pace (partial only)
+  spare: number; // safe to spend right now
+}
+
+export function suggestPersonPayment(data: AppData, debt: Debt): PersonPaymentAdvice | null {
+  if (debt.direction !== "i_owe" || debt.balance <= 0) return null;
+  const spare = Math.max(0, safeToSpend(data, debt.memberId).safe);
+  const bal = debt.balance;
+
+  // Can clear it without going under — just settle up.
+  if (spare >= bal) return { mode: "full", amount: bal, months: 1, spare };
+
+  // Otherwise aim to clear in ~3 months, but never send more than half of
+  // what's spare so a buffer stays. Tidy to the nearest $5.
+  let amount = Math.round(Math.min(bal / 3, spare * 0.5) / 5) * 5;
+  if (amount < 5 && spare > 0) amount = Math.min(bal, Math.max(5, Math.round(spare)));
+  if (amount <= 0) return { mode: "tight", amount: 0, months: 0, spare };
+
+  const months = Math.max(1, Math.ceil(bal / amount));
+  return { mode: "partial", amount, months, spare };
+}
+
 // --- debt classification -----------------------------------------------------
 
 // Infer whether a debt is owed to a person or an organization. Used to migrate
