@@ -8572,3 +8572,13 @@ a.lx-stat::after, a.lx-metric::after {
 .lx-future-item .v { font-size: 16px; font-weight: 840; color: #fff; font-variant-numeric: tabular-nums; }
 .lx-future-item .v.pos { color: var(--au-teal); }
 .lx-future-foot { margin: 13px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--au-mut); }
+
+/* No-spend streak pill (Today momentum) */
+.lx-nospend { flex: none; font-size: 12.5px; font-weight: 800; color: #6ff0d2; background: rgba(46,230,192,0.14); border: 1px solid rgba(46,230,192,0.3); padding: 6px 11px; border-radius: 999px; }
+
+/* Generosity snapshot (Buckets) */
+.lx-generosity { display: flex; align-items: center; gap: 13px; padding: 15px 16px; border-radius: 18px;
+  background: linear-gradient(150deg, rgba(255,92,157,0.12), rgba(129,140,248,0.1)); border: 1px solid rgba(255,92,157,0.26); box-shadow: var(--au-glow); backdrop-filter: blur(14px); }
+.lx-generosity-ic { font-size: 26px; flex: none; }
+.lx-generosity-num { font-size: 22px; font-weight: 860; color: #fff; letter-spacing: -0.02em; }
+.lx-generosity-lbl { font-size: 12.5px; line-height: 1.45; color: #d7e2f2; margin-top: 2px; }

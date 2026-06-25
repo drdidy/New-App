@@ -5,7 +5,6 @@ import Link from "next/link";
 import gsap from "gsap";
 import {
   ArrowRight,
-  ArrowUpRight,
   ArrowDownRight,
   MessageCircleHeart,
   Wallet,
@@ -13,20 +12,17 @@ import {
   Sparkles,
   Flame,
   Trash2,
-  Plus,
-  Moon,
   X,
 } from "lucide-react";
 import type { Transaction } from "@/lib/types";
 import { useStore, summarize } from "@/lib/store";
 import {
-  billsThisMonth,
   netWorth,
   cashOnHand,
   safeToSpend,
   loggingStreak,
+  noSpendStreak,
   worthKnowing,
-  affordCheck,
   paycheckPlan,
 } from "@/lib/insights";
 import { formatMoney, friendlyDate, monthKey } from "@/lib/format";
@@ -47,16 +43,13 @@ const CAT_ICON: Record<string, string> = {
 };
 
 export default function TodayPage() {
-  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed, addWish, decideWish, deleteWish } = useStore();
+  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed } = useStore();
   const root = useRef<HTMLElement>(null);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [amt, setAmt] = useState("");
   const [desc, setDesc] = useState("");
   const [balOpen, setBalOpen] = useState(false);
   const [balInput, setBalInput] = useState("");
-  const [affordQ, setAffordQ] = useState("");
-  const [wishName, setWishName] = useState("");
-  const [wishAmt, setWishAmt] = useState("");
 
   function saveBalance() {
     const v = parseFloat(balInput.replace(/[$,\s]/g, ""));
@@ -111,10 +104,9 @@ export default function TodayPage() {
   const cash = cashOnHand(data);
   const nw = netWorth(data);
   const sts = safeToSpend(data);
-  const bills = billsThisMonth(data).filter((b) => !b.paid);
   const recent = data.transactions.slice(0, 5);
-  const goal = data.goals[0];
   const knowables = worthKnowing(data, 4);
+  const noSpend = noSpendStreak(data);
   const safePos = sts.safe >= 0;
   const cur = data.currency;
   const barPct = sts.spendable > 0 ? Math.max(0, Math.min(100, (sts.safe / sts.spendable) * 100)) : safePos ? 60 : 8;
@@ -203,21 +195,41 @@ export default function TodayPage() {
       <div className="lx-momentum lx-reveal">
         <div className="lx-momentum-flame"><Flame size={20} /></div>
         <div className="lx-momentum-meta">
-          <strong>{streak.count > 0 ? `${streak.count}-day streak` : "Start your streak"}</strong>
+          <strong>{streak.count > 0 ? `${streak.count}-day logging streak` : "Start your streak"}</strong>
           <span>
-            {streak.loggedToday
-              ? "Logged today — nice. Keep the fire going tomorrow. 🔥"
-              : streak.count > 0
-                ? "Log one thing today to keep it alive."
-                : "Log anything below to light it up."}
+            {noSpend > 0
+              ? `🚫 ${noSpend} day${noSpend === 1 ? "" : "s"} without spending — keep it going.`
+              : streak.loggedToday
+                ? "Logged today — nice. Keep it up tomorrow. 🔥"
+                : streak.count > 0
+                  ? "Log one thing today to keep your streak alive."
+                  : "Log anything below to light it up."}
           </span>
         </div>
-        <div className="lx-momentum-dots">
-          {[0, 1, 2, 3, 4].map((n) => (
-            <span key={n} className={n < Math.min(5, streak.count) ? "on" : ""} />
-          ))}
-        </div>
+        {noSpend > 0 ? (
+          <div className="lx-nospend" title="Days in a row with no spending">🚫 {noSpend}d</div>
+        ) : (
+          <div className="lx-momentum-dots">
+            {[0, 1, 2, 3, 4].map((n) => (
+              <span key={n} className={n < Math.min(5, streak.count) ? "on" : ""} />
+            ))}
+          </div>
+        )}
       </div>
+
+      {knowables.length > 0 && (
+        <section className="lx-card lx-reveal lx-know">
+          <div className="lx-card-head"><h2>Worth knowing</h2></div>
+          {knowables.map((k, i) => (
+            <div className={"lx-know-row " + k.tone} key={i}>
+              <span className="lx-know-ic">
+                {k.tone === "good" ? <Sparkles size={15} /> : k.tone === "warn" ? <ArrowDownRight size={15} /> : <ArrowRight size={15} />}
+              </span>
+              <span className="lx-know-txt">{k.text}</span>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* REAL MONEY ROW (balance-first) — every tile drills into its screen */}
       <div className="lx-stats lx-reveal">
@@ -238,136 +250,7 @@ export default function TodayPage() {
         </Link>
       </div>
 
-      {/* IN / OUT */}
-      <div className="lx-io lx-reveal">
-        <div className="lx-io-item">
-          <ArrowUpRight size={15} className="pos" />
-          <span className="lx-io-num pos">{formatMoney(summary.income, cur)}</span>
-          <span className="lx-io-lbl">In</span>
-        </div>
-        <div className="lx-io-div" />
-        <div className="lx-io-item">
-          <ArrowDownRight size={15} className="neg" />
-          <span className="lx-io-num neg">{formatMoney(summary.expenses, cur)}</span>
-          <span className="lx-io-lbl">Out</span>
-        </div>
-      </div>
-
-      {/* CAN I AFFORD IT? — instant gut-check on a purchase */}
-      <div className="lx-afford lx-reveal">
-        <div className="lx-afford-top">
-          <span className="lx-afford-q"><Sparkles size={15} /> Can I afford…</span>
-          <div className="lx-afford-input">
-            <span>{cur === "USD" ? "$" : ""}</span>
-            <input
-              type="number" inputMode="decimal" placeholder="amount"
-              value={affordQ} onChange={(e) => setAffordQ(e.target.value)}
-            />
-          </div>
-        </div>
-        {(() => {
-          const v = affordCheck(data, parseFloat(affordQ) || 0);
-          if (!v) return <p className="lx-afford-hint">Type a price and I’ll tell you straight — grounded in your real cash, not vibes.</p>;
-          return (
-            <div className={"lx-afford-verdict " + v.verdict}>
-              <strong>{v.headline}</strong>
-              <span>{v.detail}</span>
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* SLEEP ON IT — cooling-off wishlist that rewards patience */}
-      {(() => {
-        const COOL_DAYS = 3;
-        const pending = (data.wishlist || []).filter((w) => !w.outcome).sort((a, b) => a.createdAt - b.createdAt);
-        const saved = (data.wishlist || []).filter((w) => w.outcome === "skipped").reduce((s, w) => s + w.amount, 0);
-        const addW = () => {
-          const a = parseFloat(wishAmt);
-          if (!wishName.trim() || !(a > 0)) return;
-          addWish(wishName.trim(), a); success(); setWishName(""); setWishAmt("");
-        };
-        return (
-          <section className="lx-card lx-wish lx-reveal">
-            <div className="lx-card-head">
-              <h2><Moon size={15} style={{ verticalAlign: "-2px" }} /> Sleep on it</h2>
-              {saved > 0 && <span className="lx-wish-saved">{formatMoney(saved, cur)} saved by waiting</span>}
-            </div>
-            <div className="lx-wish-add">
-              <input placeholder="Something you want…" value={wishName} onChange={(e) => setWishName(e.target.value)} />
-              <input className="amt" type="number" inputMode="decimal" placeholder="$" value={wishAmt} onChange={(e) => setWishAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addW()} />
-              <button className="lx-primary sm" onClick={addW} disabled={!wishName.trim() || !(parseFloat(wishAmt) > 0)} aria-label="Add to wishlist"><Plus size={16} /></button>
-            </div>
-            {pending.length > 0 ? (
-              <div className="lx-list">
-                {pending.map((w) => {
-                  const days = Math.floor((Date.now() - w.createdAt) / 86400000);
-                  const left = Math.max(0, COOL_DAYS - days);
-                  const ready = left <= 0;
-                  const v = ready ? affordCheck(data, w.amount) : null;
-                  return (
-                    <div className="lx-wish-row" key={w.id}>
-                      <span className="ic">{ready ? "✨" : "💤"}</span>
-                      <div className="meta">
-                        <div className="t">{w.name}</div>
-                        <div className={"s" + (v ? " " + v.verdict : "")}>{ready ? (v ? v.headline : "Ready to decide") : `${left} day${left === 1 ? "" : "s"} to think it over`}</div>
-                      </div>
-                      <div className="amt">{formatMoney(w.amount, cur)}</div>
-                      {ready ? (
-                        <>
-                          <button className="lx-ghost sm" onClick={() => { decideWish(w.id, "skipped"); success(); }}>Skip</button>
-                          <button className="lx-primary sm" onClick={() => { decideWish(w.id, "bought"); success(); }}>Buy</button>
-                        </>
-                      ) : (
-                        <button className="lx-icon-btn danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="lx-wish-hint">Tempted by something? Add it here. I’ll hold it for {COOL_DAYS} days — most urges fade, and you’ll see if you can truly afford it then.</p>
-            )}
-          </section>
-        );
-      })()}
-
       <div className="lx-reveal"><QuickCapture /></div>
-
-      {knowables.length > 0 && (
-        <section className="lx-card lx-reveal lx-know">
-          <div className="lx-card-head"><h2>Worth knowing</h2></div>
-          {knowables.map((k, i) => (
-            <div className={"lx-know-row " + k.tone} key={i}>
-              <span className="lx-know-ic">
-                {k.tone === "good" ? <Sparkles size={15} /> : k.tone === "warn" ? <ArrowDownRight size={15} /> : <ArrowRight size={15} />}
-              </span>
-              <span className="lx-know-txt">{k.text}</span>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {bills.length > 0 && (
-        <section className="lx-card lx-reveal">
-          <div className="lx-card-head"><h2>Bills due</h2><Link href="/bills">Manage</Link></div>
-          {bills.slice(0, 3).map((b) => (
-            <div className="lx-row" key={b.bill.id}>
-              <span className="lx-row-ic">🧾</span>
-              <div className="lx-row-meta"><div className="lx-row-t">{b.bill.name}</div><div className="lx-row-s">Due {b.dueDay}</div></div>
-              <div className="lx-row-amt neg">{formatMoney(b.bill.amount, cur)}</div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {goal && (
-        <section className="lx-card lx-reveal lx-goal">
-          <div className="lx-card-head"><h2>{goal.emoji} {goal.name}</h2><Link href="/plan">Plan</Link></div>
-          <div className="lx-goal-num">{formatMoney(goal.saved, cur)} <small>of {formatMoney(goal.target, cur)}</small></div>
-          <div className="lx-bar"><span style={{ width: `${goal.target > 0 ? Math.min(100, (goal.saved / goal.target) * 100) : 0}%` }} /></div>
-        </section>
-      )}
 
       <section className="lx-card lx-reveal">
         <div className="lx-card-head"><h2>Recent</h2><Link href="/spending">Insights</Link></div>
@@ -387,15 +270,6 @@ export default function TodayPage() {
         ))}
         {recent.length > 0 && <div className="lx-row-hint">Tap an entry to edit or delete it.</div>}
       </section>
-
-      <Link href="/coach" className="lx-card lx-cta lx-reveal">
-        <div className="lx-cta-ic"><MessageCircleHeart size={22} /></div>
-        <div className="lx-cta-meta">
-          <div className="lx-cta-t">Ask your money coach</div>
-          <div className="lx-cta-s">A plan built on your real numbers.</div>
-        </div>
-        <ArrowRight size={18} className="lx-cta-arrow" />
-      </Link>
 
       {editTx && (
         <div className="lx-sheet-backdrop" onClick={() => setEditTx(null)}>

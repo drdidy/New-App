@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bot, Mic, Send, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, Mic, Moon, Plus, Send, Sparkles, X } from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
 import {
+  affordCheck,
   billsThisMonth,
   budgetStatus,
   cashOnHand,
@@ -17,6 +18,7 @@ import {
   safeToSpend,
 } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
+import { success } from "@/lib/haptics";
 import { postJson } from "@/lib/clientApi";
 
 interface Msg {
@@ -32,12 +34,15 @@ const STARTERS = [
 ];
 
 export default function AdvisorPage() {
-  const { data, ready } = useStore();
+  const { data, ready, addWish, decideWish, deleteWish } = useStore();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceNote, setVoiceNote] = useState("");
+  const [affordQ, setAffordQ] = useState("");
+  const [wishName, setWishName] = useState("");
+  const [wishAmt, setWishAmt] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const hasChattedRef = useRef(false);
   const recogRef = useRef<any>(null);
@@ -233,6 +238,81 @@ export default function AdvisorPage() {
           </Link>
         </div>
       )}
+
+      {/* QUICK TOOLS — decisions the coach helps you make */}
+      <div className="lx-afford">
+        <div className="lx-afford-top">
+          <span className="lx-afford-q"><Sparkles size={15} /> Can I afford…</span>
+          <div className="lx-afford-input">
+            <span>{cur === "USD" ? "$" : ""}</span>
+            <input type="number" inputMode="decimal" placeholder="amount" value={affordQ} onChange={(e) => setAffordQ(e.target.value)} />
+          </div>
+        </div>
+        {(() => {
+          const v = affordCheck(data, parseFloat(affordQ) || 0);
+          if (!v) return <p className="lx-afford-hint">Type a price and I’ll tell you straight — grounded in your real cash, not vibes.</p>;
+          return (
+            <div className={"lx-afford-verdict " + v.verdict}>
+              <strong>{v.headline}</strong>
+              <span>{v.detail}</span>
+            </div>
+          );
+        })()}
+      </div>
+
+      {(() => {
+        const COOL_DAYS = 3;
+        const pending = (data.wishlist || []).filter((w) => !w.outcome).sort((a, b) => a.createdAt - b.createdAt);
+        const saved = (data.wishlist || []).filter((w) => w.outcome === "skipped").reduce((s, w) => s + w.amount, 0);
+        const addW = () => {
+          const a = parseFloat(wishAmt);
+          if (!wishName.trim() || !(a > 0)) return;
+          addWish(wishName.trim(), a); success(); setWishName(""); setWishAmt("");
+        };
+        return (
+          <section className="lx-card lx-wish">
+            <div className="lx-card-head">
+              <h2><Moon size={15} style={{ verticalAlign: "-2px" }} /> Sleep on it</h2>
+              {saved > 0 && <span className="lx-wish-saved">{formatMoney(saved, cur)} saved by waiting</span>}
+            </div>
+            <div className="lx-wish-add">
+              <input placeholder="Something you want…" value={wishName} onChange={(e) => setWishName(e.target.value)} />
+              <input className="amt" type="number" inputMode="decimal" placeholder="$" value={wishAmt} onChange={(e) => setWishAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addW()} />
+              <button className="lx-primary sm" onClick={addW} disabled={!wishName.trim() || !(parseFloat(wishAmt) > 0)} aria-label="Add to wishlist"><Plus size={16} /></button>
+            </div>
+            {pending.length > 0 ? (
+              <div className="lx-list">
+                {pending.map((w) => {
+                  const days = Math.floor((Date.now() - w.createdAt) / 86400000);
+                  const left = Math.max(0, COOL_DAYS - days);
+                  const ready = left <= 0;
+                  const v = ready ? affordCheck(data, w.amount) : null;
+                  return (
+                    <div className="lx-wish-row" key={w.id}>
+                      <span className="ic">{ready ? "✨" : "💤"}</span>
+                      <div className="meta">
+                        <div className="t">{w.name}</div>
+                        <div className={"s" + (v ? " " + v.verdict : "")}>{ready ? (v ? v.headline : "Ready to decide") : `${left} day${left === 1 ? "" : "s"} to think it over`}</div>
+                      </div>
+                      <div className="amt">{formatMoney(w.amount, cur)}</div>
+                      {ready ? (
+                        <>
+                          <button className="lx-ghost sm" onClick={() => { decideWish(w.id, "skipped"); success(); }}>Skip</button>
+                          <button className="lx-primary sm" onClick={() => { decideWish(w.id, "bought"); success(); }}>Buy</button>
+                        </>
+                      ) : (
+                        <button className="lx-icon-btn danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="lx-wish-hint">Tempted by something? Add it here. I’ll hold it for {COOL_DAYS} days — most urges fade, and you’ll see if you can truly afford it then.</p>
+            )}
+          </section>
+        );
+      })()}
 
       <div className="lx-chat">
         {msgs.length === 0 && (

@@ -72,6 +72,8 @@ export default function BucketsPage() {
   const month = monthKey();
   const monthlyIncome = income.reduce((s, x) => s + x.amount, 0);
   const totalSetAside = buckets.reduce((s, b) => s + b.balance, 0);
+  const giveBuckets = buckets.filter((b) => b.kind === "give");
+  const giving = giveBuckets.reduce((s, b) => s + b.balance, 0);
 
   // ---- income ----
   function openIncome(x?: RecurringIncome) {
@@ -159,6 +161,17 @@ export default function BucketsPage() {
           )}
         </div>
       </div>
+
+      {/* GENEROSITY SNAPSHOT */}
+      {giving > 0 && (
+        <div className="lx-generosity lx-reveal">
+          <div className="lx-generosity-ic">🤲</div>
+          <div className="lx-generosity-meta">
+            <div className="lx-generosity-num">{formatMoney(giving, cur)}</div>
+            <div className="lx-generosity-lbl">set aside to give across {giveBuckets.length} bucket{giveBuckets.length === 1 ? "" : "s"} — generosity in motion. 🙏</div>
+          </div>
+        </div>
+      )}
 
       {/* INCOME */}
       <section className="lx-card lx-reveal">
