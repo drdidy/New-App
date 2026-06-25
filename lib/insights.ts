@@ -338,6 +338,7 @@ export interface SafeToSpend {
   committed: number; // obligations due before payday (bills + debt minimums)
   billsDue: number;
   debtDue: number;
+  setAside: number; // money earmarked in buckets (not free to spend)
   daysLeft: number;
   periodLabel: string; // e.g. "until payday May 28" / "left this month"
   dailyAllowance: number;
@@ -392,10 +393,15 @@ export function safeToSpend(data: AppData, memberId?: string): SafeToSpend {
   const debtDue = Math.max(0, debtMinDue - debtPaidThisMonth);
 
   const committed = billsDue + debtDue;
+  // Money assigned a job in buckets (tithe, savings, giving…) isn't free to
+  // spend — true envelope behavior. Member-scoped buckets honor the filter.
+  const setAside = (data.buckets || [])
+    .filter((b) => !memberId || b.memberId === memberId)
+    .reduce((s, b) => s + Math.max(0, b.balance), 0);
 
   if (hasAccounts) {
     const spendable = spendableCash(data);
-    const safe = spendable - committed;
+    const safe = spendable - committed - setAside;
     return {
       mode: "cash",
       safe,
@@ -403,6 +409,7 @@ export function safeToSpend(data: AppData, memberId?: string): SafeToSpend {
       committed,
       billsDue,
       debtDue,
+      setAside,
       daysLeft: cycle.daysLeft,
       periodLabel: cycle.label,
       dailyAllowance: Math.max(0, safe) / cycle.daysLeft,
@@ -416,7 +423,7 @@ export function safeToSpend(data: AppData, memberId?: string): SafeToSpend {
     .filter((t) => t.type === "expense" && t.date.startsWith(month) && (!memberId || t.memberId === memberId))
     .reduce((s, t) => s + t.amount, 0);
   const spendable = income - expenses;
-  const safe = spendable - committed;
+  const safe = spendable - committed - setAside;
   return {
     mode: "income",
     safe,
@@ -424,6 +431,7 @@ export function safeToSpend(data: AppData, memberId?: string): SafeToSpend {
     committed,
     billsDue,
     debtDue,
+    setAside,
     daysLeft: cycle.daysLeft,
     periodLabel: cycle.label,
     dailyAllowance: Math.max(0, safe) / cycle.daysLeft,
@@ -481,7 +489,10 @@ export function futureProjection(data: AppData, months = 12): FutureProjection |
   const bucketSave = (data.buckets || [])
     .filter((b) => (b.kind === "save" || b.kind === "invest") && b.allocType && b.allocValue)
     .reduce((s, b) => s + (b.allocType === "percent" ? (income * (b.allocValue || 0)) / 100 : (b.allocValue || 0)), 0);
-  const monthlySave = goalSave + bucketSave;
+  // Reality cap: you can't save + pay debt faster than you earn. Debt minimums
+  // are mandatory, so savings flexes down to what income can actually cover.
+  const monthlySaveRaw = goalSave + bucketSave;
+  const monthlySave = income > 0 ? Math.min(monthlySaveRaw, Math.max(0, income - monthlyDebtPay)) : monthlySaveRaw;
   if (debtNow <= 0 && monthlySave <= 0) return null;
   const debtThen = Math.max(0, debtNow - monthlyDebtPay * months);
   const savedAdded = monthlySave * months;
