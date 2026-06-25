@@ -89,6 +89,11 @@ export default function BillsPage() {
             <span>{formatMoney(monthlyTotal, cur)} bills</span>
             {loanTotal > 0 && <span>+ {formatMoney(loanTotal, cur)} loans & cards</span>}
           </div>
+          {committedTotal > 0 && (
+            <div className="lx-hero-hint" style={{ cursor: "default", borderBottom: "none" }}>
+              ≈ {formatMoney(committedTotal * 12, cur)} a year committed
+            </div>
+          )}
         </div>
       </div>
 
@@ -112,6 +117,7 @@ export default function BillsPage() {
                     <div className="t">{b.bill.name}</div>
                     <div className="s">
                       Due day {b.dueDay}{b.bill.autoLog ? " · auto" : ""}{multi && m ? ` · ${m.emoji}` : ""}
+                      {b.bill.category === "Subscription" ? ` · ${formatMoney(b.bill.amount * 12, cur)}/yr` : ""}
                       {b.paid ? " · ✓ paid" : soon ? ` · in ${b.daysAway}d` : ""}
                     </div>
                   </div>
