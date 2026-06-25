@@ -26,7 +26,7 @@ import type {
   ParsedEntry,
 } from "./types";
 import { uid, todayISO, monthKey } from "./format";
-import { inferDebtKind, netWorth as computeNetWorth } from "./insights";
+import { inferDebtKind, matchPersonDebts, netWorth as computeNetWorth } from "./insights";
 import { mergeData, sanitizeForSync } from "./merge";
 import { parseAppDataInput } from "./validation";
 
@@ -769,10 +769,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               ];
             }
           } else if (e.kind === "debt_payment") {
-            const party = (e.party || "").trim().toLowerCase();
-            const match = debts.find(
-              (x) => x.direction === "i_owe" && x.party.toLowerCase() === party,
-            );
+            // Tolerant match: "James" should find "James Allen" when it's
+            // unambiguous. (Ambiguous cases are resolved in the UI before this.)
+            const { exact, candidates } = matchPersonDebts(debts, e.party || "");
+            const match = exact || (candidates.length === 1 ? candidates[0] : undefined);
             if (match) {
               debts = debts.map((x) =>
                 x.id === match.id

@@ -71,6 +71,32 @@ describe("spendableCash", () => {
   });
 });
 
+describe("matchPersonDebts", () => {
+  const mk = (id: string, party: string, balance = 100): import("./types").Debt =>
+    ({ id, party, balance, direction: "i_owe", createdAt: 0 });
+  it("matches a first name to a full-name debt when unambiguous", async () => {
+    const { matchPersonDebts } = await import("./insights");
+    const r = matchPersonDebts([mk("d1", "James Allen")], "James");
+    expect(r.exact).toBeUndefined();
+    expect(r.candidates.map((c) => c.id)).toEqual(["d1"]);
+  });
+  it("returns multiple candidates when ambiguous", async () => {
+    const { matchPersonDebts } = await import("./insights");
+    const r = matchPersonDebts([mk("d1", "James Allen"), mk("d2", "James Brown")], "James");
+    expect(r.candidates).toHaveLength(2);
+  });
+  it("prefers an exact match", async () => {
+    const { matchPersonDebts } = await import("./insights");
+    const r = matchPersonDebts([mk("d1", "James Allen"), mk("d2", "James")], "james");
+    expect(r.exact?.id).toBe("d2");
+  });
+  it("ignores fully-paid debts", async () => {
+    const { matchPersonDebts } = await import("./insights");
+    const r = matchPersonDebts([mk("d1", "James Allen", 0)], "James");
+    expect(r.candidates).toHaveLength(0);
+  });
+});
+
 describe("cashOnHand reflects logged money", () => {
   it("adds income and subtracts expenses logged after the balance was set", async () => {
     const { cashOnHand } = await import("./insights");
