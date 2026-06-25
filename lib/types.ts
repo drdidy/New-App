@@ -178,6 +178,10 @@ export interface Account {
   memberId?: string;
   createdAt: number;
   updatedAt?: number;
+  // Epoch ms the `balance` figure was last set by hand. Transactions logged
+  // after this adjust the live balance, so logging income/spending actually
+  // moves your cash on hand (the balance is the baseline "as of" this moment).
+  balanceAsOf?: number;
 }
 
 // How the household gets paid — drives the "until payday" pace + period.

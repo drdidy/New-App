@@ -216,8 +216,26 @@ export function monthOverMonth(data: AppData): {
 
 // --- accounts / net worth ---------------------------------------------------
 
+// Net of money logged since the balances were last set by hand. Income adds,
+// expenses subtract — so logging "received $1,480" or "spent $40" actually
+// moves your cash on hand. Anchored per the primary liquid account's
+// balanceAsOf so a hand-set balance is never double-counted against old logs.
+function loggedSinceBalance(data: AppData): number {
+  const accounts = data.accounts || [];
+  if (accounts.length === 0) return 0;
+  const liquid = accounts.filter((a) => a.type === "checking" || a.type === "cash");
+  const anchor = liquid[0] || accounts[0];
+  const since = anchor.balanceAsOf ?? anchor.createdAt ?? 0;
+  let adj = 0;
+  for (const t of data.transactions) {
+    if ((t.createdAt ?? 0) <= since) continue;
+    adj += t.type === "income" ? t.amount : -t.amount;
+  }
+  return adj;
+}
+
 export function cashOnHand(data: AppData): number {
-  return (data.accounts || []).reduce((s, a) => s + a.balance, 0);
+  return (data.accounts || []).reduce((s, a) => s + a.balance, 0) + loggedSinceBalance(data);
 }
 
 // --- engagement: daily logging streak --------------------------------------
@@ -303,7 +321,7 @@ export function spendableCash(data: AppData): number {
   const accounts = data.accounts || [];
   const liquid = accounts.filter((a) => a.type === "checking" || a.type === "cash");
   const pool = liquid.length > 0 ? liquid : accounts;
-  return pool.reduce((s, a) => s + a.balance, 0);
+  return pool.reduce((s, a) => s + a.balance, 0) + loggedSinceBalance(data);
 }
 
 export interface SafeToSpend {
