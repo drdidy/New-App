@@ -20,6 +20,7 @@ import type {
   PayCycle,
   RecurringBill,
   RecurringIncome,
+  WishlistItem,
   ThemeName,
   Transaction,
   ParsedEntry,
@@ -46,6 +47,7 @@ function freshData(): AppData {
     recurringBills: [],
     recurringIncome: [],
     buckets: [],
+    wishlist: [],
     goals: [],
     accounts: [],
     netWorthHistory: [],
@@ -154,6 +156,16 @@ function migrate(raw: any): AppData {
       kind: (["save", "invest", "give", "spend", "other"] as const).includes(x.kind) ? x.kind : "save",
       name: typeof x.name === "string" && x.name ? x.name : "Bucket",
     }));
+  const wishlist: WishlistItem[] = (Array.isArray(raw.wishlist) ? raw.wishlist : [])
+    .filter((x: any) => x && typeof x === "object")
+    .map((x: WishlistItem) => ({
+      id: x.id || uid(),
+      name: typeof x.name === "string" && x.name ? x.name : "Something",
+      amount: Math.abs(num(x.amount)),
+      createdAt: num(x.createdAt, now),
+      decidedAt: x.decidedAt != null ? num(x.decidedAt) : undefined,
+      outcome: x.outcome === "bought" || x.outcome === "skipped" ? x.outcome : undefined,
+    }));
   const accounts: Account[] = (Array.isArray(raw.accounts) ? raw.accounts : [])
     .filter((a: any) => a && typeof a === "object")
     .map((a: Account) => ({
@@ -184,6 +196,7 @@ function migrate(raw: any): AppData {
     recurringBills,
     recurringIncome,
     buckets,
+    wishlist,
     goals,
     accounts,
     netWorthHistory: Array.isArray(raw.netWorthHistory) ? raw.netWorthHistory : [],
@@ -234,6 +247,9 @@ interface StoreContextValue {
   fundBucket: (id: string, amount: number) => void;
   distributePaycheck: (amount: number) => void;
   markPaycheckDistributed: () => void;
+  addWish: (name: string, amount: number) => void;
+  decideWish: (id: string, outcome: "bought" | "skipped") => void;
+  deleteWish: (id: string) => void;
   addGoal: (g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => void;
   updateGoal: (id: string, patch: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
@@ -1081,6 +1097,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => ({ ...d, lastPaycheckDistributed: monthKey() }));
   }, []);
 
+  // --- "sleep on it" wishlist ----------------------------------------------
+  const addWish = useCallback((name: string, amount: number) => {
+    const nm = name.trim();
+    if (!nm || !(amount > 0)) return;
+    const now = Date.now();
+    setData((d) => ({ ...d, wishlist: [{ id: uid(), name: nm, amount, createdAt: now }, ...(d.wishlist || [])] }));
+  }, []);
+  // Decide a wish: "bought" logs an expense; "skipped" banks it as money saved.
+  const decideWish = useCallback((id: string, outcome: "bought" | "skipped") => {
+    const now = Date.now();
+    setData((d) => {
+      const w = (d.wishlist || []).find((x) => x.id === id);
+      if (!w || w.outcome) return d;
+      const wishlist = (d.wishlist || []).map((x) => (x.id === id ? { ...x, outcome, decidedAt: now } : x));
+      if (outcome !== "bought") return { ...d, wishlist };
+      return {
+        ...d,
+        wishlist,
+        transactions: [
+          { id: uid(), type: "expense" as const, amount: Math.abs(w.amount), category: "Shopping", description: w.name, date: todayISO(), memberId: d.members[0]?.id, createdAt: now, updatedAt: now },
+          ...d.transactions,
+        ],
+      };
+    });
+  }, []);
+  const deleteWish = useCallback((id: string) => {
+    setData((d) => ({ ...d, wishlist: (d.wishlist || []).filter((x) => x.id !== id), tombstones: [...(d.tombstones || []), id] }));
+  }, []);
+
   const addGoal = useCallback((g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => {
     const now = Date.now();
     setData((d) => ({
@@ -1290,6 +1335,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fundBucket,
       distributePaycheck,
       markPaycheckDistributed,
+      addWish,
+      decideWish,
+      deleteWish,
       addGoal,
       updateGoal,
       deleteGoal,
@@ -1343,6 +1391,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       fundBucket,
       distributePaycheck,
       markPaycheckDistributed,
+      addWish,
+      decideWish,
+      deleteWish,
       addGoal,
       updateGoal,
       deleteGoal,

@@ -154,6 +154,15 @@ const bucketSchema = z.object({
   updatedAt: timestamp,
 });
 
+const wishlistSchema = z.object({
+  id: shortText(80),
+  name: shortText(160),
+  amount: money,
+  createdAt: z.number().finite().nonnegative(),
+  decidedAt: z.number().finite().nonnegative().optional(),
+  outcome: z.enum(["bought", "skipped"]).optional(),
+});
+
 const accountSchema = z.object({
   id: shortText(80),
   name: shortText(120),
@@ -183,6 +192,7 @@ export const appDataInputSchema = z
     recurringBills: z.array(billSchema).max(1000).optional(),
     recurringIncome: z.array(recurringIncomeSchema).max(500).optional(),
     buckets: z.array(bucketSchema).max(500).optional(),
+    wishlist: z.array(wishlistSchema).max(500).optional(),
     goals: z.array(goalSchema).max(1000).optional(),
     accounts: z.array(accountSchema).max(1000).optional(),
     netWorthHistory: z

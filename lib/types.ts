@@ -151,6 +151,18 @@ export interface Bucket {
   updatedAt?: number;
 }
 
+// A "sleep on it" wishlist entry — something you want to buy. The app holds it
+// through a short cooling-off window, then helps you decide. Skipped items feed
+// a "saved by waiting" total to reward patience over impulse.
+export interface WishlistItem {
+  id: string;
+  name: string;
+  amount: number;
+  createdAt: number;
+  decidedAt?: number;
+  outcome?: "bought" | "skipped";
+}
+
 // A real-money account the household holds (checking, savings, cash…). These
 // are assets; credit cards / loans live under Debts. Net worth = accounts +
 // owed-to-you − you-owe.
@@ -195,6 +207,7 @@ export interface AppData {
   recurringBills: RecurringBill[];
   recurringIncome?: RecurringIncome[];
   buckets?: Bucket[];
+  wishlist?: WishlistItem[];
   goals: Goal[];
   accounts: Account[];
   netWorthHistory: NetWorthPoint[];

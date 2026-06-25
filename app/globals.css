@@ -8540,3 +8540,21 @@ a.lx-stat::after, a.lx-metric::after {
 .lx-payday-head { font-weight: 820; font-size: 15.5px; color: #fff; }
 .lx-payday-sub { margin: 7px 0 0; font-size: 13px; line-height: 1.5; color: #d7e2f2; }
 .lx-payday-actions { display: flex; gap: 8px; margin-top: 13px; }
+
+/* "Sleep on it" wishlist */
+.lx-wish-saved { font-size: 12px; font-weight: 750; color: #06121f; background: var(--au-grad); padding: 3px 10px; border-radius: 999px; }
+.lx-wish-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.lx-wish-add input { flex: 1; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid var(--au-line); color: #fff; border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+.lx-wish-add input.amt { max-width: 84px; text-align: right; }
+.lx-wish-add input::placeholder { color: var(--au-mut); }
+.lx-wish-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.lx-wish-row:last-child { border-bottom: none; }
+.lx-wish-row .ic { font-size: 18px; flex: none; width: 26px; text-align: center; }
+.lx-wish-row .meta { flex: 1; min-width: 0; }
+.lx-wish-row .meta .t { font-weight: 700; font-size: 14px; color: #eef2fb; }
+.lx-wish-row .meta .s { font-size: 11.5px; color: var(--au-mut); margin-top: 1px; }
+.lx-wish-row .meta .s.yes { color: #6ff0d2; }
+.lx-wish-row .meta .s.caution { color: #f5c45a; }
+.lx-wish-row .meta .s.wait { color: #ff9db1; }
+.lx-wish-row .amt { font-weight: 820; font-size: 14px; color: #fff; font-variant-numeric: tabular-nums; flex: none; }
+.lx-wish-hint { margin: 0; font-size: 13px; line-height: 1.55; color: var(--au-mut); }
