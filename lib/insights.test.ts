@@ -71,6 +71,30 @@ describe("spendableCash", () => {
   });
 });
 
+describe("cashOnHand reflects logged money", () => {
+  it("adds income and subtracts expenses logged after the balance was set", async () => {
+    const { cashOnHand } = await import("./insights");
+    const data = base({
+      accounts: [{ id: "a", name: "Checking", type: "checking", balance: 1850, emoji: "", color: "#000", createdAt: 1000, balanceAsOf: 1000 }],
+      transactions: [
+        { id: "t1", type: "income", amount: 1480, category: "Income", description: "Mom & Dad", date: "2026-06-20", createdAt: 2000 },
+        { id: "t2", type: "expense", amount: 40, category: "Dining", description: "", date: "2026-06-21", createdAt: 3000 },
+      ],
+    });
+    expect(cashOnHand(data)).toBe(1850 + 1480 - 40); // 3290
+  });
+  it("ignores transactions from before the balance was set (no double-count)", async () => {
+    const { cashOnHand } = await import("./insights");
+    const data = base({
+      accounts: [{ id: "a", name: "Checking", type: "checking", balance: 1850, emoji: "", color: "#000", createdAt: 5000, balanceAsOf: 5000 }],
+      transactions: [
+        { id: "t1", type: "expense", amount: 100, category: "Dining", description: "", date: "2026-06-01", createdAt: 1000 },
+      ],
+    });
+    expect(cashOnHand(data)).toBe(1850);
+  });
+});
+
 describe("safeToSpend", () => {
   it("uses cash mode when accounts exist and subtracts obligations due before payday", () => {
     const data = base({

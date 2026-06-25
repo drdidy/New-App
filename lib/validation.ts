@@ -173,6 +173,7 @@ const accountSchema = z.object({
   memberId: shortText(80).optional(),
   createdAt: z.number().finite().nonnegative(),
   updatedAt: timestamp,
+  balanceAsOf: z.number().finite().nonnegative().optional(),
 });
 
 const payCycleSchema = z.object({

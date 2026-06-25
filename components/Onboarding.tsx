@@ -75,7 +75,7 @@ export default function Onboarding() {
     const cash = num(onHand);
     const accounts =
       cash !== undefined
-        ? [{ id: uid(), name: "Cash on hand", type: "checking" as const, balance: cash, emoji: "💵", color: MEMBER_COLORS[0], createdAt: Date.now(), updatedAt: Date.now() }]
+        ? [{ id: uid(), name: "Cash on hand", type: "checking" as const, balance: cash, emoji: "💵", color: MEMBER_COLORS[0], createdAt: Date.now(), updatedAt: Date.now(), balanceAsOf: Date.now() }]
         : undefined;
     success();
     completeOnboarding({

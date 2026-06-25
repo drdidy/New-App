@@ -171,6 +171,7 @@ function migrate(raw: any): AppData {
     .map((a: Account) => ({
       ...touch(attribute(a), a.updatedAt || a.createdAt || now),
       balance: num(a.balance),
+      balanceAsOf: a.balanceAsOf != null ? num(a.balanceAsOf) : undefined,
     }));
 
   const hadData = transactions.length > 0 || debts.length > 0;
@@ -1187,15 +1188,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const now = Date.now();
     setData((d) => ({
       ...d,
-      accounts: [{ ...a, id: uid(), createdAt: now, updatedAt: now }, ...(d.accounts || [])],
+      accounts: [{ ...a, id: uid(), createdAt: now, updatedAt: now, balanceAsOf: now }, ...(d.accounts || [])],
     }));
   }, []);
 
   const updateAccount = useCallback((id: string, patch: Partial<Account>) => {
     const now = Date.now();
+    // When the balance is set by hand, re-anchor "as of" now so prior logged
+    // transactions aren't double-counted against the fresh figure.
+    const stamp = patch.balance !== undefined ? { balanceAsOf: now } : {};
     setData((d) => ({
       ...d,
-      accounts: (d.accounts || []).map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
+      accounts: (d.accounts || []).map((x) => (x.id === id ? { ...x, ...patch, ...stamp, updatedAt: now } : x)),
     }));
   }, []);
 
