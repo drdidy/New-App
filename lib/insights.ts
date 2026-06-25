@@ -273,6 +273,28 @@ export function loggingStreak(data: AppData): Streak {
   return { count, loggedToday, best: Math.max(best, count) };
 }
 
+// Consecutive days (back from today) with zero spending — a gentle game that
+// rewards restraint. Resets the moment you log an expense today. Never counts
+// days before the user started using the app.
+export function noSpendStreak(data: AppData): number {
+  if (data.transactions.length === 0) return 0;
+  const spendDays = new Set<string>();
+  let earliest = "9999-99-99";
+  for (const t of data.transactions) {
+    const d = t.date.slice(0, 10);
+    if (d < earliest) earliest = d;
+    if (t.type === "expense") spendDays.add(d);
+  }
+  let count = 0;
+  for (let offset = 0; offset <= 366; offset++) {
+    const day = localDayMinus(offset);
+    if (day < earliest) break;
+    if (spendDays.has(day)) break;
+    count++;
+  }
+  return count;
+}
+
 // Cash you can actually spend *now*: checking + cash balances. Savings and
 // investments are real assets but aren't day-to-day spending money, so they're
 // excluded from "safe to spend". Falls back to all accounts if the household
