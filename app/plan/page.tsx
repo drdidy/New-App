@@ -156,16 +156,16 @@ export default function PlanPage() {
       </Link>
 
       <div className="lx-mgrid three lx-reveal">
-        <div className="lx-metric">
+        <Link href="/buckets" className="lx-metric">
           <div className="ic"><Wallet size={17} /></div>
           <div className="lx-metric-lbl">Income</div>
           <div className="lx-metric-num">{plan.income ? formatMoney(plan.income, cur) : "—"}</div>
-        </div>
-        <div className="lx-metric">
+        </Link>
+        <Link href="/buckets" className="lx-metric">
           <div className="ic"><PiggyBank size={17} /></div>
           <div className="lx-metric-lbl">Saving</div>
           <div className="lx-metric-num pos">{formatMoney(plan.savings, cur)}</div>
-        </div>
+        </Link>
         <div className="lx-metric">
           <div className="ic gold"><TrendingUp size={17} /></div>
           <div className="lx-metric-lbl">Surplus</div>

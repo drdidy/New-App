@@ -149,8 +149,8 @@ export default function TodayPage() {
           <div className="lx-bar"><span style={{ width: `${barPct}%` }} /></div>
           {sts.committed > 0 && (
             <div className="lx-hero-math">
-              <span>{formatMoney(sts.spendable, cur)} {sts.mode === "cash" ? "on hand" : "income left"}</span>
-              <span className="lx-hero-minus">− {formatMoney(sts.committed, cur)} due before payday</span>
+              <Link href="/spending" className="lx-hero-link">{formatMoney(sts.spendable, cur)} {sts.mode === "cash" ? "on hand" : "income left"}</Link>
+              <Link href="/bills" className="lx-hero-minus lx-hero-link">− {formatMoney(sts.committed, cur)} due before payday</Link>
             </div>
           )}
           {!sts.hasAccounts && !balOpen && (
@@ -191,18 +191,18 @@ export default function TodayPage() {
         </div>
       </div>
 
-      {/* REAL MONEY ROW (balance-first) */}
+      {/* REAL MONEY ROW (balance-first) — every tile drills into its screen */}
       <div className="lx-stats lx-reveal">
-        <div className="lx-stat">
+        <Link href="/spending" className="lx-stat">
           <Wallet size={16} className="lx-stat-ic" />
           <div className="lx-stat-num">{formatMoney(cash, cur)}</div>
           <div className="lx-stat-lbl">In your accounts</div>
-        </div>
-        <div className="lx-stat">
+        </Link>
+        <Link href="/spending" className="lx-stat">
           <Landmark size={16} className="lx-stat-ic" />
           <div className={"lx-stat-num " + (nw >= 0 ? "pos" : "calm")}>{formatMoney(nw, cur)}</div>
           <div className="lx-stat-lbl">Net worth</div>
-        </div>
+        </Link>
         <Link href="/debt" className="lx-stat">
           <ArrowDownRight size={16} className="lx-stat-ic neg" />
           <div className="lx-stat-num neg">{formatMoney(summary.totalIOwe, cur)}</div>

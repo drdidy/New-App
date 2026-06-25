@@ -7865,7 +7865,7 @@ body::after {
 /* --- coach --- */
 .lx-coach-avatar { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #14b8a6, #0f766e); box-shadow: 0 10px 22px -10px rgba(15,118,110,0.7); }
 .lx-coach-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
-.lx-coach-strip > div { background: var(--mc-glass); border: 1px solid var(--mc-line); border-radius: 16px; padding: 12px 14px; backdrop-filter: blur(12px); }
+.lx-coach-strip > div, .lx-coach-strip > a { background: var(--mc-glass); border: 1px solid var(--mc-line); border-radius: 16px; padding: 12px 14px; backdrop-filter: blur(12px); display: block; text-decoration: none; color: inherit; }
 .lx-coach-strip span { display: block; font-size: 11px; color: var(--mc-mut); font-weight: 600; }
 .lx-coach-strip b { display: block; font-size: 16px; font-weight: 830; color: var(--mc-ink); margin-top: 3px; font-variant-numeric: tabular-nums; }
 .lx-coach-strip b.pos { color: var(--mc-pos); } .lx-coach-strip b.neg { color: var(--mc-neg); }
@@ -8112,7 +8112,7 @@ body::after {
 .lx-blank h4, .lx-debt-empty h3 { color: #fff !important; }
 .lx-blank .ic, .lx-debt-empty-ic { background: rgba(46,230,192,0.12) !important; color: var(--au-teal) !important; }
 
-.lx-stat, .lx-metric, .lx-io, .lx-insight, .lx-coach-strip > div {
+.lx-stat, .lx-metric, .lx-io, .lx-insight, .lx-coach-strip > div, .lx-coach-strip > a {
   background: var(--au-card) !important; border: 1px solid var(--au-line) !important; backdrop-filter: blur(14px) !important;
   box-shadow: var(--au-glow) !important;
 }
@@ -8419,7 +8419,10 @@ body::after {
 .lx-nw {
   display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 16px;
   padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08);
+  text-decoration: none; color: inherit;
 }
+.lx-nw-go { color: var(--au-mut); margin-left: auto; opacity: .6; transition: transform .2s, opacity .2s; }
+@media (hover: hover) { a.lx-nw:hover .lx-nw-go { opacity: 1; transform: translateX(3px); color: var(--au-teal); } }
 .lx-nw-lbl { color: var(--au-mut); font-size: 13px; font-weight: 650; }
 .lx-nw-val { color: #d7def0; font-size: 17px; font-weight: 820; font-variant-numeric: tabular-nums; }
 .lx-nw-val.pos { color: var(--au-teal); }
@@ -8430,3 +8433,38 @@ body::after {
 
 /* "paid this month" badge on debt cards — reassuring, not alarming */
 .lx-debt-tags .paid { color: var(--au-teal) !important; font-weight: 700; }
+
+/* ============================================================================
+   ✦ INTERACTIVE NUMBERS & BOXES — tap to drill into the screen behind a figure,
+   with a subtle hover-lift + press response. Applied to stat/metric tiles that
+   are links, the coach strip, and inline "tap-through" figures.
+   ============================================================================ */
+a.lx-stat, a.lx-metric { display: block; text-decoration: none; color: inherit; }
+a.lx-stat, a.lx-metric, .lx-coach-strip a, a.lx-nw, .lx-tap {
+  cursor: pointer; position: relative;
+  transition: transform .16s var(--mc-spring), box-shadow .22s ease, border-color .22s ease, background .22s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  a.lx-stat:hover, a.lx-metric:hover, .lx-coach-strip a:hover, a.lx-nw:hover {
+    transform: translateY(-3px);
+    border-color: rgba(129,140,248,0.5) !important;
+    box-shadow: 0 18px 38px -18px rgba(129,140,248,0.6) !important;
+  }
+  .lx-tap:hover { color: #fff; }
+}
+a.lx-stat:active, a.lx-metric:active, .lx-coach-strip a:active, a.lx-nw:active { transform: scale(.97); }
+.lx-tap:active { transform: scale(.97); }
+/* a tiny corner arrow that fades in on hover, hinting "this goes somewhere" */
+a.lx-stat::after, a.lx-metric::after {
+  content: "↗"; position: absolute; top: 9px; right: 11px; font-size: 12px; font-weight: 800;
+  color: var(--au-teal); opacity: 0; transform: translateY(2px); transition: opacity .2s, transform .2s;
+}
+@media (hover: hover) { a.lx-stat:hover::after, a.lx-metric:hover::after { opacity: .85; transform: translateY(0); } }
+/* inline tappable figures inside hero text (e.g. "$323 due before payday") */
+.lx-hero-link {
+  color: inherit; cursor: pointer; border-bottom: 1px dashed rgba(255,255,255,0.28);
+  -webkit-tap-highlight-color: transparent; transition: border-color .2s, color .2s;
+}
+@media (hover: hover) { .lx-hero-link:hover { border-bottom-color: var(--au-teal); color: #fff; } }
+.lx-hero-link:active { opacity: .7; }
