@@ -1,5 +1,5 @@
 import type { AppData, Debt, DebtKind, RecurringBill } from "./types";
-import { monthKey, prevMonthKey } from "./format";
+import { monthKey, prevMonthKey, formatMoney } from "./format";
 
 // The household's monthly income baseline: this month's logged income if any,
 // otherwise the sum of members' stated monthly incomes (or legacy single value).
@@ -413,6 +413,46 @@ export function suggestPersonPayment(data: AppData, debt: Debt): PersonPaymentAd
 
   const months = Math.max(1, Math.ceil(bal / amount));
   return { mode: "partial", amount, months, spare };
+}
+
+// "Can I afford this?" — an instant gut-check for a one-off purchase, grounded
+// in real safe-to-spend (cash − what's due before payday), not vibes.
+export interface AffordVerdict {
+  verdict: "yes" | "caution" | "wait";
+  headline: string;
+  detail: string;
+}
+
+export function affordCheck(data: AppData, amount: number): AffordVerdict | null {
+  if (!(amount > 0)) return null;
+  const sts = safeToSpend(data);
+  const cur = data.currency;
+  const m = (n: number) => formatMoney(n, cur);
+  const periodTail = sts.daysLeft > 0 ? `the ${sts.daysLeft} days ${sts.periodLabel}` : sts.periodLabel;
+
+  if (amount <= sts.safe) {
+    const after = sts.safe - amount;
+    return {
+      verdict: "yes",
+      headline: "Yes — you've got this.",
+      detail: `You'd still have ${m(after)} safe to spend for ${periodTail}.`,
+    };
+  }
+  // Technically have the cash, but it eats into money set aside for what's due.
+  if (sts.mode === "cash" && amount <= sts.spendable) {
+    const into = amount - Math.max(0, sts.safe);
+    return {
+      verdict: "caution",
+      headline: "You can — but it's tight.",
+      detail: `This dips ${m(into)} into the ${m(sts.committed)} set aside for bills and debts due before payday. Doable if you trim elsewhere.`,
+    };
+  }
+  const over = amount - Math.max(0, sts.spendable);
+  return {
+    verdict: "wait",
+    headline: "Not yet — give it a few days.",
+    detail: `That's about ${m(over)} more than you can safely spend right now${sts.daysLeft > 0 ? `. It'll feel easier after payday in ${sts.daysLeft} day${sts.daysLeft === 1 ? "" : "s"}.` : "."}`,
+  };
 }
 
 // --- debt classification -----------------------------------------------------
