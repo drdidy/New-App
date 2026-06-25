@@ -705,6 +705,69 @@ export function payoffPlan(
 }
 
 // One-line, human insights for the dashboard. Returns up to `max` strings.
+// A proactive "worth knowing" digest — the app noticing things for you, leading
+// with wins and useful heads-ups rather than nagging. Returns toned items,
+// ranked good → info → warn, so the screen feels encouraging first.
+export interface Knowable {
+  tone: "good" | "info" | "warn";
+  text: string;
+}
+
+export function worthKnowing(data: AppData, max = 3): Knowable[] {
+  const cur = data.currency;
+  const m = (n: number) => formatMoney(n, cur);
+  const good: Knowable[] = [];
+  const info: Knowable[] = [];
+  const warn: Knowable[] = [];
+
+  const mom = monthOverMonth(data);
+  const sts = safeToSpend(data);
+  const budgets = budgetStatus(data);
+
+  // 🎉 Wins first.
+  if (mom.changePct !== null && mom.changePct <= -8) {
+    good.push({ tone: "good", text: `You're spending ${Math.abs(Math.round(mom.changePct))}% less than this point last month — nice work.` });
+  }
+  for (const d of data.debts.filter((x) => x.direction === "i_owe" && (x.original || 0) > 0 && x.balance > 0)) {
+    const paidPct = ((d.original! - d.balance) / d.original!) * 100;
+    for (const mk of [75, 50, 25]) {
+      if (paidPct >= mk && paidPct < mk + 10) { good.push({ tone: "good", text: `You've cleared ${Math.round(paidPct)}% of ${d.party} — momentum's on your side. 🎉` }); break; }
+    }
+  }
+
+  // ℹ️ Useful heads-ups.
+  if (sts.committed > 0) {
+    info.push({ tone: "info", text: `${m(sts.committed)} in bills & payments land before payday — already set aside.` });
+  }
+  // A category running hot vs last month (subscription / spending creep).
+  const thisCats = categoryBreakdown(data);
+  const prevCats = categoryBreakdown(data, prevMonthKey());
+  for (const c of thisCats) {
+    if (c.category === "Debt payment") continue;
+    const prev = prevCats.find((p) => p.category === c.category)?.amount || 0;
+    if (prev > 0 && c.amount - prev >= 50 && c.amount >= prev * 1.3) {
+      info.push({ tone: "info", text: `${c.category} is ${m(c.amount - prev)} higher than last month so far — worth a glance.` });
+      break;
+    }
+  }
+
+  // ⚠️ Gentle alerts.
+  if (sts.safe < 0) {
+    warn.push({ tone: "warn", text: `You're ${m(-sts.safe)} short for what's due before payday — tap Coach for a plan.` });
+  }
+  const over = budgets.find((b) => b.over);
+  if (over) warn.push({ tone: "warn", text: `Over your ${over.category} budget — ${Math.round(over.pct)}% used.` });
+  const billSoon = billsThisMonth(data).filter((b) => !b.paid && b.daysAway >= 0 && b.daysAway <= 4).sort((a, b) => a.daysAway - b.daysAway)[0];
+  if (billSoon) warn.push({ tone: "warn", text: billSoon.daysAway === 0 ? `${billSoon.bill.name} is due today.` : `${billSoon.bill.name} is due in ${billSoon.daysAway} day${billSoon.daysAway === 1 ? "" : "s"}.` });
+
+  // Encouraging fallback so the digest is never empty / never doom-only.
+  if (good.length === 0 && info.length === 0 && sts.safe >= 0) {
+    good.push({ tone: "good", text: `You're on track — ${m(Math.max(0, sts.dailyAllowance))}/day to play with for the ${sts.daysLeft} days ${sts.periodLabel}.` });
+  }
+
+  return [...good, ...info, ...warn].slice(0, max);
+}
+
 export function quickInsights(data: AppData, currency: string, max = 3): string[] {
   const out: string[] = [];
   const mom = monthOverMonth(data);

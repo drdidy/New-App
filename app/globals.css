@@ -8506,3 +8506,12 @@ a.lx-stat::after, a.lx-metric::after {
 .lx-afford-verdict.caution strong { color: #f5c45a; }
 .lx-afford-verdict.wait { background: rgba(255,120,150,0.1); border: 1px solid rgba(255,120,150,0.3); }
 .lx-afford-verdict.wait strong { color: #ff9db1; }
+
+/* "Worth knowing" — proactive digest, leads with wins */
+.lx-know-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 2px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.lx-know-row:last-child { border-bottom: none; }
+.lx-know-ic { width: 30px; height: 30px; border-radius: 10px; flex: none; display: grid; place-items: center; }
+.lx-know-row.good .lx-know-ic { color: var(--au-teal); background: rgba(46,230,192,0.12); }
+.lx-know-row.info .lx-know-ic { color: #a9b6ff; background: rgba(129,140,248,0.14); }
+.lx-know-row.warn .lx-know-ic { color: #ffb4c2; background: rgba(255,120,150,0.13); }
+.lx-know-txt { font-size: 13.5px; line-height: 1.5; color: #d7e2f2; padding-top: 5px; }
