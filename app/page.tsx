@@ -109,7 +109,7 @@ export default function TodayPage() {
   const bills = billsThisMonth(data).filter((b) => !b.paid);
   const recent = data.transactions.slice(0, 5);
   const goal = data.goals[0];
-  const knowables = worthKnowing(data, 3);
+  const knowables = worthKnowing(data, 4);
   const safePos = sts.safe >= 0;
   const cur = data.currency;
   const barPct = sts.spendable > 0 ? Math.max(0, Math.min(100, (sts.safe / sts.spendable) * 100)) : safePos ? 60 : 8;
