@@ -25,8 +25,9 @@ import {
   loggingStreak,
   worthKnowing,
   affordCheck,
+  paycheckPlan,
 } from "@/lib/insights";
-import { formatMoney, friendlyDate } from "@/lib/format";
+import { formatMoney, friendlyDate, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
@@ -44,7 +45,7 @@ const CAT_ICON: Record<string, string> = {
 };
 
 export default function TodayPage() {
-  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount } = useStore();
+  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed } = useStore();
   const root = useRef<HTMLElement>(null);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [amt, setAmt] = useState("");
@@ -172,6 +173,27 @@ export default function TodayPage() {
           )}
         </div>
       </div>
+
+      {/* GIVE & SAVE FIRST — proactive paycheck-allocation nudge */}
+      {(() => {
+        const plan = paycheckPlan(data);
+        if (!plan || data.lastPaycheckDistributed === monthKey()) return null;
+        return (
+          <section className="lx-payday lx-reveal">
+            <div className="lx-payday-head">🙏 You’ve been paid {formatMoney(plan.income, cur)} this month</div>
+            <p className="lx-payday-sub">
+              Give and save first — set aside {formatMoney(plan.setAside, cur)}
+              {plan.tithe > 0 ? `, including ${formatMoney(plan.tithe, cur)} for giving,` : ""} across {plan.bucketCount} bucket{plan.bucketCount === 1 ? "" : "s"} before it slips away.
+            </p>
+            <div className="lx-payday-actions">
+              <button className="lx-primary sm" onClick={() => { distributePaycheck(plan.income); markPaycheckDistributed(); success(); }}>
+                <Sparkles size={14} /> Set aside {formatMoney(plan.setAside, cur)}
+              </button>
+              <button className="lx-ghost sm" onClick={() => markPaycheckDistributed()}>Not now</button>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* STREAK / MOMENTUM */}
       <div className="lx-momentum lx-reveal">

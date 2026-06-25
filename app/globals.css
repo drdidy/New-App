@@ -8531,3 +8531,12 @@ a.lx-stat::after, a.lx-metric::after {
 }
 .lx-freedom-tick.hit i { background: var(--au-grad); color: #06121f; border: none; box-shadow: 0 0 12px -2px rgba(46,230,192,0.8); }
 .lx-freedom-sub { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--au-mut); text-align: center; }
+
+/* "Give & save first" payday nudge */
+.lx-payday {
+  background: linear-gradient(150deg, rgba(46,230,192,0.12), rgba(129,140,248,0.1));
+  border: 1px solid rgba(46,230,192,0.28); border-radius: 20px; padding: 16px; box-shadow: var(--au-glow); backdrop-filter: blur(14px);
+}
+.lx-payday-head { font-weight: 820; font-size: 15.5px; color: #fff; }
+.lx-payday-sub { margin: 7px 0 0; font-size: 13px; line-height: 1.5; color: #d7e2f2; }
+.lx-payday-actions { display: flex; gap: 8px; margin-top: 13px; }

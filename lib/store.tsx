@@ -193,6 +193,7 @@ function migrate(raw: any): AppData {
     monthlyIncome: raw.monthlyIncome,
     remindersEnabled: Boolean(raw.remindersEnabled),
     lastCheckIn: raw.lastCheckIn,
+    lastPaycheckDistributed: raw.lastPaycheckDistributed,
     tombstones: Array.isArray(raw.tombstones) ? raw.tombstones : [],
     settingsUpdatedAt: raw.settingsUpdatedAt || 0,
     syncCode: raw.syncCode,
@@ -232,6 +233,7 @@ interface StoreContextValue {
   deleteBucket: (id: string) => void;
   fundBucket: (id: string, amount: number) => void;
   distributePaycheck: (amount: number) => void;
+  markPaycheckDistributed: () => void;
   addGoal: (g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => void;
   updateGoal: (id: string, patch: Partial<Goal>) => void;
   deleteGoal: (id: string) => void;
@@ -1073,6 +1075,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  // Stamp that this month's paycheck-allocation prompt was handled (acted on or
+  // dismissed), so the "give & save first" nudge shows at most once per month.
+  const markPaycheckDistributed = useCallback(() => {
+    setData((d) => ({ ...d, lastPaycheckDistributed: monthKey() }));
+  }, []);
+
   const addGoal = useCallback((g: Omit<Goal, "id" | "createdAt" | "saved"> & { saved?: number }) => {
     const now = Date.now();
     setData((d) => ({
@@ -1281,6 +1289,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteBucket,
       fundBucket,
       distributePaycheck,
+      markPaycheckDistributed,
       addGoal,
       updateGoal,
       deleteGoal,
@@ -1333,6 +1342,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteBucket,
       fundBucket,
       distributePaycheck,
+      markPaycheckDistributed,
       addGoal,
       updateGoal,
       deleteGoal,

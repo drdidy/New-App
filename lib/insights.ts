@@ -415,6 +415,36 @@ export function suggestPersonPayment(data: AppData, debt: Debt): PersonPaymentAd
   return { mode: "partial", amount, months, spare };
 }
 
+// "Give & save first" — when income has landed this month and the household has
+// buckets with auto-fill rules, preview how a paycheck would split so we can
+// nudge them to set aside their tithe / savings before it gets spent.
+export interface PaycheckPlan {
+  income: number;
+  setAside: number;
+  tithe: number;
+  bucketCount: number;
+}
+
+export function paycheckPlan(data: AppData): PaycheckPlan | null {
+  const month = monthKey();
+  const income = data.transactions
+    .filter((t) => t.type === "income" && t.date.startsWith(month))
+    .reduce((s, t) => s + t.amount, 0);
+  if (income <= 0) return null;
+  const buckets = (data.buckets || []).filter((b) => b.allocType && b.allocValue);
+  if (buckets.length === 0) return null;
+  const items = buckets
+    .map((b) => ({ kind: b.kind, amount: b.allocType === "percent" ? (income * (b.allocValue || 0)) / 100 : (b.allocValue || 0) }))
+    .filter((i) => i.amount > 0);
+  if (items.length === 0) return null;
+  return {
+    income,
+    setAside: items.reduce((s, i) => s + i.amount, 0),
+    tithe: items.filter((i) => i.kind === "give").reduce((s, i) => s + i.amount, 0),
+    bucketCount: items.length,
+  };
+}
+
 // "Can I afford this?" — an instant gut-check for a one-off purchase, grounded
 // in real safe-to-spend (cash − what's due before payday), not vibes.
 export interface AffordVerdict {
