@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { clampPct, formatMoney, monthKey } from "@/lib/format";
+import { success } from "@/lib/haptics";
 import type { Bucket, BucketKind, RecurringIncome } from "@/lib/types";
 
 const KIND: Record<BucketKind, { label: string; emoji: string; Icon: typeof PiggyBank }> = {
@@ -117,6 +118,7 @@ export default function BucketsPage() {
     const a = parseFloat(fundAmt);
     if (!(a > 0)) return;
     fundBucket(id, sign * a);
+    success();
     setFundId(null); setFundAmt("");
   }
   function previewSplit(amount: number) {
@@ -176,7 +178,7 @@ export default function BucketsPage() {
                   </button>
                   <div className="amt pos">{formatMoney(x.amount, cur)}</div>
                   {got ? <span className="lx-paid"><Check size={15} /></span>
-                    : <button className="lx-ghost sm" onClick={() => receiveIncome(x.id)}>Receive</button>}
+                    : <button className="lx-ghost sm" onClick={() => { receiveIncome(x.id); success(); }}>Receive</button>}
                   <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${x.name}"?`)) deleteIncome(x.id); }} aria-label="Delete"><Trash2 size={14} /></button>
                 </div>
               );
@@ -322,7 +324,7 @@ export default function BucketsPage() {
           ) : (
             <p className="lx-group-sub">Give buckets a “% of pay” or “fixed” rule and they’ll fill here automatically.</p>
           )}
-          <button className="lx-primary full" style={{ marginTop: 12 }} onClick={() => { distributePaycheck(distNum); setDistOpen(false); }} disabled={!(distNum > 0) || split.length === 0}>
+          <button className="lx-primary full" style={{ marginTop: 12 }} onClick={() => { distributePaycheck(distNum); success(); setDistOpen(false); }} disabled={!(distNum > 0) || split.length === 0}>
             <Repeat size={16} /> Fill {split.length} bucket{split.length === 1 ? "" : "s"}
           </button>
         </Sheet>

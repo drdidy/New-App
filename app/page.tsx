@@ -26,6 +26,7 @@ import {
   quickInsights,
 } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
+import { success } from "@/lib/haptics";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
 
@@ -56,6 +57,7 @@ export default function TodayPage() {
     const liquid = (data.accounts || []).find((a) => a.type === "checking" || a.type === "cash");
     if (liquid) updateAccount(liquid.id, { balance: v });
     else addAccount({ name: "Cash on hand", type: "checking", balance: v, emoji: "💵", color: "#5e7fa6" });
+    success();
     setBalOpen(false);
     setBalInput("");
   }
