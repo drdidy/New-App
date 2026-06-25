@@ -67,6 +67,9 @@ export default function SpendingPage() {
   const nw = netWorth(data);
   const cash = cashOnHand(data);
   const accounts = data.accounts || [];
+  const nwHist = data.netWorthHistory || [];
+  const lastMonthNw = nwHist.length >= 2 ? nwHist[nwHist.length - 2].value : null;
+  const nwDelta = lastMonthNw != null ? nw - lastMonthNw : null;
 
   const slices = cats.slice(0, 6).map((c, i) => ({ label: c.category, value: c.amount, color: CHART[i % CHART.length] }));
   const trendVals = trend.map((m) => m.expense);
@@ -110,12 +113,27 @@ export default function SpendingPage() {
         </button>
       </header>
 
-      {/* NET WORTH HERO */}
+      {/* HERO — lead with what you have; frame net worth as a journey, not a verdict */}
       <div className="lx-hero lx-reveal">
         <div className="lx-hero-inner">
-          <div className="lx-hero-label">Net worth</div>
-          <div className={"lx-hero-num " + (nw >= 0 ? "pos" : "neg")}>{formatMoney(nw, cur)}</div>
-          <div className="lx-hero-sub">{formatMoney(cash, cur)} across {accounts.length} account{accounts.length === 1 ? "" : "s"} · minus what you owe.</div>
+          <div className="lx-hero-label">Money to your name</div>
+          <div className="lx-hero-num pos">{formatMoney(cash, cur)}</div>
+          <div className="lx-hero-sub">Across {accounts.length} account{accounts.length === 1 ? "" : "s"} — what you actually have right now.</div>
+          <div className="lx-nw">
+            <span className="lx-nw-lbl">Net worth</span>
+            <span className={"lx-nw-val " + (nw >= 0 ? "pos" : "")}>{formatMoney(nw, cur)}</span>
+            {nwDelta != null && nwDelta !== 0 && (
+              <span className={"lx-nw-delta " + (nwDelta > 0 ? "up" : "down")}>
+                {nwDelta > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                {formatMoney(Math.abs(nwDelta), cur)} this month
+              </span>
+            )}
+          </div>
+          {nw < 0 && (
+            <p className="lx-nw-note">
+              Most people building wealth start below zero — what matters is the direction, not today’s number. Every debt payment moves this up. 📈
+            </p>
+          )}
         </div>
       </div>
 

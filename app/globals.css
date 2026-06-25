@@ -8413,3 +8413,17 @@ body::after {
   color: #fff; border-radius: 12px; padding: 11px 13px; font-size: 14px;
 }
 .lx-balset input::placeholder { color: var(--au-mut); }
+
+/* Net worth framed as a journey, not a verdict — calm, never alarm-red */
+.lx-stat-num.calm { color: #b9c4dc; }
+.lx-nw {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 16px;
+  padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08);
+}
+.lx-nw-lbl { color: var(--au-mut); font-size: 13px; font-weight: 650; }
+.lx-nw-val { color: #d7def0; font-size: 17px; font-weight: 820; font-variant-numeric: tabular-nums; }
+.lx-nw-val.pos { color: var(--au-teal); }
+.lx-nw-delta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.lx-nw-delta.up { color: #6ff0d2; background: rgba(46,230,192,0.12); }
+.lx-nw-delta.down { color: #b9c4dc; background: rgba(255,255,255,0.06); }
+.lx-nw-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.55; color: #aeb9d2; }
