@@ -32,6 +32,7 @@ import { success } from "@/lib/haptics";
 import type { AppData, Debt, DebtDirection, DebtKind } from "@/lib/types";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
+import Burst from "@/components/Burst";
 
 const KIND_META: Record<DebtKind, { label: string; icon: typeof CreditCard }> = {
   person: { label: "Person", icon: Users },
@@ -66,6 +67,7 @@ export default function DebtsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmt, setPayAmt] = useState("");
+  const [burstKey, setBurstKey] = useState(0);
 
   const cur = data?.currency || "USD";
 
@@ -133,8 +135,13 @@ export default function DebtsPage() {
   function submitPayment(id: string) {
     const amt = Math.max(0, parseFloat(payAmt) || 0);
     if (amt <= 0) return;
+    // Celebrate crossing a payoff milestone (25/50/75/100% across all debts).
+    const beforePct = original ? ((original - total) / original) * 100 : 0;
+    const afterPct = original ? ((original - total + amt) / original) * 100 : 0;
+    const crossed = [25, 50, 75, 100].some((t) => beforePct < t && afterPct >= t);
     payDebt(id, amt);
     success();
+    if (crossed) { setBurstKey((k) => k + 1); if (navigator.vibrate) navigator.vibrate([18, 50, 24, 50, 30]); }
     setPayAmt("");
     setPayingId(null);
   }
@@ -150,6 +157,10 @@ export default function DebtsPage() {
           <Plus size={20} />
         </button>
       </header>
+
+      {burstKey > 0 && (
+        <div className="lx-burst-anchor"><Burst key={burstKey} /></div>
+      )}
 
       {/* SUMMARY HERO */}
       <div className="lx-hero">
@@ -171,6 +182,31 @@ export default function DebtsPage() {
           )}
         </div>
       </div>
+
+      {/* DEBT-FREE COUNTDOWN + MILESTONES */}
+      {hasDebt && (
+        <div className="lx-freedom lx-reveal">
+          <div className="lx-freedom-top">
+            <span className="lx-freedom-lbl">🎯 The road to debt-free</span>
+            {targetDate && (sim.months ?? 0) > 0 && (
+              <span className="lx-freedom-when">{sim.months} mo · {targetDate.toLocaleDateString(undefined, { month: "short", year: "numeric" })}</span>
+            )}
+          </div>
+          <div className="lx-freedom-track">
+            <span className="lx-freedom-fill" style={{ width: `${paidPct}%` }} />
+            {[25, 50, 75, 100].map((mk) => (
+              <span key={mk} className={"lx-freedom-tick" + (paidPct >= mk ? " hit" : "")} style={{ left: `${mk}%` }}>
+                <i>{paidPct >= mk ? "✓" : `${mk}`}</i>
+              </span>
+            ))}
+          </div>
+          <p className="lx-freedom-sub">
+            {paidPct >= 100
+              ? "You did it — every debt cleared. 🎉"
+              : `${formatMoney(original - total, cur)} of ${formatMoney(original, cur)} paid off. Every payment moves the finish line closer.`}
+          </p>
+        </div>
+      )}
 
       {/* WHAT-IF PLANNER */}
       {hasDebt && (
