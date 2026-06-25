@@ -26,7 +26,7 @@ import {
   payoffProjection,
   simulatePayoff,
 } from "@/lib/insights";
-import { clampPct, formatMoney, friendlyDate } from "@/lib/format";
+import { clampPct, formatMoney, friendlyDate, monthKey } from "@/lib/format";
 import type { Debt, DebtDirection, DebtKind } from "@/lib/types";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
@@ -358,6 +358,8 @@ function DebtCard(props: {
   const pct = d.original ? clampPct(((d.original - d.balance) / d.original) * 100) : 0;
   const open = expanded === d.id;
   const paying = payingId === d.id;
+  const monthNow = monthKey();
+  const paidThisMonth = d.lastPaidMonth === monthNow || (d.payments || []).some((p) => p.date.startsWith(monthNow));
   const dueSoon = d.dueDate
     ? Math.ceil((new Date(d.dueDate + "T00:00:00").getTime() - Date.now()) / 86400000)
     : null;
@@ -371,7 +373,9 @@ function DebtCard(props: {
           <div className="lx-debt-tags">
             {d.apr ? <span>{d.apr}% APR</span> : null}
             {d.minPayment ? <span>{formatMoney(d.minPayment, cur)}/mo min</span> : null}
-            {dueSoon != null ? (
+            {paidThisMonth ? (
+              <span className="paid">paid this month ✓</span>
+            ) : dueSoon != null ? (
               <span className={dueSoon <= 5 ? "warn" : ""}>
                 {dueSoon < 0 ? "overdue" : dueSoon === 0 ? "due today" : `due in ${dueSoon}d`}
               </span>

@@ -656,10 +656,13 @@ export function quickInsights(data: AppData, currency: string, max = 3): string[
       `You've spent ${Math.abs(Math.round(mom.changePct))}% ${dir} than last month so far.`,
     );
   }
-  if (cats.length > 0 && cats[0].pct >= 35) {
+  // Biggest *discretionary* category — debt payments are obligations, not
+  // spending choices, and calling them "your biggest category" only demoralizes.
+  const topSpend = cats.find((c) => c.category !== "Debt payment");
+  if (topSpend && topSpend.pct >= 35) {
     out.push(
-      `${cats[0].category} is your biggest category — ${Math.round(
-        cats[0].pct,
+      `${topSpend.category} is your biggest category — ${Math.round(
+        topSpend.pct,
       )}% of spending.`,
     );
   }
