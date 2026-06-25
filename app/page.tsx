@@ -146,10 +146,11 @@ export default function TodayPage() {
               : "You're short for what's due before payday — tap Coach for a plan."}
           </div>
           <div className="lx-bar"><span style={{ width: `${barPct}%` }} /></div>
-          {sts.committed > 0 && (
+          {(sts.committed > 0 || sts.setAside > 0) && (
             <div className="lx-hero-math">
               <Link href="/spending" className="lx-hero-link">{formatMoney(sts.spendable, cur)} {sts.mode === "cash" ? "on hand" : "income left"}</Link>
-              <Link href="/bills" className="lx-hero-minus lx-hero-link">− {formatMoney(sts.committed, cur)} due before payday</Link>
+              {sts.committed > 0 && <Link href="/bills" className="lx-hero-minus lx-hero-link">− {formatMoney(sts.committed, cur)} due before payday</Link>}
+              {sts.setAside > 0 && <Link href="/buckets" className="lx-hero-minus lx-hero-link">− {formatMoney(sts.setAside, cur)} set aside in buckets</Link>}
             </div>
           )}
           {!sts.hasAccounts && !balOpen && (
