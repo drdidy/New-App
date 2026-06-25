@@ -235,11 +235,18 @@ export default function AdvisorPage() {
 
       <div className="lx-chat">
         {msgs.length === 0 && (
-          <div className="lx-bubble coach">
-            {hasMoneyHistory
-              ? `Hi ${firstName === "there" ? "there" : firstName} — I can see your latest numbers. Ask me anything, or tap a starter below.`
-              : "Welcome in. Add a few transactions, bills, or balances and I'll turn them into a calm, specific plan. Ask me anything to start."}
-          </div>
+          <>
+            <div className="lx-bubble coach">
+              {hasMoneyHistory
+                ? `Hi ${firstName === "there" ? "there" : firstName} — I can see your latest numbers. Ask me anything, or tap a starter below.`
+                : "Welcome in. Add a few transactions, bills, or balances and I'll turn them into a calm, specific plan. Ask me anything to start."}
+            </div>
+            <div className="lx-chips lx-coach-starters">
+              {STARTERS.map((s) => (
+                <button key={s} className="lx-chip" onClick={() => send(s)}>{s} <ArrowRight size={12} /></button>
+              ))}
+            </div>
+          </>
         )}
         {msgs.map((m, i) => (
           <div key={i} className={"lx-bubble " + (m.role === "user" ? "me" : "coach")}>{m.content}</div>
@@ -247,14 +254,6 @@ export default function AdvisorPage() {
         {busy && <div className="lx-typing"><span /><span /><span /></div>}
         <div ref={endRef} />
       </div>
-
-      {msgs.length === 0 && (
-        <div className="lx-chips lx-coach-starters">
-          {STARTERS.map((s) => (
-            <button key={s} className="lx-chip" onClick={() => send(s)}>{s} <ArrowRight size={12} /></button>
-          ))}
-        </div>
-      )}
 
       {voiceNote && <p className="lx-voicenote">{voiceNote}</p>}
 

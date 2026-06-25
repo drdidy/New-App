@@ -7800,7 +7800,7 @@ body::after {
 .lx-toggle input { width: 20px; height: 20px; accent-color: var(--mc-teal); }
 
 /* --- Coach chat --- */
-.lx-chat { display: flex; flex-direction: column; gap: 10px; min-height: 200px; }
+.lx-chat { display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
 .lx-bubble { max-width: 82%; padding: 11px 14px; border-radius: 18px; font-size: 14px; line-height: 1.5; }
 .lx-bubble.me { align-self: flex-end; background: linear-gradient(135deg, #14b8a6, #0f766e); color: #fff; border-bottom-right-radius: 6px; }
 .lx-bubble.coach { align-self: flex-start; background: #fff; color: var(--mc-ink); border: 1px solid var(--mc-line); border-bottom-left-radius: 6px; }
@@ -8427,3 +8427,6 @@ body::after {
 .lx-nw-delta.up { color: #6ff0d2; background: rgba(46,230,192,0.12); }
 .lx-nw-delta.down { color: #b9c4dc; background: rgba(255,255,255,0.06); }
 .lx-nw-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.55; color: #aeb9d2; }
+
+/* "paid this month" badge on debt cards — reassuring, not alarming */
+.lx-debt-tags .paid { color: var(--au-teal) !important; font-weight: 700; }
