@@ -24,6 +24,7 @@ import {
   safeToSpend,
   loggingStreak,
   quickInsights,
+  affordCheck,
 } from "@/lib/insights";
 import { formatMoney, friendlyDate } from "@/lib/format";
 import { success } from "@/lib/haptics";
@@ -50,6 +51,7 @@ export default function TodayPage() {
   const [desc, setDesc] = useState("");
   const [balOpen, setBalOpen] = useState(false);
   const [balInput, setBalInput] = useState("");
+  const [affordQ, setAffordQ] = useState("");
 
   function saveBalance() {
     const v = parseFloat(balInput.replace(/[$,\s]/g, ""));
@@ -223,6 +225,30 @@ export default function TodayPage() {
           <span className="lx-io-num neg">{formatMoney(summary.expenses, cur)}</span>
           <span className="lx-io-lbl">Out</span>
         </div>
+      </div>
+
+      {/* CAN I AFFORD IT? — instant gut-check on a purchase */}
+      <div className="lx-afford lx-reveal">
+        <div className="lx-afford-top">
+          <span className="lx-afford-q"><Sparkles size={15} /> Can I afford…</span>
+          <div className="lx-afford-input">
+            <span>{cur === "USD" ? "$" : ""}</span>
+            <input
+              type="number" inputMode="decimal" placeholder="amount"
+              value={affordQ} onChange={(e) => setAffordQ(e.target.value)}
+            />
+          </div>
+        </div>
+        {(() => {
+          const v = affordCheck(data, parseFloat(affordQ) || 0);
+          if (!v) return <p className="lx-afford-hint">Type a price and I’ll tell you straight — grounded in your real cash, not vibes.</p>;
+          return (
+            <div className={"lx-afford-verdict " + v.verdict}>
+              <strong>{v.headline}</strong>
+              <span>{v.detail}</span>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="lx-reveal"><QuickCapture /></div>
