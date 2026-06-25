@@ -1,7 +1,7 @@
 // Minimal offline-capable service worker for Money Coach.
 // Strategy: network-first for navigation/app shell, falling back to cache so
 // the app still opens when the phone is offline. API calls always go to network.
-const CACHE = "money-coach-v19-polish";
+const CACHE = "money-coach-v20-haptics";
 const SHELL = [
   "/",
   "/plan",

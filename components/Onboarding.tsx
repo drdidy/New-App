@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { uid, CURRENCIES, MEMBER_COLORS } from "@/lib/format";
+import { success } from "@/lib/haptics";
 import type { Member } from "@/lib/types";
 
 const FEATURES: Array<{ Icon: LucideIcon; title: string; body: string }> = [
@@ -76,6 +77,7 @@ export default function Onboarding() {
       cash !== undefined
         ? [{ id: uid(), name: "Cash on hand", type: "checking" as const, balance: cash, emoji: "💵", color: MEMBER_COLORS[0], createdAt: Date.now(), updatedAt: Date.now() }]
         : undefined;
+    success();
     completeOnboarding({
       householdName: name.trim() ? `${me}'s money` : "My money",
       currency,

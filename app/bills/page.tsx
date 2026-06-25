@@ -6,6 +6,7 @@ import { ArrowRight, Calendar, Check, CreditCard, Landmark, Pencil, Plus, Repeat
 import { useStore } from "@/lib/store";
 import { billsThisMonth } from "@/lib/insights";
 import { formatMoney, monthLabel, monthKey } from "@/lib/format";
+import { success } from "@/lib/haptics";
 import MemberPicker from "@/components/MemberPicker";
 
 const CATEGORIES = ["Rent", "Utilities", "Subscription", "Insurance", "Phone", "Internet", "Loan", "Childcare", "Other"];
@@ -118,7 +119,7 @@ export default function BillsPage() {
                   {b.paid ? (
                     <span className="lx-paid"><Check size={15} /></span>
                   ) : (
-                    <button className="lx-ghost sm" onClick={() => markBillPaid(b.bill.id)}>Pay</button>
+                    <button className="lx-ghost sm" onClick={() => { markBillPaid(b.bill.id); success(); }}>Pay</button>
                   )}
                   <button className="lx-icon-btn" onClick={() => openEdit(b.bill)} aria-label="Edit"><Pencil size={14} /></button>
                   <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${b.bill.name}"?`)) deleteBill(b.bill.id); }} aria-label="Delete"><Trash2 size={14} /></button>
@@ -153,7 +154,7 @@ export default function BillsPage() {
                 <div className="amt neg" style={{ opacity: paidThisMonth ? 0.45 : 1 }}>{formatMoney(amount, cur)}</div>
                 {paidThisMonth
                   ? <span className="lx-paid"><Check size={15} /></span>
-                  : <button className="lx-ghost sm" onClick={() => payDebt(d.id, amount)}>Pay</button>}
+                  : <button className="lx-ghost sm" onClick={() => { payDebt(d.id, amount); success(); }}>Pay</button>}
                 <Link href="/debt" className="lx-icon-btn" aria-label="Manage debt"><ArrowRight size={14} /></Link>
               </div>
             ))}

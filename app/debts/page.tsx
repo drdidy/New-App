@@ -27,6 +27,7 @@ import {
   simulatePayoff,
 } from "@/lib/insights";
 import { clampPct, formatMoney, friendlyDate, monthKey } from "@/lib/format";
+import { success } from "@/lib/haptics";
 import type { Debt, DebtDirection, DebtKind } from "@/lib/types";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
@@ -132,6 +133,7 @@ export default function DebtsPage() {
     const amt = Math.max(0, parseFloat(payAmt) || 0);
     if (amt <= 0) return;
     payDebt(id, amt);
+    success();
     setPayAmt("");
     setPayingId(null);
   }
