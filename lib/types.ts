@@ -244,6 +244,7 @@ export interface AppData {
 export type ParsedKind =
   | "expense"
   | "income"
+  | "transfer"
   | "debt_i_owe"
   | "debt_owed_to_me"
   | "debt_payment"
@@ -261,6 +262,9 @@ export interface ParsedEntry {
   apr?: number;
   // account
   accountType?: AccountType;
+  // transfer between own accounts (money moved, not earned/spent)
+  fromAccount?: string;
+  toAccount?: string;
   // recurring bill
   dayOfMonth?: number;
   // savings goal

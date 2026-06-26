@@ -21,6 +21,7 @@ const SCHEMA = {
             enum: [
               "expense",
               "income",
+              "transfer",
               "debt_i_owe",
               "debt_owed_to_me",
               "debt_payment",
@@ -39,6 +40,8 @@ const SCHEMA = {
             type: "string",
             enum: ["checking", "savings", "cash", "investment", "other"],
           },
+          fromAccount: { type: "string" },
+          toAccount: { type: "string" },
           dayOfMonth: { type: "number" },
           monthlyContribution: { type: "number" },
           summary: { type: "string" },
@@ -70,6 +73,13 @@ ACCOUNTS (real money the user HAS — balances)
 - "my checking has 1850" / "I have 1850 in checking" -> account, accountType checking, amount 1850, description "Checking"
 - "2000 in savings" -> account, accountType savings, amount 2000, description "Savings"
 - "400 cash in my wallet" -> account, accountType cash, amount 400, description "Wallet"
+
+TRANSFERS (moving the user's OWN money between their accounts — NOT earning or spending)
+- "withdrew 500 from investments" -> transfer, amount 500, fromAccount "Investments", toAccount "Checking" (default destination is checking/bank when unspecified)
+- "moved 200 from checking to savings" -> transfer, amount 200, fromAccount "Checking", toAccount "Savings"
+- "transferred 1000 from savings to checking" -> transfer, amount 1000, fromAccount "Savings", toAccount "Checking"
+- "took 300 out of savings" -> transfer, amount 300, fromAccount "Savings", toAccount "Checking"
+A transfer is money the user already owns changing location. Never log it as income or expense.
 
 RECURRING BILLS (fixed monthly costs with a due day)
 - "rent is 1400 due on the 1st" -> bill, amount 1400, category Rent, dayOfMonth 1, description "Rent"
