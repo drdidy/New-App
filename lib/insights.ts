@@ -227,10 +227,11 @@ export function monthOverMonth(data: AppData): {
 function loggedSinceBalance(data: AppData): number {
   const accounts = data.accounts || [];
   if (accounts.length === 0) return 0;
-  // Anchor to the most recently hand-set balance across accounts, so a freshly
-  // re-set balance (which already reflects prior activity) is never double-
-  // counted against older logged transactions.
-  const since = accounts.reduce((m, a) => Math.max(m, a.balanceAsOf ?? a.createdAt ?? 0), 0);
+  // Logged transactions are attributed to the primary liquid account, so anchor
+  // to ITS balanceAsOf. (Adding or moving money to other accounts must not shift
+  // this anchor, or previously-logged cash would vanish.)
+  const anchor = accounts.find((a) => a.type === "checking" || a.type === "cash") || accounts[0];
+  const since = anchor.balanceAsOf ?? anchor.createdAt ?? 0;
   let adj = 0;
   for (const t of data.transactions) {
     if ((t.createdAt ?? 0) <= since) continue;

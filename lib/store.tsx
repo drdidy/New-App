@@ -802,6 +802,55 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               },
               ...txns,
             ];
+          } else if (e.kind === "transfer") {
+            // Moving the user's own money between accounts: out of one, into the
+            // other. Net worth is unchanged; no income/expense is logged.
+            const amt = Math.abs(e.amount);
+            const norm = (s?: string) => (s || "").trim().toLowerCase();
+            const typeHint = (name?: string): Account["type"] | undefined => {
+              const n = norm(name);
+              if (/invest/.test(n)) return "investment";
+              if (/saving/.test(n)) return "savings";
+              if (/cash|wallet/.test(n)) return "cash";
+              if (/check|bank|current|chequing/.test(n)) return "checking";
+              return undefined;
+            };
+            const findAcct = (name?: string) => {
+              const n = norm(name);
+              if (!n) return undefined;
+              const hint = typeHint(name);
+              return (
+                accounts.find((a) => norm(a.name) === n) ||
+                accounts.find((a) => norm(a.name).includes(n) || n.includes(norm(a.name))) ||
+                (hint ? accounts.find((a) => a.type === hint) : undefined)
+              );
+            };
+            const liquid = accounts.find((a) => a.type === "checking" || a.type === "cash") || accounts[0];
+            let from = findAcct(e.fromAccount);
+            let to = findAcct(e.toAccount) || liquid;
+            const mkAcct = (name: string, type: Account["type"]): Account => ({
+              id: uid(), name, type, balance: 0,
+              emoji: ACCT_EMOJI[type] || "💼", color: PALETTE[accounts.length % PALETTE.length],
+              memberId: owner, createdAt: now, updatedAt: now, balanceAsOf: now,
+            });
+            if (!from && e.fromAccount) {
+              from = mkAcct(e.fromAccount.trim(), typeHint(e.fromAccount) || "investment");
+              accounts = [from, ...accounts];
+            }
+            if (!to) {
+              to = mkAcct(e.toAccount?.trim() || "Checking", typeHint(e.toAccount) || "checking");
+              accounts = [to, ...accounts];
+            }
+            if (from && to && from.id !== to.id) {
+              const fromId = from.id, toId = to.id;
+              // Adjust raw balances only — never touch the primary account's
+              // balanceAsOf, so logged cash isn't disturbed.
+              accounts = accounts.map((a) =>
+                a.id === fromId ? { ...a, balance: a.balance - amt, updatedAt: now }
+                : a.id === toId ? { ...a, balance: a.balance + amt, updatedAt: now }
+                : a,
+              );
+            }
           } else if (e.kind === "account") {
             const type = e.accountType || "checking";
             const name = (e.description || `${type[0].toUpperCase()}${type.slice(1)}`).trim();
