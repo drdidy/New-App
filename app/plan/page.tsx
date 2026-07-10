@@ -24,6 +24,7 @@ import type { Goal } from "@/lib/types";
 const GOAL_EMOJIS = ["🎯", "🛟", "🏠", "🚗", "✈️", "🎄", "💍", "🎓", "🏖️", "💻"];
 import Donut from "@/components/Donut";
 import Ring from "@/components/Ring";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import Sparkline from "@/components/Sparkline";
 
 const ALLOC = [
@@ -130,7 +131,7 @@ export default function PlanPage() {
         <div className="lx-hero-inner lx-debt-hero">
           <div>
             <div className="lx-hero-label">{plan.leftover >= 0 ? "Left to assign" : "Over-allocated"}</div>
-            <div className={"lx-hero-num " + (plan.leftover >= 0 ? "pos" : "neg")}>{formatMoney(Math.abs(plan.leftover), cur)}</div>
+            <div className={"lx-hero-num " + (plan.leftover >= 0 ? "pos" : "neg")}><AnimatedNumber value={Math.abs(plan.leftover)} currency={cur} /></div>
             <div className="lx-hero-sub">
               {hasPlan
                 ? plan.leftover >= 0

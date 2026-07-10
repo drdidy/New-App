@@ -31,6 +31,7 @@ import { clampPct, formatMoney, friendlyDate, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
 import type { AppData, Debt, DebtDirection, DebtKind } from "@/lib/types";
 import Ring from "@/components/Ring";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import Sparkline from "@/components/Sparkline";
 import Burst from "@/components/Burst";
 
@@ -171,7 +172,7 @@ export default function DebtsPage() {
         <div className="lx-hero-inner lx-debt-hero">
           <div>
             <div className="lx-hero-label">You owe in total</div>
-            <div className="lx-hero-num neg">{formatMoney(total, cur)}</div>
+            <div className="lx-hero-num neg"><AnimatedNumber value={total} currency={cur} /></div>
             <div className="lx-hero-sub">
               {hasDebt
                 ? `Across ${iOwe.length} ${iOwe.length === 1 ? "debt" : "debts"}${owedToMe.length ? ` · ${formatMoney(owedToMe.reduce((s, d) => s + d.balance, 0), cur)} owed to you` : ""}`

@@ -58,9 +58,12 @@ export default function AnimatedNumber({
     };
   }, [value, duration]);
 
+  // Whole numbers while the count-up is in flight; the exact value (cents
+  // intact) once settled, so "$8,017.60" ends as itself, not "$8,018".
+  const settled = display === value;
   return (
     <span ref={elRef} style={{ display: "inline-block" }}>
-      {formatMoney(Math.round(display), currency)}
+      {formatMoney(settled ? value : Math.round(display), currency)}
     </span>
   );
 }

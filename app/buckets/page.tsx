@@ -20,6 +20,7 @@ import {
 import { useStore } from "@/lib/store";
 import { clampPct, formatMoney, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import type { Bucket, BucketKind, RecurringIncome } from "@/lib/types";
 
 const KIND: Record<BucketKind, { label: string; emoji: string; Icon: typeof PiggyBank }> = {
@@ -155,7 +156,7 @@ export default function BucketsPage() {
       <div className="lx-hero lx-reveal">
         <div className="lx-hero-inner">
           <div className="lx-hero-label">Set aside in buckets</div>
-          <div className="lx-hero-num pos">{formatMoney(totalSetAside, cur)}</div>
+          <div className="lx-hero-num pos"><AnimatedNumber value={totalSetAside} currency={cur} /></div>
           <div className="lx-hero-sub">
             {buckets.length
               ? `Across ${buckets.length} bucket${buckets.length === 1 ? "" : "s"}. Distribute a paycheck to fill them automatically.`
