@@ -8954,3 +8954,66 @@ a.lx-stat::after, a.lx-metric::after { color: var(--ox-gold); }
 .lx-momentum-flame { width: 34px !important; height: 34px !important; border-radius: 11px !important; }
 .lx-momentum-meta strong { font-size: 13.5px !important; }
 .lx-momentum-meta span { font-size: 12px !important; }
+
+/* ============================================================================
+   ◆ ONYX HARDENING — production-ready overflow & fluid-type guarantees.
+   No numeral, name, or amount may ever collide with a gauge, spill a tile,
+   or hide under the FAB — at any phone width, with any data.
+   ============================================================================ */
+
+/* Fluid display numerals: scale with the viewport, hard-capped both ends. */
+.lx-hero-num { font-size: clamp(30px, 11.5vw, 52px) !important; }
+.lx-hero-glow .lx-hero-num { font-size: clamp(40px, 14.5vw, 64px) !important; }
+/* Heroes that share the row with a percentage gauge get a tighter cap and
+   may NEVER overlap it: the copy column truncates, the ring never shrinks. */
+.lx-debt-hero .lx-hero-num { font-size: clamp(24px, 8.4vw, 40px) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lx-debt-hero > div:first-child { overflow: hidden; }
+.lx-debt-hero .lx-hero-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Tiles: numbers scale down before they can escape their plates. */
+.lx-stat-num { font-size: clamp(15px, 4.8vw, 21px) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.lx-stats .lx-stat:first-child .lx-stat-num { font-size: clamp(22px, 7.6vw, 30px) !important; }
+.lx-metric-num { font-size: clamp(16px, 5.2vw, 22px) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lx-io-num, .lx-goal-num, .lx-generosity-num { white-space: nowrap; }
+.lx-coach-strip b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(13px, 3.9vw, 16px) !important; }
+
+/* Names & labels: one line, honest ellipsis — never a broken layout. */
+.lx-li .meta .t, .lx-row-t, .lx-debt-name, .lx-wish-row .meta .t,
+.lx-future-item .v, .lx-know-txt b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lx-li .meta, .lx-row-meta { min-width: 0; }
+.lx-debt-meta { min-width: 0; }
+.lx-future-item .v { max-width: 62%; }
+.lx-hero-math { flex-wrap: wrap; row-gap: 4px; }
+
+/* The floating mic may never sit on top of a row's actions: give every page
+   enough runway to scroll the last row clear of it. */
+.lx { padding-bottom: 176px !important; }
+@supports (padding: env(safe-area-inset-bottom)) {
+  .lx { padding-bottom: calc(176px + env(safe-area-inset-bottom)) !important; }
+}
+
+/* Small-phone typography: the page title and onboarding headline scale. */
+.lx-h1 { font-size: clamp(30px, 9.6vw, 42px) !important; }
+.onb2-h1 { font-size: clamp(26px, 8.4vw, 34px) !important; }
+.onb2-hero .onb2-h1 { font-size: clamp(28px, 9.3vw, 36px) !important; }
+
+/* Sheets: on short screens they must scroll internally, never clip actions. */
+.lx-sheet { max-height: calc(100dvh - 40px); overflow-y: auto; }
+
+/* ── Hardening round 2 — verified against 360px stress data ─────────────── */
+/* Gauge heroes on narrow phones: the ring wraps BELOW the copy instead of
+   squeezing beside it — no clipped digits, no overlap, any amount length. */
+@media (max-width: 419px) {
+  .lx-debt-hero { flex-wrap: wrap !important; }
+  .lx-debt-hero > div:first-child { flex: 1 1 100%; }
+  .lx-debt-hero .ring { margin-left: auto; margin-top: 2px; }
+  .lx-debt-hero .lx-hero-num { font-size: clamp(30px, 11vw, 40px) !important; }
+}
+/* Row sub-lines never stack — one line with an honest ellipsis. */
+.lx-li .meta .s, .lx-row-s, .lx-wish-row .meta .s, .lx-bucket-tags { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lx-bucket-tags { display: block; }
+.lx-bucket-tags > span { display: inline; margin-right: 9px; }
+/* Future-you values may wrap (they're informative), never truncate midway. */
+.lx-future-item .v { white-space: normal; text-align: right; }
+/* Payoff planner stat values stay on one line at any width. */
+.lx-plan-stats b, .lx-plan-stats strong { white-space: nowrap; font-size: clamp(14px, 4.4vw, 18px); }
