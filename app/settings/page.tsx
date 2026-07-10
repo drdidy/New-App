@@ -41,8 +41,8 @@ export default function SettingsPage() {
       const parsed = JSON.parse(text) as AppData;
       if (!parsed || typeof parsed !== "object") throw new Error();
       if (!confirm("Replace all current data with this backup?")) return;
-      importData(parsed);
-      flash("Backup restored ✓");
+      if (importData(parsed)) flash("Backup restored ✓");
+      else flash("That backup couldn't be validated — nothing was changed.");
     } catch {
       flash("That file didn't look like a valid backup.");
     }
@@ -123,7 +123,7 @@ export default function SettingsPage() {
               <Avatar member={m} size={36} />
               <input className="lx-member-name" value={m.name} onChange={(e) => updateMember(m.id, { name: e.target.value })} />
               {data.members.length > 1 && (
-                <button className="lx-icon-btn danger" onClick={() => removeMember(m.id)} aria-label="Remove person"><X size={15} /></button>
+                <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Remove ${m.name}? Their items move to the remaining person.`)) removeMember(m.id); }} aria-label="Remove person"><X size={15} /></button>
               )}
             </div>
             <div className="lx-emoji-row">
@@ -136,8 +136,9 @@ export default function SettingsPage() {
                 <button key={c} className={"lx-color" + (m.color === c ? " on" : "")} style={{ background: c }} onClick={() => updateMember(m.id, { color: c })} aria-label="colour" />
               ))}
             </div>
-            <input className="lx-member-income" value={m.monthlyIncome ?? ""} inputMode="decimal" placeholder="Monthly income (optional)"
-              onChange={(e) => {
+            <input className="lx-member-income" key={`inc-${m.id}`} defaultValue={m.monthlyIncome ?? ""} inputMode="decimal" placeholder="Monthly income (optional)"
+              onBlur={(e) => {
+                // Commit on blur so decimals type naturally ("1200.50" stays intact).
                 const n = parseFloat(e.target.value.replace(/[$,\s]/g, ""));
                 updateMember(m.id, { monthlyIncome: Number.isFinite(n) && n >= 0 ? n : undefined });
               }} />
@@ -174,7 +175,7 @@ export default function SettingsPage() {
             <input value={newBudgetLimit} onChange={(e) => setNewBudgetLimit(e.target.value)} inputMode="decimal" placeholder="300" />
           </label>
         </div>
-        <button className="lx-primary full" onClick={saveBudget} style={{ marginTop: 4 }}>Set budget</button>
+        <button className="lx-primary full" onClick={saveBudget} disabled={!newBudgetCat.trim() || !(parseFloat(newBudgetLimit) > 0)} style={{ marginTop: 4 }}>Set budget</button>
       </section>
 
       {/* Data */}

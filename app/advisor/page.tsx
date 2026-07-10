@@ -295,14 +295,14 @@ export default function AdvisorPage() {
                         <div className={"s" + (v ? " " + v.verdict : "")}>{ready ? (v ? v.headline : "Ready to decide") : `${left} day${left === 1 ? "" : "s"} to think it over`}</div>
                       </div>
                       <div className="amt">{formatMoney(w.amount, cur)}</div>
-                      {ready ? (
+                      {ready && (
                         <>
                           <button className="lx-ghost sm" onClick={() => { decideWish(w.id, "skipped"); success(); }}>Skip</button>
                           <button className="lx-primary sm" onClick={() => { decideWish(w.id, "bought"); success(); }}>Buy</button>
                         </>
-                      ) : (
-                        <button className="lx-icon-btn danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
                       )}
+                      {/* Always removable — "changed my mind" shouldn't pollute the saved-by-waiting stat */}
+                      <button className="lx-icon-btn danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
                     </div>
                   );
                 })}

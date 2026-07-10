@@ -94,6 +94,9 @@ export default function BucketsPage() {
 
   // ---- buckets ----
   function openBucket(b?: Bucket) {
+    // Fresh fund draft per sheet, so a leftover amount can never silently fund
+    // (or drain) a different bucket.
+    setFundId(null); setFundAmt("");
     setBk(b
       ? { id: b.id, name: b.name, emoji: b.emoji || KIND[b.kind].emoji, kind: b.kind, allocType: b.allocType ?? "none", allocValue: b.allocValue != null ? String(b.allocValue) : "", target: b.target != null ? String(b.target) : "" }
       : { name: "", emoji: "🐷", kind: "save", allocType: "percent", allocValue: "", target: "" });
@@ -106,7 +109,11 @@ export default function BucketsPage() {
     const fields = {
       name: bk.name.trim(), emoji: bk.emoji, kind: bk.kind,
       allocType: bk.allocType === "none" ? undefined : bk.allocType,
-      allocValue: bk.allocType !== "none" && Number.isFinite(av) && av > 0 ? av : undefined,
+      // A single bucket can't claim more than 100% of a paycheck.
+      allocValue:
+        bk.allocType !== "none" && Number.isFinite(av) && av > 0
+          ? bk.allocType === "percent" ? Math.min(av, 100) : av
+          : undefined,
       target: Number.isFinite(tg) && tg > 0 ? tg : undefined,
     };
     if (bk.id) updateBucket(bk.id, fields);
@@ -304,8 +311,8 @@ export default function BucketsPage() {
             <>
               <div className="lx-pay-row" style={{ marginTop: 12 }}>
                 <input type="number" inputMode="decimal" placeholder="Amount" value={fundId === bk.id ? fundAmt : ""} onChange={(e) => { setFundId(bk.id!); setFundAmt(e.target.value); }} />
-                <button className="lx-primary sm" onClick={() => doFund(bk.id!, 1)} disabled={!(parseFloat(fundAmt) > 0)}><Plus size={14} /> Add</button>
-                <button className="lx-ghost sm" onClick={() => doFund(bk.id!, -1)} disabled={!(parseFloat(fundAmt) > 0)}><Minus size={14} /> Spend</button>
+                <button className="lx-primary sm" onClick={() => doFund(bk.id!, 1)} disabled={fundId !== bk.id || !(parseFloat(fundAmt) > 0)}><Plus size={14} /> Add</button>
+                <button className="lx-ghost sm" onClick={() => doFund(bk.id!, -1)} disabled={fundId !== bk.id || !(parseFloat(fundAmt) > 0)}><Minus size={14} /> Spend</button>
               </div>
               <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }} onClick={() => { if (confirm(`Delete "${bk.name}"?`)) { deleteBucket(bk.id!); setBk(null); } }}>
                 <Trash2 size={15} /> Delete bucket

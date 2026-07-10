@@ -43,8 +43,6 @@ export default function BillsPage() {
   const bills = billsThisMonth(data);
   const monthlyTotal = bills.reduce((s, b) => s + b.bill.amount, 0);
   const paidTotal = bills.filter((b) => b.paid).reduce((s, b) => s + b.bill.amount, 0);
-  const remaining = monthlyTotal - paidTotal;
-  const paidPct = monthlyTotal ? (paidTotal / monthlyTotal) * 100 : 0;
 
   // Recurring loan / card payments come from debts that carry a monthly minimum.
   const month = monthKey();
@@ -59,14 +57,23 @@ export default function BillsPage() {
     .sort((a, b) => (a.day || 99) - (b.day || 99));
   const loanTotal = loans.reduce((s, l) => s + l.amount, 0);
   const committedTotal = monthlyTotal + loanTotal;
+  // The hero shows bills + loans, so its progress bar must count both too.
+  const loanPaidTotal = loans.filter((l) => l.paidThisMonth).reduce((s, l) => s + l.amount, 0);
+  const paidPct = committedTotal ? ((paidTotal + loanPaidTotal) / committedTotal) * 100 : 0;
+
+  const draftValid =
+    Boolean(name.trim()) &&
+    Number.isFinite(parseFloat(amount)) && parseFloat(amount) > 0 &&
+    parseInt(day, 10) >= 1 && parseInt(day, 10) <= 31;
 
   function save() {
+    if (!draftValid) return;
     const amt = parseFloat(amount);
     const d = parseInt(day, 10);
-    if (!name.trim() || !Number.isFinite(amt) || amt <= 0 || !d || d < 1 || d > 31) return;
-    const fields = { name: name.trim(), amount: amt, category, dayOfMonth: d, autoLog };
+    // memberId included on BOTH paths so editing "whose bill" actually sticks.
+    const fields = { name: name.trim(), amount: amt, category, dayOfMonth: d, autoLog, memberId: who ?? data.members[0]?.id };
     if (editId) updateBill(editId, fields);
-    else addBill({ ...fields, memberId: who ?? data.members[0]?.id });
+    else addBill(fields);
     setName(""); setAmount(""); setDay("1"); setAutoLog(false); setEditId(null); setOpen(false);
   }
 
@@ -205,7 +212,7 @@ export default function BillsPage() {
               <input type="checkbox" checked={autoLog} onChange={(e) => setAutoLog(e.target.checked)} />
               <span>Log it automatically on the due day</span>
             </label>
-            <button className="lx-primary full" onClick={save} style={{ marginTop: 8 }}>{editId ? "Save changes" : "Save bill"}</button>
+            <button className="lx-primary full" onClick={save} disabled={!draftValid} style={{ marginTop: 8 }}>{editId ? "Save changes" : "Save bill"}</button>
           </div>
         </div>
       )}

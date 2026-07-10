@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
 import BottomNav from "@/components/BottomNav";
 import Onboarding from "@/components/Onboarding";
@@ -39,10 +39,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
         <div className="vision-mobile-actions">
-          <button className="topbar-action" aria-label="Notifications">
-            <Bell size={18} aria-hidden="true" />
-            <span />
-          </button>
           <Link href="/settings" className="topbar-action" aria-label="Settings">
             <Settings size={18} aria-hidden="true" />
           </Link>

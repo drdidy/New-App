@@ -265,7 +265,7 @@ interface StoreContextValue {
   setTheme: (t: ThemeName) => void;
   setHouseholdName: (n: string) => void;
   completeOnboarding: (init: Partial<AppData>) => void;
-  importData: (incoming: AppData) => void;
+  importData: (incoming: AppData) => boolean;
   resetAll: () => void;
   // sync
   setSync: (enabled: boolean, code?: string) => void;
@@ -507,6 +507,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const errorStreakRef = useRef(0);
   const syncNow = useCallback(async () => {
     const d = dataRef.current;
     if (!d.syncEnabled || !d.syncCode || busyRef.current) return;
@@ -528,13 +529,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       if (!json.ok) {
+        errorStreakRef.current += 1;
         setSyncState("error");
         return;
       }
       applyRemote(json.data);
       lastPushedRef.current = JSON.stringify(sanitizeForSync(dataRef.current));
+      errorStreakRef.current = 0;
       setSyncState("ok");
     } catch {
+      errorStreakRef.current += 1;
       setSyncState("error");
     } finally {
       busyRef.current = false;
@@ -553,16 +557,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [data, ready, syncNow]);
 
-  // Poll for the other phone's changes + on regaining focus.
+  // Poll for the other phone's changes + on regaining focus / connectivity.
+  // Consecutive failures back the poll off exponentially (12s → 24s → … 96s)
+  // instead of hammering a struggling server every tick.
   useEffect(() => {
     if (!ready || !data.syncEnabled || !data.syncCode) return;
     void syncNow();
-    const id = setInterval(() => void syncNow(), 12000);
+    let tick = 0;
+    const id = setInterval(() => {
+      tick += 1;
+      const skip = Math.min(2 ** errorStreakRef.current, 8);
+      if (tick % skip !== 0) return;
+      void syncNow();
+    }, 12000);
     const onFocus = () => void syncNow();
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
     return () => {
       clearInterval(id);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
     };
   }, [ready, data.syncEnabled, data.syncCode, syncNow]);
 
@@ -951,15 +965,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData((d) => {
       if (d.members.length <= 1) return d; // never leave zero members
       const fallback = d.members.find((m) => m.id !== id)?.id;
+      // Reassign EVERYTHING the person owned, so nothing becomes orphaned and
+      // invisible to member-scoped views.
+      const move = <T extends { memberId?: string }>(x: T): T =>
+        x.memberId === id ? { ...x, memberId: fallback } : x;
       return {
         ...d,
         members: d.members.filter((m) => m.id !== id),
-        transactions: d.transactions.map((t) =>
-          t.memberId === id ? { ...t, memberId: fallback } : t,
-        ),
-        debts: d.debts.map((x) =>
-          x.memberId === id ? { ...x, memberId: fallback } : x,
-        ),
+        transactions: d.transactions.map(move),
+        debts: d.debts.map(move),
+        recurringBills: (d.recurringBills || []).map(move),
+        recurringIncome: (d.recurringIncome || []).map(move),
+        buckets: (d.buckets || []).map(move),
+        goals: d.goals.map(move),
+        accounts: (d.accounts || []).map(move),
         tombstones: [...(d.tombstones || []), id],
       };
     });
@@ -1306,7 +1325,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const joinSync = useCallback(async (code: string) => {
     const clean = code.trim();
-    if (clean.length < 12) {
+    // Server requires ≥16 chars — match it so short codes fail fast with a
+    // clear message instead of bouncing off the API.
+    if (clean.length < 16) {
       return { ok: false, error: "Use the full household code from Settings." };
     }
     setSyncState("syncing");
@@ -1344,15 +1365,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const importData = useCallback((incoming: AppData) => {
-    setData(() => {
-      const valid = parseAppDataInput(incoming);
-      if (!valid) return dataRef.current;
-      const next = migrate(valid);
-      next.syncCode = undefined;
-      next.syncEnabled = false;
-      return next;
-    });
+  // Returns whether the backup was actually accepted, so the UI can tell the
+  // user the truth instead of flashing a false "restored ✓".
+  const importData = useCallback((incoming: AppData): boolean => {
+    const valid = parseAppDataInput(incoming);
+    if (!valid) return false;
+    const next = migrate(valid);
+    next.syncCode = undefined;
+    next.syncEnabled = false;
+    setData(next);
+    return true;
   }, []);
 
   const resetAll = useCallback(() => setData({ ...freshData(), theme: data.theme }), [data.theme]);

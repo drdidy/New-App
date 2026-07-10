@@ -27,17 +27,19 @@ export default function Sparkline({
   const pts = values.map((v, i) => `${x(i)},${y(v)}`);
   const line = pts.map((p, i) => (i === 0 ? `M${p}` : `L${p}`)).join(" ");
   const area = `${line} L${x(n - 1)},${h - pad} L${x(0)},${h - pad} Z`;
+  // Unique per color: two sparklines on one page must not share a gradient.
+  const fillId = `sparkfill-${color.replace(/[^a-zA-Z0-9]/g, "")}`;
 
   return (
     <div className="spark">
       <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" width="100%" height={h}>
         <defs>
-          <linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={color} stopOpacity="0.28" />
             <stop offset="1" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={area} fill="url(#sparkfill)" />
+        <path d={area} fill={`url(#${fillId})`} />
         <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {values.map((v, i) => (
           <circle key={i} cx={x(i)} cy={y(v)} r={n > 12 ? 0 : 3} fill={color} />

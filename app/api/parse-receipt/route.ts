@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
   try {
     const res: any = await getClient().messages.create({
       model: MODELS.fast,
-      max_tokens: 1200,
+      max_tokens: 3000,
       thinking: { type: "disabled" },
       system: [
         { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } },

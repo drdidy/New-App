@@ -8588,3 +8588,84 @@ a.lx-stat::after, a.lx-metric::after {
 .capture-resolve-q { font-size: 13.5px; line-height: 1.5; color: #f3e7c8; }
 .capture-resolve-q b { color: #fff; }
 .capture-resolve-opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+
+/* ============================================================================
+   ✦ LEGENDARY v2 — the world-class polish layer.
+   Typography (Sora display / Inter body), refined tokens, calmer glass,
+   luminous nav, and consistent focus/interaction states. Loads last on purpose.
+   ============================================================================ */
+:root[data-theme] body {
+  font-family: var(--font-body), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: rgba(46,230,192,0.3); color: #fff; }
+
+/* Display face for identity moments: page titles, hero money, card headings. */
+.lx-h1, .lx-hero-num, .lx-metric-num, .lx-stat-num, .lx-freedom-when,
+.onb2-h1, .lx-generosity-num, .lx-afford-verdict strong, .lx-card-head h2,
+.lx-debt-bal, .lx-io-num, .lx-nw-val, .lx-goal-num {
+  font-family: var(--font-display), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+.lx-h1 { font-weight: 800 !important; letter-spacing: -0.045em !important; font-size: 34px !important; }
+.lx-hero-num { letter-spacing: -0.05em !important; }
+.lx-card-head h2 { font-weight: 700 !important; letter-spacing: -0.015em !important; }
+.lx-eyebrow { letter-spacing: 0.02em; font-weight: 700 !important; }
+
+/* Calmer, deeper glass */
+.lx {
+  --au-line: rgba(255,255,255,0.10);
+  --au-card: rgba(255,255,255,0.05);
+}
+
+/* Nav: luminous active tab with an aurora dot */
+.nav a { font-family: var(--font-body), system-ui, sans-serif; }
+.nav a.active {
+  color: #d9fdf2 !important;
+  background: linear-gradient(160deg, rgba(46,230,192,0.16), rgba(129,140,248,0.14)) !important;
+  box-shadow: inset 0 0 0 1px rgba(46,230,192,0.22), 0 8px 26px -12px rgba(46,230,192,0.55) !important;
+}
+.nav a.active::after {
+  content: ""; display: block; position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 999px; background: var(--au-grad);
+  box-shadow: 0 0 8px 1px rgba(94,234,212,0.8);
+}
+.nav a:active { transform: scale(0.94); }
+
+/* Focus + input consistency (keyboard & a11y polish) */
+.lx :is(a, button):focus-visible,
+.nav a:focus-visible,
+.onb2 :is(a, button, input, select):focus-visible {
+  outline: 2px solid rgba(46,230,192,0.75) !important; outline-offset: 2px !important; border-radius: 12px;
+}
+.lx :is(input, textarea, select):focus-visible {
+  outline: none !important; border-color: rgba(46,230,192,0.6) !important;
+  box-shadow: 0 0 0 3px rgba(46,230,192,0.16) !important;
+}
+
+/* Primary button: glossy top light + luminous hover */
+.lx-primary { position: relative; overflow: hidden; }
+.lx-primary::before {
+  content: ""; position: absolute; inset: 0 0 55% 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.28), transparent);
+  border-radius: inherit; pointer-events: none;
+}
+@media (hover: hover) {
+  .lx-primary:hover { box-shadow: 0 14px 34px -12px rgba(129,140,248,0.85); transform: translateY(-1px); }
+  .lx-primary { transition: transform .16s var(--mc-spring), box-shadow .2s ease; }
+}
+
+/* Page entrance: one soft rise for the whole screen (GSAP handles the rest) */
+@media (prefers-reduced-motion: no-preference) {
+  main.lx { animation: lx-enter .38s cubic-bezier(.22,1,.36,1); }
+  @keyframes lx-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+}
+
+/* Desktop: cap content width + scrollbar that matches the canvas */
+@media (min-width: 900px) {
+  main.lx { max-width: 720px; margin-left: auto; margin-right: auto; }
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(151,166,194,0.35) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgba(151,166,194,0.3); border-radius: 999px; }
+*::-webkit-scrollbar-track { background: transparent; }

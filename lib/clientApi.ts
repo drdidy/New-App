@@ -39,13 +39,21 @@ function messageForStatus(status: number, serverError?: string): string {
 export async function postJson<T = unknown>(url: string, body: unknown): Promise<ApiResult<T>> {
   let res: Response;
   try {
+    // Hard timeout so a hanging mobile connection can never wedge the UI in
+    // "busy" forever — 60s covers the slowest AI responses.
+    const signal =
+      typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+        ? AbortSignal.timeout(60_000)
+        : undefined;
     res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
-  } catch {
-    return { ok: false, status: 0, data: null, error: messageForStatus(0) };
+  } catch (err) {
+    const timedOut = err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
+    return { ok: false, status: timedOut ? 504 : 0, data: null, error: messageForStatus(timedOut ? 504 : 0) };
   }
 
   const text = await res.text().catch(() => "");

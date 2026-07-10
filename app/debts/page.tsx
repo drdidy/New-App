@@ -135,10 +135,14 @@ export default function DebtsPage() {
   function submitPayment(id: string) {
     const amt = Math.max(0, parseFloat(payAmt) || 0);
     if (amt <= 0) return;
-    // Celebrate crossing a payoff milestone (25/50/75/100% across all debts).
+    // Celebrate crossing a payoff milestone (25/50/75/100% across debts you
+    // OWE). Only payments on i_owe debts count, capped at that debt's balance —
+    // receiving money owed to you must never fire a payoff party.
+    const target = data.debts.find((x) => x.id === id);
+    const counted = target?.direction === "i_owe" ? Math.min(amt, target.balance) : 0;
     const beforePct = original ? ((original - total) / original) * 100 : 0;
-    const afterPct = original ? ((original - total + amt) / original) * 100 : 0;
-    const crossed = [25, 50, 75, 100].some((t) => beforePct < t && afterPct >= t);
+    const afterPct = original ? ((original - total + counted) / original) * 100 : 0;
+    const crossed = counted > 0 && [25, 50, 75, 100].some((t) => beforePct < t && afterPct >= t);
     payDebt(id, amt);
     success();
     if (crossed) { setBurstKey((k) => k + 1); if (navigator.vibrate) navigator.vibrate([18, 50, 24, 50, 30]); }
@@ -395,6 +399,7 @@ function DebtCard(props: {
 }) {
   const { debt: d, incoming, data, cur, expanded, setExpanded, payingId, setPayingId, payAmt, setPayAmt, submitPayment, startEdit, deleteDebt } = props;
   const [copied, setCopied] = useState(false);
+  const [showScript, setShowScript] = useState(false);
   const kind = d.kind ?? inferDebtKind(d);
   const Meta = KIND_META[kind];
   const money = (n: number) => formatMoney(n, cur);
@@ -468,11 +473,11 @@ function DebtCard(props: {
                     <HandCoins size={14} /> Pay {money(advice.amount)}
                   </button>
                 )}
-                <button className="lx-ghost sm" onClick={() => { setCopied(true); navigator.clipboard?.writeText(script).catch(() => {}); }}>
+                <button className="lx-ghost sm" onClick={() => { setShowScript(true); setCopied(true); setTimeout(() => setCopied(false), 2500); navigator.clipboard?.writeText(script).catch(() => {}); }}>
                   {copied ? "Copied ✓" : "What to say"}
                 </button>
               </div>
-              {copied && <p className="lx-advice-script">“{script}”</p>}
+              {showScript && <p className="lx-advice-script">“{script}”</p>}
             </div>
           )}
 
