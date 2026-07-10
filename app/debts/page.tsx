@@ -179,7 +179,7 @@ export default function DebtsPage() {
             </div>
           </div>
           {hasDebt && (
-            <Ring pct={paidPct} size={92} stroke={9} color="#14b8a6" track="rgba(15,30,45,0.08)">
+            <Ring pct={paidPct} size={92} stroke={9} color="#e2b366" track="rgba(242,234,217,0.08)">
               <strong>{Math.round(paidPct)}%</strong>
               <span>paid</span>
             </Ring>
@@ -271,7 +271,7 @@ export default function DebtsPage() {
 
           {projection.length > 1 && (
             <div className="lx-proj">
-              <Sparkline values={projection} color="#14b8a6" height={120} />
+              <Sparkline values={projection} color="#e2b366" height={120} />
               <p className="lx-proj-note">
                 <Sparkles size={13} /> Projected balance with {formatMoney(extra, cur)}/mo extra, interest included.
               </p>

@@ -12,8 +12,8 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     // Match the aurora canvas so the standalone splash/status chrome doesn't
     // flash light over a dark app at every launch.
-    background_color: "#070b16",
-    theme_color: "#070b16",
+    background_color: "#080706",
+    theme_color: "#080706",
     orientation: "portrait",
     categories: ["finance", "productivity"],
     shortcuts: [

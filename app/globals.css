@@ -8669,3 +8669,239 @@ a.lx-stat::after, a.lx-metric::after {
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: rgba(151,166,194,0.3); border-radius: 999px; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+/* ============================================================================
+   ◆ ONYX — a completely new identity. Loaded last; replaces AURORA wholesale.
+   Philosophy: private-bank obsidian. Warm near-black, gold hairlines, ivory
+   ink, and high-contrast editorial serif numerals (Fraunces). No neon, no
+   drifting blobs, no glassy blur — plates, rules, and restraint. The luxury is
+   in the typography and the line-work, not in glow.
+   ============================================================================ */
+:root {
+  --au-bg: #0a0908;
+  --au-ink: #f2ead9;
+  --au-mut: #9d937f;
+  --au-line: rgba(226,179,102,0.16);
+  --au-card: #121008;
+  --au-card-2: #17140c;
+  --au-teal: #e2b366;              /* the accent slot app-wide is now GOLD */
+  --au-violet: #c9a35c;
+  --au-pink: #d0704a;
+  --au-pos: #4cc38a;
+  --au-neg: #ff7864;
+  --au-grad: linear-gradient(135deg, #f0cd8a 0%, #d9a94f 55%, #b8862e 100%);
+  --au-glow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 24px 60px -28px rgba(0,0,0,0.85);
+  --ox-hairline: rgba(226,179,102,0.22);
+  --ox-hairline-soft: rgba(242,234,217,0.08);
+  --ox-plate: #121110;
+  --ox-plate-2: #161412;
+  --ox-gold: #e2b366;
+  --ox-gold-deep: #b8862e;
+}
+
+/* ── Canvas: still, warm, grained — the blobs are gone ─────────────────── */
+html, body { background: var(--au-bg) !important; color: var(--au-ink) !important; }
+body::before {
+  content: "" !important; position: fixed !important; inset: 0 !important; z-index: -2 !important;
+  background:
+    radial-gradient(120% 55% at 50% -12%, rgba(226,179,102,0.10), transparent 60%),
+    radial-gradient(90% 60% at 50% 115%, rgba(120,80,30,0.07), transparent 60%),
+    var(--au-bg) !important;
+  filter: none !important; opacity: 1 !important; animation: none !important;
+}
+body::after {
+  content: "" !important; position: fixed !important; inset: 0 !important; z-index: -1 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E") !important;
+  animation: none !important; pointer-events: none !important; opacity: 1 !important;
+}
+
+/* ── Type system: serif display, sans UI ───────────────────────────────── */
+.lx-h1, .lx-hero-num, .lx-metric-num, .lx-stat-num, .onb2-h1,
+.lx-generosity-num, .lx-afford-verdict strong, .lx-debt-bal, .lx-io-num,
+.lx-nw-val, .lx-goal-num, .lx-freedom-when, .lx-know-txt b, .brand-lockup strong {
+  font-family: var(--font-display), Georgia, "Times New Roman", serif !important;
+}
+.lx-h1 { font-size: 42px !important; font-weight: 600 !important; letter-spacing: -0.015em !important; }
+.lx-hero-num { font-weight: 600 !important; letter-spacing: -0.02em !important; }
+.lx-eyebrow {
+  color: var(--ox-gold) !important; text-transform: uppercase; letter-spacing: 0.22em !important;
+  font-size: 10.5px !important; font-weight: 700 !important;
+}
+/* Card headings become small-caps ledger labels with a trailing hairline */
+.lx-card-head h2 {
+  font-family: var(--font-body), system-ui, sans-serif !important;
+  font-size: 11.5px !important; font-weight: 750 !important; text-transform: uppercase;
+  letter-spacing: 0.18em !important; color: #cbbf9f !important;
+}
+.lx-card-head { align-items: center; gap: 12px; }
+.lx-card-head::after { content: ""; flex: 1; height: 1px; background: var(--ox-hairline-soft); }
+.lx-card-head a, .lx-card-head .lx-group-total { flex: none; }
+::selection { background: rgba(226,179,102,0.32); color: #fff; }
+
+/* ── Surfaces: plates and hairlines, no blur ───────────────────────────── */
+.lx-card, .lx-know, .lx-wish, .lx-afford, .lx-freedom, .lx-momentum,
+.lx-payday, .lx-generosity, .capture.card, .lx-member {
+  background: var(--ox-plate) !important; border: 1px solid var(--ox-hairline-soft) !important;
+  box-shadow: var(--au-glow) !important; backdrop-filter: none !important; border-radius: 18px !important;
+}
+.lx-hero, .lx-hero-glow {
+  background: linear-gradient(180deg, #14120f, #100e0c) !important;
+  border: 1px solid var(--ox-hairline) !important; border-radius: 20px !important;
+  box-shadow: var(--au-glow) !important; backdrop-filter: none !important;
+  position: relative; overflow: hidden;
+}
+/* double-rule editorial frame inside the hero */
+.lx-hero::after, .lx-hero-glow::after {
+  content: ""; position: absolute; inset: 7px; border: 1px solid rgba(226,179,102,0.10);
+  border-radius: 14px; pointer-events: none;
+}
+.lx-hero-aura, .onb2-aura { display: none !important; }
+.lx-hero-label { color: var(--ox-gold) !important; text-transform: uppercase; letter-spacing: 0.2em; font-size: 10.5px !important; font-weight: 750 !important; }
+.lx-hero-tag {
+  background: transparent !important; border: 1px solid var(--ox-hairline) !important;
+  color: #d8c69c !important; letter-spacing: 0.14em;
+}
+.lx-hero-num.pos { color: #f2ead9 !important; background: none !important; -webkit-text-fill-color: currentColor !important; }
+.lx-hero-num.neg { color: var(--au-neg) !important; background: none !important; -webkit-text-fill-color: currentColor !important; }
+.lx-hero-sub { color: var(--au-mut) !important; }
+.lx-bar { background: rgba(242,234,217,0.08) !important; }
+.lx-bar > span { background: var(--au-grad) !important; }
+.lx-hero-link { border-bottom-color: rgba(226,179,102,0.4) !important; }
+@media (hover: hover) { .lx-hero-link:hover { border-bottom-color: var(--ox-gold) !important; } }
+
+/* ── Bento: the money row becomes an asymmetric grid ───────────────────── */
+.lx-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 9px !important; }
+.lx-stats .lx-stat:first-child { grid-column: span 2; }
+.lx-stats .lx-stat:first-child .lx-stat-num { font-size: 30px; }
+.lx-stat {
+  background: var(--ox-plate) !important; border: 1px solid var(--ox-hairline-soft) !important;
+  border-radius: 16px !important; box-shadow: var(--au-glow) !important; backdrop-filter: none !important;
+}
+.lx-stat-ic { color: var(--ox-gold) !important; }
+.lx-stat-num { color: #f2ead9 !important; font-size: 21px; }
+.lx-stat-num.calm { color: #b6ab94 !important; }
+.lx-stat-lbl { color: var(--au-mut) !important; text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px !important; }
+a.lx-stat::after, a.lx-metric::after { color: var(--ox-gold); }
+@media (hover: hover) {
+  a.lx-stat:hover, a.lx-metric:hover, .lx-coach-strip a:hover, a.lx-nw:hover {
+    border-color: var(--ox-hairline) !important;
+    box-shadow: 0 18px 44px -20px rgba(226,179,102,0.35) !important;
+  }
+}
+
+/* ── Nav: an obsidian dock with a gold signal ──────────────────────────── */
+.nav {
+  background: rgba(13,12,10,0.92) !important; border: 1px solid var(--ox-hairline-soft) !important;
+  border-radius: 22px; box-shadow: 0 30px 70px rgba(0,0,0,0.6) !important;
+  backdrop-filter: blur(18px) saturate(1.05);
+}
+.nav a { color: #8d8471 !important; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 750; }
+.nav a.active {
+  color: var(--ox-gold) !important; background: rgba(226,179,102,0.07) !important;
+  box-shadow: inset 0 0 0 1px rgba(226,179,102,0.22) !important;
+}
+.nav a.active::after {
+  content: ""; top: auto; bottom: 6px; left: 50%; transform: translateX(-50%) rotate(45deg);
+  width: 4px; height: 4px; border-radius: 1px; background: var(--ox-gold);
+  box-shadow: 0 0 8px 1px rgba(226,179,102,0.7); position: absolute; display: block;
+}
+.brand-mark, .boot-logo, .nav-avatar {
+  background: var(--au-grad) !important; color: #1c1305 !important;
+  font-family: var(--font-display), serif !important; font-weight: 700 !important;
+}
+.topbar-action { border: 1px solid var(--ox-hairline-soft) !important; background: var(--ox-plate) !important; color: #d8c69c !important; }
+.brand-lockup small { color: var(--au-mut) !important; letter-spacing: 0.08em; }
+
+/* ── Controls: gold primary, hairline ghost, warm focus ────────────────── */
+.lx-primary, .btn-primary {
+  background: var(--au-grad) !important; color: #1c1305 !important; border: none !important;
+  box-shadow: 0 14px 30px -14px rgba(184,134,46,0.7) !important; font-weight: 800 !important;
+}
+.lx-ghost { border-color: var(--ox-hairline-soft) !important; color: #d8c69c !important; background: rgba(242,234,217,0.03) !important; }
+.lx-ghost.danger { color: var(--au-neg) !important; }
+.lx-addbtn, .lx-coachbtn {
+  background: var(--ox-plate) !important; border: 1px solid var(--ox-hairline) !important; color: var(--ox-gold) !important;
+  backdrop-filter: none !important;
+}
+.lx :is(a, button):focus-visible, .nav a:focus-visible,
+.onb2 :is(a, button, input, select):focus-visible {
+  outline: 2px solid rgba(226,179,102,0.8) !important;
+}
+.lx :is(input, textarea, select), .onb2 :is(input, select), .capture textarea {
+  background: #0e0d0b !important; border: 1px solid var(--ox-hairline-soft) !important; color: var(--au-ink) !important;
+}
+.lx :is(input, textarea, select):focus-visible {
+  border-color: rgba(226,179,102,0.55) !important;
+  box-shadow: 0 0 0 3px rgba(226,179,102,0.14) !important;
+}
+.lx-chip { border: 1px solid var(--ox-hairline-soft) !important; background: rgba(242,234,217,0.03) !important; color: #d8c69c !important; }
+.lx-chip.on { background: rgba(226,179,102,0.14) !important; border-color: var(--ox-hairline) !important; color: var(--ox-gold) !important; }
+.lx-seg button.on { background: rgba(226,179,102,0.14) !important; color: var(--ox-gold) !important; }
+.mc-fab { background: var(--au-grad) !important; color: #1c1305 !important; box-shadow: 0 18px 40px -14px rgba(184,134,46,0.75) !important; }
+.lx-sheet { background: #131110 !important; border: 1px solid var(--ox-hairline) !important; box-shadow: 0 -30px 80px rgba(0,0,0,0.7) !important; }
+.lx-sheet-backdrop { background: rgba(5,4,3,0.72) !important; backdrop-filter: blur(4px); }
+
+/* ── Accent components, retuned to the ledger palette ──────────────────── */
+.lx-streak {
+  color: var(--ox-gold) !important; background: rgba(226,179,102,0.08) !important;
+  border: 1px solid var(--ox-hairline) !important;
+}
+.lx-streak svg { color: var(--ox-gold) !important; }
+.lx-streak.on { box-shadow: 0 0 20px -6px rgba(226,179,102,0.55) !important; }
+.lx-momentum-flame { color: var(--ox-gold) !important; background: rgba(226,179,102,0.1) !important; border-color: var(--ox-hairline) !important; }
+.lx-momentum-dots span.on { background: var(--ox-gold) !important; }
+.lx-nospend { color: var(--ox-gold) !important; background: rgba(226,179,102,0.1) !important; border-color: var(--ox-hairline) !important; }
+.lx-know-row.good .lx-know-ic { color: var(--au-pos) !important; background: rgba(76,195,138,0.1) !important; }
+.lx-know-row.info .lx-know-ic { color: var(--ox-gold) !important; background: rgba(226,179,102,0.1) !important; }
+.lx-know-row.warn .lx-know-ic { color: var(--au-neg) !important; background: rgba(255,120,100,0.1) !important; }
+.lx-know-txt { color: #ddd3bd !important; }
+.lx-afford-verdict.yes { background: rgba(76,195,138,0.07) !important; border-color: rgba(76,195,138,0.28) !important; }
+.lx-afford-verdict.yes strong { color: var(--au-pos) !important; }
+.lx-afford-verdict.caution { background: rgba(226,179,102,0.07) !important; border-color: rgba(226,179,102,0.3) !important; }
+.lx-afford-verdict.caution strong { color: var(--ox-gold) !important; }
+.lx-afford-verdict.wait { background: rgba(255,120,100,0.07) !important; border-color: rgba(255,120,100,0.3) !important; }
+.lx-afford-verdict.wait strong { color: var(--au-neg) !important; }
+.lx-afford-q svg { color: var(--ox-gold) !important; }
+.lx-payday { background: linear-gradient(160deg, #171307, #14110c) !important; border: 1px solid var(--ox-hairline) !important; }
+.lx-generosity { background: linear-gradient(160deg, #161108, #131009) !important; border: 1px solid var(--ox-hairline) !important; }
+.lx-advice { background: rgba(226,179,102,0.05) !important; border-color: rgba(226,179,102,0.2) !important; }
+.lx-advice-head svg { color: var(--ox-gold) !important; }
+.lx-advice.tight { background: rgba(242,234,217,0.03) !important; border-color: var(--ox-hairline-soft) !important; }
+.lx-freedom-tick i { background: #1b1815 !important; border-color: var(--ox-hairline-soft) !important; color: var(--au-mut) !important; }
+.lx-freedom-tick.hit i { background: var(--au-grad) !important; color: #1c1305 !important; box-shadow: 0 0 10px -2px rgba(226,179,102,0.8) !important; }
+.lx-freedom-when { color: #1c1305 !important; }
+.lx-wish-saved { color: #1c1305 !important; }
+.lx-bucket-ic { color: var(--ox-gold) !important; background: rgba(226,179,102,0.1) !important; border-color: var(--ox-hairline) !important; }
+.lx-bucket-tags .alloc { color: #e6d3a8 !important; }
+.lx-balset input { border-color: rgba(226,179,102,0.4) !important; }
+.lx-paid { color: var(--au-pos) !important; }
+.onb2-feature .ic { color: var(--ox-gold) !important; background: rgba(226,179,102,0.09) !important; border: 1px solid var(--ox-hairline) !important; }
+.onb2-h1 span { background: var(--au-grad); -webkit-background-clip: text; background-clip: text; color: transparent; filter: none; }
+.onb2-dots span.on { box-shadow: 0 0 10px -2px rgba(226,179,102,0.8); }
+.onb2-privacy svg { color: var(--ox-gold); }
+.lx-checkin {
+  display: block; padding: 14px 16px; border-radius: 16px; text-decoration: none;
+  background: rgba(226,179,102,0.06); border: 1px solid var(--ox-hairline);
+  color: #ddd3bd; font-size: 13.5px; line-height: 1.5;
+}
+.lx-checkin b { color: var(--ox-gold); font-weight: 750; }
+.capture-resolve { background: rgba(226,179,102,0.07) !important; border-color: rgba(226,179,102,0.28) !important; }
+.capture-resolve-q { color: #ddd3bd !important; }
+.confirm { color: var(--au-pos) !important; }
+.lx-coach-strip > a b.pos { color: var(--au-pos) !important; }
+.lx-syncwrap .btn-primary { background: var(--au-grad) !important; color: #1c1305 !important; }
+.lx-syncwrap .sync-dot { background: var(--ox-gold) !important; box-shadow: 0 0 10px -1px var(--ox-gold) !important; }
+.lx-syncwrap .h-sub strong, .lx-syncwrap .hint strong { color: #e6d3a8 !important; }
+.lx-cta .lx-cta-ic { background: rgba(226,179,102,0.1) !important; color: var(--ox-gold) !important; border: 1px solid var(--ox-hairline) !important; }
+.lx-metric .ic { color: var(--ox-gold) !important; background: rgba(226,179,102,0.08) !important; }
+.lx-future { background: linear-gradient(160deg, #15120b, #121009) !important; border: 1px solid var(--ox-hairline) !important; }
+.lx-future-item .v.pos { color: var(--au-pos) !important; }
+.lx-nw-val.pos { color: var(--au-pos) !important; }
+.lx-nw-delta.up { color: var(--au-pos) !important; background: rgba(76,195,138,0.1) !important; }
+.lx-hero-hint { color: var(--ox-gold) !important; border-bottom-color: rgba(226,179,102,0.45) !important; }
+.lx-method-opt.on { border-color: var(--ox-hairline) !important; background: rgba(226,179,102,0.08) !important; color: var(--ox-gold) !important; }
+.lx-slider { accent-color: var(--ox-gold); }
+.lx-toggle input { accent-color: var(--ox-gold); }
+.lx-emoji.on, .lx-color.on { outline: 2px solid var(--ox-gold) !important; }
+* { scrollbar-color: rgba(157,147,127,0.35) transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(157,147,127,0.3); }
