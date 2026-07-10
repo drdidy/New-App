@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Sora } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import AppShell from "@/components/AppShell";
 import SwRegister from "@/components/SwRegister";
 
-// World-class type pairing: Sora for display (headlines, money), Inter for UI.
-const sora = Sora({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-display", display: "swap" });
+// ONYX identity: Fraunces — a high-contrast editorial serif — carries every
+// title and money numeral (private-bank ledger energy); Inter carries the UI.
+const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-display", display: "swap" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 
 export const metadata: Metadata = {
@@ -28,7 +29,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070b16",
+  themeColor: "#080706",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -48,7 +49,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
-      <body className={`${sora.variable} ${inter.variable}`}>
+      <body className={`${fraunces.variable} ${inter.variable}`}>
         <StoreProvider>
           <AppShell>{children}</AppShell>
           <SwRegister />

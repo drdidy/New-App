@@ -27,10 +27,10 @@ import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
 
 const ALLOC = [
-  { key: "bills", label: "Bills & needs", color: "#0f766e" },
-  { key: "savings", label: "Savings & goals", color: "#14b8a6" },
-  { key: "debt", label: "Debt paydown", color: "#5e7fa6" },
-  { key: "budgeted", label: "Everyday budgets", color: "#d99a4e" },
+  { key: "bills", label: "Bills & needs", color: "#bd8826" },
+  { key: "savings", label: "Savings & goals", color: "#23906b" },
+  { key: "debt", label: "Debt paydown", color: "#5b8fd6" },
+  { key: "budgeted", label: "Everyday budgets", color: "#d0704a" },
 ];
 
 interface GoalDraft { id?: string; name: string; emoji: string; target: string; monthly: string; }
@@ -139,7 +139,7 @@ export default function PlanPage() {
                 : "Add income, bills, budgets, or goals to build your plan."}
             </div>
           </div>
-          <Ring pct={allocationPct} size={92} stroke={9} color="#14b8a6" track="rgba(15,30,45,0.08)">
+          <Ring pct={allocationPct} size={92} stroke={9} color="#e2b366" track="rgba(242,234,217,0.08)">
             <strong>{Math.round(allocationPct)}%</strong>
             <span>assigned</span>
           </Ring>
@@ -234,7 +234,7 @@ export default function PlanPage() {
         <Sparkline
           values={hasForecast ? forecast : [0, 0, 0, 0, 0, 0]}
           labels={trend.map((m) => m.label)}
-          color="#0f766e"
+          color="#e2b366"
           height={150}
         />
         <p className="lx-proj-note"><TrendingUp size={13} /> Money in minus money out, month by month.</p>

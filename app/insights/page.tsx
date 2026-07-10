@@ -30,7 +30,8 @@ import type { AccountType } from "@/lib/types";
 import Donut from "@/components/Donut";
 import Sparkline from "@/components/Sparkline";
 
-const CHART = ["#0f766e", "#14b8a6", "#5e7fa6", "#d99a4e", "#7c6ba8", "#9fb4c7", "#2e8b72"];
+// ONYX categorical palette — validated (lightness band, chroma, CVD, contrast).
+const CHART = ["#bd8826", "#5b8fd6", "#d76a94", "#a86bc9", "#1f9a90", "#d0704a", "#23906b"];
 
 const ACCT: Record<AccountType, { emoji: string; label: string }> = {
   checking: { emoji: "🏦", label: "Checking" },
@@ -151,7 +152,7 @@ export default function SpendingPage() {
               <div className="lx-li" key={a.id}>
                 <span className="ic" style={{ background: "rgba(15,118,110,0.08)" }}>{a.emoji || ACCT[a.type].emoji}</span>
                 <div className="meta"><div className="t">{a.name}</div><div className="s">{ACCT[a.type].label}</div></div>
-                <div className="amt" style={{ color: a.balance < 0 ? "var(--mc-neg)" : "var(--mc-ink)" }}>{formatMoney(a.balance, cur)}</div>
+                <div className="amt" style={{ color: a.balance < 0 ? "var(--au-neg)" : "var(--au-ink)" }}>{formatMoney(a.balance, cur)}</div>
                 <button className="lx-icon-btn" onClick={() => setDraft({ id: a.id, name: a.name, type: a.type, balance: String(a.balance) })} aria-label="Edit"><Pencil size={14} /></button>
                 <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${a.name}"?`)) deleteAccount(a.id); }} aria-label="Delete"><Trash2 size={14} /></button>
               </div>
@@ -178,7 +179,7 @@ export default function SpendingPage() {
           )}
         </div>
         <div className="lx-hero-num neg" style={{ fontSize: 34 }}>{formatMoney(summary.expenses, cur)}</div>
-        <Sparkline values={hasExpenses ? trendVals : [0, 0, 0, 0, 0, 0, 0]} labels={trend.map((m) => m.label)} color="#c0453b" height={130} />
+        <Sparkline values={hasExpenses ? trendVals : [0, 0, 0, 0, 0, 0, 0]} labels={trend.map((m) => m.label)} color="#ff7864" height={130} />
       </section>
 
       {/* CATEGORY DONUT */}
