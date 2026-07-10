@@ -8905,3 +8905,52 @@ a.lx-stat::after, a.lx-metric::after { color: var(--ox-gold); }
 .lx-emoji.on, .lx-color.on { outline: 2px solid var(--ox-gold) !important; }
 * { scrollbar-color: rgba(157,147,127,0.35) transparent; }
 *::-webkit-scrollbar-thumb { background: rgba(157,147,127,0.3); }
+
+/* ============================================================================
+   ◆ ONYX MOTION & STRUCTURE — the choreography layer.
+   One transition system for the whole app: routes slide in, money counts up,
+   gauges sweep, bars draw. Today's hero becomes an open editorial statement.
+   ============================================================================ */
+
+/* Route transitions: template.tsx remounts this wrapper on every navigation */
+@media (prefers-reduced-motion: no-preference) {
+  .route-in { animation: route-in .42s cubic-bezier(.22,1,.36,1); }
+  @keyframes route-in {
+    from { opacity: 0; transform: translateY(14px) scale(0.992); filter: blur(3px); }
+    to   { opacity: 1; transform: none; filter: none; }
+  }
+  /* Progress bars draw themselves on entry */
+  .lx-bar > span, .lx-bucket-bar > span, .lx-freedom-fill, .lx-barrow .track > span {
+    transform-origin: left center;
+    animation: bar-draw .9s cubic-bezier(.22,1,.36,1) both;
+    animation-delay: .15s;
+  }
+  @keyframes bar-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+}
+
+/* Today's hero: no box — an open editorial statement between hairline rules */
+.lx-hero-glow {
+  background: transparent !important; border: none !important; box-shadow: none !important;
+  border-radius: 0 !important; padding: 6px 2px 22px !important;
+  border-bottom: 1px solid var(--ox-hairline) !important;
+}
+.lx-hero-glow::after { display: none !important; }
+.lx-hero-glow .lx-hero-inner { padding: 0 !important; }
+.lx-hero-glow .lx-hero-num { font-size: 64px !important; line-height: 1.02 !important; margin: 10px 0 8px !important; }
+.lx-hero-glow .lx-hero-num.neg { color: var(--au-neg) !important; }
+
+/* The percentage gauge sits beside its copy on EVERY page (was Debt-only) */
+.lx-debt-hero {
+  display: flex !important; align-items: center !important;
+  justify-content: space-between !important; gap: 18px !important;
+}
+.lx-debt-hero > div:first-child { min-width: 0; flex: 1; }
+.lx-debt-hero .ring { flex: none; }
+.ring-label strong { font-family: var(--font-display), serif !important; font-size: 19px; color: #f2ead9 !important; }
+.ring-label span { color: var(--au-mut) !important; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; }
+
+/* Momentum: a slim inline strip, not a second hero */
+.lx-momentum { padding: 11px 14px !important; border-radius: 16px !important; }
+.lx-momentum-flame { width: 34px !important; height: 34px !important; border-radius: 11px !important; }
+.lx-momentum-meta strong { font-size: 13.5px !important; }
+.lx-momentum-meta span { font-size: 12px !important; }

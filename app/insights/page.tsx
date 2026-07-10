@@ -27,6 +27,7 @@ import {
 } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
 import type { AccountType } from "@/lib/types";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import Donut from "@/components/Donut";
 import Sparkline from "@/components/Sparkline";
 
@@ -122,7 +123,7 @@ export default function SpendingPage() {
       <div className="lx-hero lx-reveal">
         <div className="lx-hero-inner">
           <div className="lx-hero-label">Money to your name</div>
-          <div className="lx-hero-num pos">{formatMoney(cash, cur)}</div>
+          <div className="lx-hero-num pos"><AnimatedNumber value={cash} currency={cur} /></div>
           <div className="lx-hero-sub">Across {accounts.length} account{accounts.length === 1 ? "" : "s"} — what you actually have right now.</div>
           <Link href="/debt" className="lx-nw">
             <span className="lx-nw-lbl">Net worth</span>

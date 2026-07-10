@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import { billsThisMonth } from "@/lib/insights";
 import { formatMoney, monthLabel, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import MemberPicker from "@/components/MemberPicker";
 
 const CATEGORIES = ["Rent", "Utilities", "Subscription", "Insurance", "Phone", "Internet", "Loan", "Childcare", "Other"];
@@ -90,7 +91,7 @@ export default function BillsPage() {
       <div className="lx-hero">
         <div className="lx-hero-inner">
           <div className="lx-hero-label">Recurring this month · {monthLabel(monthKey())}</div>
-          <div className="lx-hero-num neg">{formatMoney(committedTotal, cur)}</div>
+          <div className="lx-hero-num neg"><AnimatedNumber value={committedTotal} currency={cur} /></div>
           <div className="lx-bar"><span style={{ width: `${paidPct}%` }} /></div>
           <div className="lx-hero-math">
             <span>{formatMoney(monthlyTotal, cur)} bills</span>
