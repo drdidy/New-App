@@ -43,7 +43,7 @@ const CAT_ICON: Record<string, string> = {
 };
 
 export default function TodayPage() {
-  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed } = useStore();
+  const { data, ready, updateTransaction, deleteTransaction, addAccount, updateAccount, distributePaycheck, markPaycheckDistributed, markCheckIn } = useStore();
   const root = useRef<HTMLElement>(null);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [amt, setAmt] = useState("");
@@ -217,6 +217,17 @@ export default function TodayPage() {
           </div>
         )}
       </div>
+
+      {/* Weekly check-in (only when reminders are on and a week has passed) */}
+      {data.remindersEnabled && (!data.lastCheckIn || Date.now() - data.lastCheckIn > 7 * 86400000) && (
+        <Link
+          href="/coach"
+          className="lx-checkin lx-reveal"
+          onClick={() => { try { sessionStorage.setItem("mc-checkin", "1"); } catch {} markCheckIn(); }}
+        >
+          🗓️ <b>Weekly check-in time.</b> Tap for your 30-second review with Coach.
+        </Link>
+      )}
 
       {knowables.length > 0 && (
         <section className="lx-card lx-reveal lx-know">

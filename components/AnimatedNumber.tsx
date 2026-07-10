@@ -36,7 +36,12 @@ export default function AnimatedNumber({
       v: value,
       duration: duration / 1000,
       ease: "power2.out",
-      onUpdate: () => setDisplay(obj.v),
+      onUpdate: () => {
+        setDisplay(obj.v);
+        // Track what's actually on screen, so an interrupted animation resumes
+        // from the displayed number instead of jumping to the old target.
+        fromRef.current = obj.v;
+      },
       onComplete: () => {
         fromRef.current = value;
       },
@@ -50,7 +55,6 @@ export default function AnimatedNumber({
     }
     return () => {
       tween.kill();
-      fromRef.current = value;
     };
   }, [value, duration]);
 

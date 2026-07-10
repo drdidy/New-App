@@ -1,7 +1,7 @@
 // Minimal offline-capable service worker for Money Coach.
 // Strategy: network-first for navigation/app shell, falling back to cache so
 // the app still opens when the phone is offline. API calls always go to network.
-const CACHE = "money-coach-v37-transferparse";
+const CACHE = "money-coach-v38-legendary";
 const SHELL = [
   "/",
   "/plan",
@@ -45,12 +45,25 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(request, copy).catch(() => {}));
+        // Only cache good responses — a cached 404/500 would be served offline forever.
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(request, copy).catch(() => {}));
+        }
         return res;
       })
-      .catch(() =>
-        caches.match(request).then((r) => r || caches.match("/offline.html") || caches.match("/")),
-      ),
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        // The offline page is only a valid stand-in for page NAVIGATIONS.
+        // Serving HTML as the body of a failed script/CSS request corrupts the app.
+        if (request.mode === "navigate") {
+          const offline = await caches.match("/offline.html");
+          if (offline) return offline;
+          const home = await caches.match("/");
+          if (home) return home;
+        }
+        return Response.error();
+      }),
   );
 });

@@ -6,7 +6,7 @@ import gsap from "gsap";
 import {
   ArrowRight,
   BarChart3,
-  Landmark,
+
   Pencil,
   Plus,
   ReceiptText,

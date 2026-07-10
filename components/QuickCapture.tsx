@@ -84,6 +84,7 @@ export default function QuickCapture() {
     payDebt(debt.id, p.amount, who);
     setPending((list) => list.filter((_, i) => i !== idx));
     setConfirms((c) => [...c, `Paid ${formatMoney(p.amount, cur)} to ${debt.party} — ${formatMoney(Math.max(0, debt.balance - p.amount), cur)} left`]);
+    setTimeout(() => setConfirms([]), 6000);
     if (navigator.vibrate) navigator.vibrate(18);
   }
 
@@ -93,6 +94,7 @@ export default function QuickCapture() {
     addTransaction({ type: "expense", amount: p.amount, category: "Debt payment", description: p.summary || `Payment to ${p.party}`, date: todayISO(), memberId: who });
     setPending((list) => list.filter((_, i) => i !== idx));
     setConfirms((c) => [...c, `Logged ${formatMoney(p.amount, cur)} as an expense`]);
+    setTimeout(() => setConfirms([]), 6000);
   }
 
   function toggleVoice() {
@@ -273,8 +275,8 @@ export default function QuickCapture() {
       ))}
       {confirms.length > 0 && (
         <div className="confirms">
-          {confirms.map((c) => (
-            <div className="confirm" key={c}>
+          {confirms.map((c, i) => (
+            <div className="confirm" key={`${i}-${c}`}>
               <CheckCircle2 size={16} aria-hidden="true" />
               {c}
             </div>

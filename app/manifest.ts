@@ -10,8 +10,10 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/",
     id: "/",
     display: "standalone",
-    background_color: "#eef1f6",
-    theme_color: "#0f766e",
+    // Match the aurora canvas so the standalone splash/status chrome doesn't
+    // flash light over a dark app at every launch.
+    background_color: "#070b16",
+    theme_color: "#070b16",
     orientation: "portrait",
     categories: ["finance", "productivity"],
     shortcuts: [
