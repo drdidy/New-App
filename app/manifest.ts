@@ -3,8 +3,10 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Money Coach",
-    // Keep the launcher label aligned with the actual product name.
-    short_name: "Money Coach",
+    // Launchers ellipsize anything past ~9 characters under the icon; a short
+    // label always renders whole. The full name still shows on the splash
+    // screen, install prompt, and app info.
+    short_name: "Coach",
     description:
       "Your private, AI-powered budgeting, bills, spending and debt coach.",
     start_url: "/",
