@@ -3,17 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import gsap from "gsap";
-import {
-  ArrowRight,
-  ArrowDownRight,
-  MessageCircleHeart,
-  Wallet,
-  Landmark,
-  Sparkles,
-  Flame,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Flame, Sparkles, Trash2, X } from "lucide-react";
 import type { Transaction } from "@/lib/types";
 import { useStore, summarize } from "@/lib/store";
 import {
@@ -77,22 +67,9 @@ export default function TodayPage() {
 
   useEffect(() => {
     if (!ready) return;
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
-      gsap.from(".lx-reveal", {
-        y: 22,
-        opacity: 0,
-        duration: 0.6,
-        ease: "power3.out",
-        stagger: 0.08,
-      });
-      gsap.from(".lx-hero", {
-        scale: 0.96,
-        opacity: 0,
-        duration: 0.7,
-        ease: "back.out(1.6)",
-      });
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
     }, root);
     return () => ctx.revert();
   }, [ready]);
@@ -111,194 +88,152 @@ export default function TodayPage() {
   const cur = data.currency;
   const barPct = sts.spendable > 0 ? Math.max(0, Math.min(100, (sts.safe / sts.spendable) * 100)) : safePos ? 60 : 8;
   const streak = loggingStreak(data);
+  const dateLine = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const checkInDue = data.remindersEnabled && (!data.lastCheckIn || Date.now() - data.lastCheckIn > 7 * 86400000);
+  const payday = (() => {
+    const plan = paycheckPlan(data);
+    if (!plan || data.lastPaycheckDistributed === monthKey()) return null;
+    return plan;
+  })();
 
   return (
-    <main className="lx" ref={root}>
-      <header className="lx-top lx-reveal">
-        <div>
-          <p className="lx-eyebrow">{greeting()}, {firstName}</p>
-          <h1 className="lx-h1">Today</h1>
-        </div>
-        <div className="lx-top-actions">
-          <div className={"lx-streak" + (streak.loggedToday ? " on" : "")} title={`${streak.count}-day streak`}>
-            <Flame size={16} /> {streak.count}
-          </div>
-          <Link href="/coach" className="lx-coachbtn" aria-label="Open coach">
-            <MessageCircleHeart size={20} />
-          </Link>
-        </div>
-      </header>
-
-      {/* HERO */}
-      <div className="lx-hero lx-hero-glow">
-        <div className="lx-hero-aura" aria-hidden="true" />
-        <div className="lx-hero-inner">
-          <div className="lx-hero-label">
-            Safe to spend
-            <span className="lx-hero-tag">{sts.mode === "cash" ? "from real cash" : "from income"}</span>
-          </div>
-          <div className={"lx-hero-num " + (safePos ? "pos" : "neg")}>
-            <AnimatedNumber value={sts.safe} currency={cur} />
-          </div>
-          <div className="lx-hero-sub">
-            {safePos
-              ? `About ${formatMoney(sts.dailyAllowance, cur)} a day for the ${sts.daysLeft} days ${sts.periodLabel}.`
-              : "You're short for what's due before payday — tap Coach for a plan."}
-          </div>
-          <div className="lx-bar"><span style={{ width: `${barPct}%` }} /></div>
-          {(sts.committed > 0 || sts.setAside > 0) && (
-            <div className="lx-hero-math">
-              <Link href="/spending" className="lx-hero-link">{formatMoney(sts.spendable, cur)} {sts.mode === "cash" ? "on hand" : "income left"}</Link>
-              {sts.committed > 0 && <Link href="/bills" className="lx-hero-minus lx-hero-link">− {formatMoney(sts.committed, cur)} due before payday</Link>}
-              {sts.setAside > 0 && <Link href="/buckets" className="lx-hero-minus lx-hero-link">− {formatMoney(sts.setAside, cur)} set aside in buckets</Link>}
-            </div>
-          )}
-          {!sts.hasAccounts && !balOpen && (
-            <button className="lx-hero-hint" onClick={() => setBalOpen(true)}>
-              Set your real balance to make this exact →
-            </button>
-          )}
-          {!sts.hasAccounts && balOpen && (
-            <div className="lx-balset">
-              <input
-                type="number" inputMode="decimal" autoFocus placeholder="What's in your account now?"
-                value={balInput} onChange={(e) => setBalInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveBalance()}
-              />
-              <button className="lx-primary sm" onClick={saveBalance} disabled={!(parseFloat(balInput) >= 0)}>Save</button>
-            </div>
-          )}
-        </div>
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
+        <p className="pg-date">{dateLine} · {greeting()}, {firstName}</p>
+        <span className="tag" title={noSpend > 0 ? "Days in a row without spending" : "Daily logging streak"}>
+          {noSpend > 0 ? <>🚫 {noSpend}d no-spend</> : <><Flame size={11} /> {streak.count}d</>}
+        </span>
       </div>
+      <h1 className="pg-title rise">Today</h1>
+      <div className="pg-rule rise" />
 
-      {/* GIVE & SAVE FIRST — proactive paycheck-allocation nudge */}
-      {(() => {
-        const plan = paycheckPlan(data);
-        if (!plan || data.lastPaycheckDistributed === monthKey()) return null;
-        return (
-          <section className="lx-payday lx-reveal">
-            <div className="lx-payday-head">🙏 You’ve been paid {formatMoney(plan.income, cur)} this month</div>
-            <p className="lx-payday-sub">
-              Give and save first — set aside {formatMoney(plan.setAside, cur)}
-              {plan.tithe > 0 ? `, including ${formatMoney(plan.tithe, cur)} for giving,` : ""} across {plan.bucketCount} bucket{plan.bucketCount === 1 ? "" : "s"} before it slips away.
-            </p>
-            <div className="lx-payday-actions">
-              <button className="lx-primary sm" onClick={() => { distributePaycheck(plan.income); markPaycheckDistributed(); success(); }}>
-                <Sparkles size={14} /> Set aside {formatMoney(plan.setAside, cur)}
-              </button>
-              <button className="lx-ghost sm" onClick={() => markPaycheckDistributed()}>Not now</button>
-            </div>
-          </section>
-        );
-      })()}
-
-      {/* STREAK / MOMENTUM */}
-      <div className="lx-momentum lx-reveal">
-        <div className="lx-momentum-flame"><Flame size={20} /></div>
-        <div className="lx-momentum-meta">
-          <strong>{streak.count > 0 ? `${streak.count}-day logging streak` : "Start your streak"}</strong>
-          <span>
-            {noSpend > 0
-              ? `🚫 ${noSpend} day${noSpend === 1 ? "" : "s"} without spending — keep it going.`
-              : streak.loggedToday
-                ? "Logged today — nice. Keep it up tomorrow. 🔥"
-                : streak.count > 0
-                  ? "Log one thing today to keep your streak alive."
-                  : "Log anything below to light it up."}
-          </span>
+      {/* THE STATEMENT */}
+      <div className="st rise">
+        <div className="st-label">
+          Safe to spend
+          <span className="tag">{sts.mode === "cash" ? "from real cash" : "from income"}</span>
         </div>
-        {noSpend > 0 ? (
-          <div className="lx-nospend" title="Days in a row with no spending">🚫 {noSpend}d</div>
-        ) : (
-          <div className="lx-momentum-dots">
-            {[0, 1, 2, 3, 4].map((n) => (
-              <span key={n} className={n < Math.min(5, streak.count) ? "on" : ""} />
-            ))}
+        <div className={"st-num" + (safePos ? "" : " neg")}>
+          <AnimatedNumber value={sts.safe} currency={cur} />
+        </div>
+        <p className="st-meta">
+          {safePos
+            ? `About ${formatMoney(sts.dailyAllowance, cur)} a day for the ${sts.daysLeft} days ${sts.periodLabel}.`
+            : "You're short for what's due before payday — tap Coach for a plan."}
+        </p>
+        <div className="meter"><span style={{ width: `${barPct}%` }} /></div>
+        {(sts.committed > 0 || sts.setAside > 0) && (
+          <div className="st-links">
+            <Link href="/spending">{formatMoney(sts.spendable, cur)} {sts.mode === "cash" ? "on hand" : "income left"}</Link>
+            {sts.committed > 0 && <Link href="/bills" className="neg">− {formatMoney(sts.committed, cur)} due before payday</Link>}
+            {sts.setAside > 0 && <Link href="/buckets" className="neg">− {formatMoney(sts.setAside, cur)} set aside in buckets</Link>}
+          </div>
+        )}
+        {!sts.hasAccounts && !balOpen && (
+          <p className="st-note"><button className="btn-text" onClick={() => setBalOpen(true)}>Set your real balance to make this exact →</button></p>
+        )}
+        {!sts.hasAccounts && balOpen && (
+          <div className="inline-form" style={{ marginTop: 12 }}>
+            <input className="input" type="number" inputMode="decimal" autoFocus placeholder="What's in your account now?"
+              value={balInput} onChange={(e) => setBalInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveBalance()} />
+            <button className="btn sm" onClick={saveBalance} disabled={!(parseFloat(balInput) >= 0)}>Save</button>
           </div>
         )}
       </div>
 
-      {/* Weekly check-in (only when reminders are on and a week has passed) */}
-      {data.remindersEnabled && (!data.lastCheckIn || Date.now() - data.lastCheckIn > 7 * 86400000) && (
-        <Link
-          href="/coach"
-          className="lx-checkin lx-reveal"
-          onClick={() => { try { sessionStorage.setItem("mc-checkin", "1"); } catch {} markCheckIn(); }}
-        >
-          🗓️ <b>Weekly check-in time.</b> Tap for your 30-second review with Coach.
+      {/* GIVE & SAVE FIRST */}
+      {payday && (
+        <section className="plate rise">
+          <div className="plate-title"><Sparkles /> You’ve been paid {formatMoney(payday.income, cur)}</div>
+          <p className="flag-txt" style={{ margin: 0 }}>
+            Give and save first — set aside <b>{formatMoney(payday.setAside, cur)}</b>
+            {payday.tithe > 0 ? <> including <b>{formatMoney(payday.tithe, cur)}</b> for giving,</> : null} across {payday.bucketCount} bucket{payday.bucketCount === 1 ? "" : "s"} before it slips away.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+            <button className="btn sm" onClick={() => { distributePaycheck(payday.income); markPaycheckDistributed(); success(); }}>
+              Set aside {formatMoney(payday.setAside, cur)}
+            </button>
+            <button className="btn-ghost sm" onClick={() => markPaycheckDistributed()}>Not now</button>
+          </div>
+        </section>
+      )}
+
+      {/* WEEKLY CHECK-IN */}
+      {checkInDue && (
+        <Link href="/coach" className="flag rise" style={{ borderBottom: "1px solid var(--rule-soft)", marginBottom: 18 }}
+          onClick={() => { try { sessionStorage.setItem("mc-checkin", "1"); } catch {} markCheckIn(); }}>
+          <span className="flag-txt">🗓️ <b>Weekly check-in time.</b> Tap for your 30-second review with Coach.</span>
         </Link>
       )}
 
+      {/* TICKER */}
+      <div className="ticker rise">
+        <Link href="/spending" className="ticker-cell">
+          <span className="tk-l">Accounts</span>
+          <span className="tk-v"><AnimatedNumber value={cash} currency={cur} /></span>
+        </Link>
+        <Link href="/spending" className="ticker-cell">
+          <span className="tk-l">Net worth</span>
+          <span className={"tk-v" + (nw >= 0 ? " pos" : " mut")}><AnimatedNumber value={nw} currency={cur} /></span>
+        </Link>
+        <Link href="/debt" className="ticker-cell">
+          <span className="tk-l">You owe</span>
+          <span className="tk-v neg"><AnimatedNumber value={summary.totalIOwe} currency={cur} /></span>
+        </Link>
+      </div>
+
+      {/* WORTH KNOWING */}
       {knowables.length > 0 && (
-        <section className="lx-card lx-reveal lx-know">
-          <div className="lx-card-head"><h2>Worth knowing</h2></div>
+        <section className="sec rise">
+          <div className="sec-head"><h2>Worth knowing</h2></div>
           {knowables.map((k, i) => (
-            <div className={"lx-know-row " + k.tone} key={i}>
-              <span className="lx-know-ic">
-                {k.tone === "good" ? <Sparkles size={15} /> : k.tone === "warn" ? <ArrowDownRight size={15} /> : <ArrowRight size={15} />}
-              </span>
-              <span className="lx-know-txt">{k.text}</span>
+            <div className={"flag " + k.tone} key={i}>
+              <span className="flag-txt">{k.text}</span>
             </div>
           ))}
         </section>
       )}
 
-      {/* REAL MONEY ROW (balance-first) — every tile drills into its screen */}
-      <div className="lx-stats lx-reveal">
-        <Link href="/spending" className="lx-stat">
-          <Wallet size={16} className="lx-stat-ic" />
-          <div className="lx-stat-num">{formatMoney(cash, cur)}</div>
-          <div className="lx-stat-lbl">In your accounts</div>
-        </Link>
-        <Link href="/spending" className="lx-stat">
-          <Landmark size={16} className="lx-stat-ic" />
-          <div className={"lx-stat-num " + (nw >= 0 ? "pos" : "calm")}>{formatMoney(nw, cur)}</div>
-          <div className="lx-stat-lbl">Net worth</div>
-        </Link>
-        <Link href="/debt" className="lx-stat">
-          <ArrowDownRight size={16} className="lx-stat-ic neg" />
-          <div className="lx-stat-num neg">{formatMoney(summary.totalIOwe, cur)}</div>
-          <div className="lx-stat-lbl">You owe</div>
-        </Link>
-      </div>
+      {/* CAPTURE */}
+      <div className="rise"><QuickCapture /></div>
 
-      <div className="lx-reveal"><QuickCapture /></div>
-
-      <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Recent</h2><Link href="/spending">Insights</Link></div>
+      {/* RECENT */}
+      <section className="sec rise">
+        <div className="sec-head"><h2>Recent entries</h2><span className="sec-aux"><Link href="/spending">Insights</Link></span></div>
         {recent.length === 0 ? (
-          <div className="lx-empty">Nothing yet — say <b>“spent 12 on coffee”</b> above.</div>
+          <p className="sec-sub">Nothing yet — say <b>“spent 12 on coffee”</b> above.</p>
         ) : recent.map((t) => (
-          <button className="lx-row lx-row-tap" key={t.id} onClick={() => openEdit(t)}>
-            <span className="lx-row-ic">{CAT_ICON[t.category] || "💸"}</span>
-            <div className="lx-row-meta">
-              <div className="lx-row-t">{t.description || t.category}</div>
-              <div className="lx-row-s">{t.category} · {friendlyDate(t.date)}</div>
+          <button className="row" key={t.id} onClick={() => openEdit(t)}>
+            <span className="row-ic">{CAT_ICON[t.category] || "💸"}</span>
+            <div className="row-meta">
+              <div className="row-t">{t.description || t.category}</div>
+              <div className="row-s">{t.category} · {friendlyDate(t.date)}</div>
             </div>
-            <div className={"lx-row-amt " + (t.type === "income" ? "pos" : "neg")}>
+            <div className={"row-amt " + (t.type === "income" ? "pos" : "neg")}>
               {t.type === "income" ? "+" : "−"}{formatMoney(t.amount, cur)}
             </div>
           </button>
         ))}
-        {recent.length > 0 && <div className="lx-row-hint">Tap an entry to edit or delete it.</div>}
+        {recent.length > 0 && <p className="sec-sub">Tap an entry to edit or delete it.</p>}
       </section>
 
       {editTx && (
-        <div className="lx-sheet-backdrop" onClick={() => setEditTx(null)}>
-          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="lx-sheet-head">
+        <div className="sheet-backdrop" onClick={() => setEditTx(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
               <h3>Edit entry</h3>
-              <button className="lx-sheet-x" onClick={() => setEditTx(null)} aria-label="Close"><X size={18} /></button>
+              <button className="btn-icon" onClick={() => setEditTx(null)} aria-label="Close"><X size={18} /></button>
             </div>
-            <p className="lx-group-sub">{editTx.category} · {friendlyDate(editTx.date)} · {editTx.type}</p>
-            <label className="lx-field"><span>Amount</span>
+            <p className="sec-sub" style={{ marginTop: 0 }}>{editTx.category} · {friendlyDate(editTx.date)} · {editTx.type}</p>
+            <label className="field"><span>Amount</span>
               <input type="number" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} autoFocus />
             </label>
-            <label className="lx-field"><span>Description</span>
+            <label className="field"><span>Description</span>
               <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={editTx.category} />
             </label>
-            <button className="lx-primary full" onClick={saveEdit} disabled={!(parseFloat(amt) > 0)}>Save changes</button>
-            <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }}
+            <button className="btn full" onClick={saveEdit} disabled={!(parseFloat(amt) > 0)}>Save changes</button>
+            <button className="btn-ghost danger full" style={{ width: "100%", marginTop: 10 }}
               onClick={() => { deleteTransaction(editTx.id); setEditTx(null); }}>
               <Trash2 size={15} /> Delete this entry
             </button>

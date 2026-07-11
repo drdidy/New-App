@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, CheckCircle2, Loader2, Mic, Send } from "lucide-react";
+import { Camera, CheckCircle2, Feather, Loader2, Mic, Send } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { matchPersonDebts } from "@/lib/insights";
 import type { Debt, ParsedEntry } from "@/lib/types";
@@ -55,9 +55,8 @@ export default function QuickCapture() {
       setErr('Try a money sentence like "spent 20 on lunch" or "paid Visa 75".');
       return;
     }
-    // A payment to a person whose name matches more than one debt is ambiguous
-    // ("James" → James Allen or James Brown). Hold those for a quick confirm;
-    // apply everything else (incl. unambiguous / exact matches) immediately.
+    // Ambiguous person payments ("James" matching 2+ debts) are held for a
+    // quick confirm; everything else applies immediately.
     const immediate: ParsedEntry[] = [];
     const ambiguous: PendingPay[] = [];
     for (const e of entries) {
@@ -201,12 +200,12 @@ export default function QuickCapture() {
   }
 
   return (
-    <div className="card capture">
-      <label className="capture-label" htmlFor="quick-capture">
-        Tell Money Coach what happened
-      </label>
+    <div className="plate">
+      <label className="plate-title" htmlFor="quick-capture"><Feather /> Tell Money Coach what happened</label>
       <textarea
         id="quick-capture"
+        className="input"
+        rows={2}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Try: spent 42 on groceries, paid Visa 75, paycheck 2200"
@@ -215,70 +214,46 @@ export default function QuickCapture() {
         }}
       />
       {data.members.length > 1 && (
-        <div className="capture-who">
-          <span className="capture-who-label">Assign to</span>
-          <MemberPicker
-            members={data.members}
-            value={who}
-            onChange={setWho}
-            size="sm"
-          />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <span className="sec-sub" style={{ margin: 0 }}>Assign to</span>
+          <MemberPicker members={data.members} value={who} onChange={setWho} size="sm" />
         </div>
       )}
-      <div className="capture-actions">
-        <button
-          className={"btn btn-mic" + (listening ? " live" : "")}
-          onClick={toggleVoice}
-          aria-label={listening ? "Stop voice capture" : "Start voice capture"}
-          type="button"
-        >
-          <Mic size={19} aria-hidden="true" />
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className={"btn-ghost" + (listening ? " gold" : "")} onClick={toggleVoice}
+          aria-label={listening ? "Stop voice capture" : "Start voice capture"} type="button">
+          <Mic size={18} aria-hidden="true" />
         </button>
-        <button
-          className="btn btn-ghost btn-mic"
-          onClick={() => fileRef.current?.click()}
-          aria-label="Scan receipt"
-          type="button"
-        >
-          <Camera size={19} aria-hidden="true" />
+        <button className="btn-ghost" onClick={() => fileRef.current?.click()} aria-label="Scan receipt" type="button">
+          <Camera size={18} aria-hidden="true" />
         </button>
-        <button className="btn btn-primary" onClick={() => submit()} disabled={busy}>
-          {busy ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <Send size={18} aria-hidden="true" />}
+        <button className="btn" style={{ flex: 1 }} onClick={() => submit()} disabled={busy}>
+          {busy ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <Send size={17} aria-hidden="true" />}
           {busy ? "Analyzing" : "Log entry"}
         </button>
       </div>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={onReceipt}
-        hidden
-      />
-      <p className="hint">
-        Only the note or receipt you choose is analyzed. You can always type manually.
-      </p>
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onReceipt} hidden />
+      <p className="hint">Only the note or receipt you choose is analyzed. You can always type manually.</p>
+
       {pending.map((p, idx) => (
-        <div className="capture-resolve" key={idx}>
-          <div className="capture-resolve-q">
-            You paid <b>{formatMoney(p.amount, cur)}</b> to “{p.party}” — which debt should I reduce?
-          </div>
-          <div className="capture-resolve-opts">
+        <div className="verdict caution" key={idx}>
+          <strong>Which debt should this reduce?</strong>
+          <span>You paid {formatMoney(p.amount, cur)} to “{p.party}”.</span>
+          <div className="chips" style={{ marginTop: 10 }}>
             {p.candidates.map((c) => (
-              <button key={c.id} className="lx-ghost sm" onClick={() => resolveToDebt(idx, c)}>
+              <button key={c.id} className="chip" onClick={() => resolveToDebt(idx, c)}>
                 {c.party} · {formatMoney(c.balance, cur)} left
               </button>
             ))}
-            <button className="lx-ghost sm" onClick={() => resolveToExpense(idx)}>Just an expense</button>
+            <button className="chip" onClick={() => resolveToExpense(idx)}>Just an expense</button>
           </div>
         </div>
       ))}
       {confirms.length > 0 && (
-        <div className="confirms">
+        <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
           {confirms.map((c, i) => (
-            <div className="confirm" key={`${i}-${c}`}>
-              <CheckCircle2 size={16} aria-hidden="true" />
-              {c}
+            <div key={`${i}-${c}`} style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--pos)", fontSize: 13.5, fontWeight: 650 }}>
+              <CheckCircle2 size={15} aria-hidden="true" /> {c}
             </div>
           ))}
         </div>

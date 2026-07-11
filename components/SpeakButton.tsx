@@ -120,20 +120,20 @@ export default function SpeakButton() {
 
   return (
     <>
-      <button className="mc-fab" onClick={() => setOpen(true)} aria-label="Add by voice">
+      <button className={"fab" + (listening ? " live" : "")} onClick={() => setOpen(true)} aria-label="Add by voice">
         <Mic size={22} />
       </button>
 
       {open && (
-        <div className="lx-sheet-backdrop" onClick={close}>
-          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="lx-sheet-head">
+        <div className="sheet-backdrop" onClick={close}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
               <h3>Just say it</h3>
-              <button className="lx-sheet-x" onClick={close} aria-label="Close"><X size={18} /></button>
+              <button className="btn-icon" onClick={close} aria-label="Close"><X size={18} /></button>
             </div>
 
             <button
-              className={"mc-bigmic" + (listening ? " live" : "")}
+              className={"bigmic" + (listening ? " live" : "")}
               onClick={toggleVoice}
               aria-label={listening ? "Stop listening" : "Start talking"}
             >
@@ -141,35 +141,38 @@ export default function SpeakButton() {
               <span>{listening ? "Listening… tap to stop" : busy ? "Adding…" : "Tap & talk"}</span>
             </button>
 
-            <div className="mc-or">or type / use your keyboard mic</div>
+            <p className="sec-sub" style={{ textAlign: "center" }}>or type / use your keyboard mic</p>
 
-            <div className="lx-chatbar" style={{ paddingTop: 0 }}>
+            <div className="inline-form">
               <input
+                className="input"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
                 placeholder='e.g. "rent is 1400 on the 1st"'
                 autoFocus
               />
-              <button aria-label="Add" onClick={() => submit()} disabled={busy || !text.trim()}><Send size={18} /></button>
+              <button className="btn sm" aria-label="Add" onClick={() => submit()} disabled={busy || !text.trim()}><Send size={17} /></button>
             </div>
 
-            {err && <p className="lx-voicenote">{err}</p>}
+            {err && <p className="err">{err}</p>}
 
             {confirms.length > 0 ? (
-              <div className="mc-confirms">
+              <div style={{ marginTop: 14, display: "grid", gap: 7 }}>
                 {pop > 0 && <Burst key={pop} />}
                 {confirms.map((c, i) => (
-                  <div className="mc-confirm" key={i}><Sparkles size={13} /> {c}</div>
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--pos)", fontSize: 13.5, fontWeight: 650 }}><Sparkles size={13} /> {c}</div>
                 ))}
-                <button className="lx-ghost" style={{ width: "100%", marginTop: 4 }} onClick={() => setConfirms([])}>Add another</button>
+                <button className="btn-ghost" style={{ width: "100%", marginTop: 6 }} onClick={() => setConfirms([])}>Add another</button>
               </div>
             ) : (
-              <div className="mc-hints">
-                <span className="mc-hints-label">Try saying</span>
-                {EXAMPLES.map((ex) => (
-                  <button key={ex} className="lx-chip" onClick={() => submit(ex)}>{ex}</button>
-                ))}
+              <div style={{ marginTop: 14 }}>
+                <p className="sec-sub">Try saying</p>
+                <div className="chips">
+                  {EXAMPLES.map((ex) => (
+                    <button key={ex} className="chip" onClick={() => submit(ex)}>{ex}</button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

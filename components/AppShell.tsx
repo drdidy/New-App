@@ -12,39 +12,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="app boot">
-        <div className="boot-logo">MC</div>
+      <div className="boot">
+        <div className="seal">MC</div>
       </div>
     );
   }
 
   if (!data.onboarded) {
-    return (
-      <div className="app-frame onboarding-frame">
-        <div className="app">
-          <Onboarding />
-        </div>
-      </div>
-    );
+    return <Onboarding />;
   }
 
   return (
-    <div className="app-frame vision-shell">
-      <header className="topbar vision-mobile-topbar">
-        <Link href="/" className="brand-lockup" aria-label="Money Coach home">
-          <span className="brand-mark">MC</span>
-          <span>
-            <strong>Money Coach</strong>
-            <small>Daily money clarity</small>
-          </span>
+    <div className="shell">
+      <header className="masthead">
+        <Link href="/" className="masthead-brand" aria-label="Money Coach home">
+          <span className="seal">MC</span>
+          <span className="masthead-name">Money Coach</span>
         </Link>
-        <div className="vision-mobile-actions">
-          <Link href="/settings" className="topbar-action" aria-label="Settings">
-            <Settings size={18} aria-hidden="true" />
-          </Link>
-        </div>
+        <Link href="/settings" className="btn-icon" aria-label="Settings">
+          <Settings size={18} aria-hidden="true" />
+        </Link>
       </header>
-      <div className="app">{children}</div>
+      {children}
       <SpeakButton />
       <BottomNav />
     </div>
