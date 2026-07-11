@@ -15,7 +15,7 @@ import {
   worthKnowing,
   paycheckPlan,
 } from "@/lib/insights";
-import { formatMoney, friendlyDate, monthKey } from "@/lib/format";
+import { formatMoney, friendlyDate, isoWeekId, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
@@ -39,6 +39,7 @@ export default function TodayPage() {
   const [amt, setAmt] = useState("");
   const [desc, setDesc] = useState("");
   const [balOpen, setBalOpen] = useState(false);
+  const [weekUnread, setWeekUnread] = useState(false);
   const [balInput, setBalInput] = useState("");
 
   function saveBalance() {
@@ -67,6 +68,7 @@ export default function TodayPage() {
 
   useEffect(() => {
     if (!ready) return;
+    try { setWeekUnread(localStorage.getItem("mc-week-read") !== isoWeekId()); } catch {}
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
       gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
@@ -167,6 +169,14 @@ export default function TodayPage() {
         </Link>
       )}
 
+      {/* THE WEEKLY EDITION */}
+      <Link href="/week" className="flag rise" style={{ borderBottom: "1px solid var(--rule-soft)", marginBottom: 18 }}>
+        <span className="flag-txt">
+          📰 <b>The Weekly Edition</b> — your week in money, typeset.
+          {weekUnread && <b style={{ color: "var(--gold)" }}> New issue ✦</b>}
+        </span>
+      </Link>
+
       {/* TICKER */}
       <div className="ticker rise">
         <Link href="/spending" className="ticker-cell">
@@ -200,7 +210,7 @@ export default function TodayPage() {
 
       {/* RECENT */}
       <section className="sec rise">
-        <div className="sec-head"><h2>Recent entries</h2><span className="sec-aux"><Link href="/spending">Insights</Link></span></div>
+        <div className="sec-head"><h2>Recent entries</h2><span className="sec-aux"><Link href="/ledger">All entries</Link></span></div>
         {recent.length === 0 ? (
           <p className="sec-sub">Nothing yet — say <b>“spent 12 on coffee”</b> above.</p>
         ) : recent.map((t) => (

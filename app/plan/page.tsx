@@ -12,6 +12,8 @@ import AnimatedNumber from "@/components/AnimatedNumber";
 import Donut from "@/components/Donut";
 import Ring from "@/components/Ring";
 import Sparkline from "@/components/Sparkline";
+import Burst from "@/components/Burst";
+import { success } from "@/lib/haptics";
 
 const GOAL_EMOJIS = ["🎯", "🛟", "🏠", "🚗", "✈️", "🎄", "💍", "🎓", "🏖️", "💻"];
 
@@ -29,6 +31,7 @@ export default function PlanPage() {
   const root = useRef<HTMLElement>(null);
   const [gDraft, setGDraft] = useState<GoalDraft | null>(null);
   const [addAmt, setAddAmt] = useState("");
+  const [celebrate, setCelebrate] = useState(0);
 
   function openGoal(g?: Goal) {
     setAddAmt("");
@@ -55,7 +58,13 @@ export default function PlanPage() {
     if (!gDraft?.id) return;
     const a = parseFloat(addAmt);
     if (!(a > 0)) return;
+    const g = data.goals.find((x) => x.id === gDraft.id);
     contributeGoal(gDraft.id, a);
+    // The moment a goal is fully funded deserves more than a longer bar.
+    if (g && g.saved < g.target && g.saved + a >= g.target) {
+      setCelebrate((c) => c + 1);
+      success();
+    }
     setGDraft(null);
   }
 
@@ -110,6 +119,7 @@ export default function PlanPage() {
 
   return (
     <main className="pg" ref={root}>
+      {celebrate > 0 && <Burst key={celebrate} />}
       <div className="pg-head rise">
         <p className="pg-date">Your money plan</p>
         <button className="btn-text" onClick={() => openGoal()}>+ New goal</button>
