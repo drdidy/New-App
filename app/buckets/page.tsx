@@ -22,6 +22,7 @@ import { clampPct, formatMoney, monthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import type { Bucket, BucketKind, RecurringIncome } from "@/lib/types";
+import Burst from "@/components/Burst";
 
 const KIND: Record<BucketKind, { label: string; emoji: string; Icon: typeof PiggyBank }> = {
   save: { label: "Savings", emoji: "🐷", Icon: PiggyBank },
@@ -55,6 +56,7 @@ export default function BucketsPage() {
   const [fundAmt, setFundAmt] = useState("");
   const [distOpen, setDistOpen] = useState(false);
   const [distAmt, setDistAmt] = useState("");
+  const [celebrate, setCelebrate] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
@@ -127,7 +129,12 @@ export default function BucketsPage() {
   function doFund(id: string, sign: 1 | -1) {
     const a = parseFloat(fundAmt);
     if (!(a > 0)) return;
+    const b = buckets.find((x) => x.id === id);
     fundBucket(id, sign * a);
+    // Reaching a bucket's target is a finish line, not a rounding event.
+    if (sign === 1 && b?.target && b.balance < b.target && b.balance + a >= b.target) {
+      setCelebrate((c) => c + 1);
+    }
     success();
     setFundId(null); setFundAmt("");
   }
@@ -144,6 +151,7 @@ export default function BucketsPage() {
 
   return (
     <main className="pg" ref={root}>
+      {celebrate > 0 && <Burst key={celebrate} />}
       <div className="pg-head rise">
         <p className="pg-date">Give every paycheck a job</p>
         <button className="btn-text" onClick={() => openBucket()}>+ Add bucket</button>

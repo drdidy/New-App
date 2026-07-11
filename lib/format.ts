@@ -109,3 +109,13 @@ export const MEMBER_COLORS = [
   "#7fb7b2",
 ];
 export const MEMBER_EMOJIS = ["🦊", "🐧", "🐻", "🦉", "🐬", "🦁", "🐨", "🦄"];
+
+// Monday-anchored ISO week id, e.g. "2026-W28". Used to mark the Weekly
+// Edition read-state per week.
+export function isoWeekId(d: Date = new Date()): string {
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+  const jan4 = new Date(t.getFullYear(), 0, 4);
+  const wk = 1 + Math.round(((t.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  return `${t.getFullYear()}-W${String(wk).padStart(2, "0")}`;
+}
