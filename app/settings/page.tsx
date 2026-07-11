@@ -17,7 +17,12 @@ export default function SettingsPage() {
   const [newBudgetCat, setNewBudgetCat] = useState("");
   const [newBudgetLimit, setNewBudgetLimit] = useState("");
   const [note, setNote] = useState("");
+  const [protectedStorage, setProtectedStorage] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    navigator.storage?.persisted?.().then(setProtectedStorage).catch(() => {});
+  }, []);
 
 
   const root = useRef<HTMLElement>(null);
@@ -41,6 +46,7 @@ export default function SettingsPage() {
     a.download = `money-coach-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    try { localStorage.setItem("mc-last-backup", String(Date.now())); } catch {}
     flash("Backup downloaded ✓");
   }
 
@@ -209,7 +215,14 @@ export default function SettingsPage() {
       {/* DATA */}
       <section className="sec rise">
         <div className="sec-head"><h2>Your data</h2></div>
-        <p className="sec-sub" style={{ marginTop: 0 }}>Everything lives on this device. Back it up to move phones or keep it safe.</p>
+        <p className="sec-sub" style={{ marginTop: 0 }}>
+          Everything lives on this device. Back it up to move phones or keep it safe.
+          {protectedStorage != null && (
+            protectedStorage
+              ? <> <b style={{ color: "var(--pos)" }}>Storage is protected</b> — the system won&apos;t clear it to free space.</>
+              : <> This browser hasn&apos;t granted protected storage yet — a backup or household sync is your safety net.</>
+          )}
+        </p>
         <div className="fieldrow">
           <button className="btn-ghost" onClick={exportData}><Download size={15} /> Back up</button>
           <button className="btn-ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> Restore</button>
