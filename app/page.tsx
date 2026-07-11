@@ -43,6 +43,7 @@ export default function TodayPage() {
   const [monthUnread, setMonthUnread] = useState(false);
   const [installEvt, setInstallEvt] = useState<{ prompt: () => Promise<void> } | null>(null);
   const [installHint, setInstallHint] = useState<"" | "prompt" | "ios">("");
+  const [backupRisk, setBackupRisk] = useState(false);
   const [balInput, setBalInput] = useState("");
 
   function saveBalance() {
@@ -98,6 +99,20 @@ export default function TodayPage() {
       const pm = prevMonthKey();
       const hadActivity = data.transactions.some((t) => t.date.startsWith(pm));
       setMonthUnread(new Date().getDate() <= 7 && hadActivity && localStorage.getItem("mc-month-read") !== pm);
+    } catch {}
+    // Backup health: with no sync and no recent backup, months of history live
+    // only in this one browser. Nudge — snoozable, gone once protected.
+    try {
+      const synced = Boolean(data.syncEnabled && data.syncCode);
+      const last = parseInt(localStorage.getItem("mc-last-backup") || "0", 10);
+      const snooze = parseInt(localStorage.getItem("mc-backup-snooze") || "0", 10);
+      const staleDays = 30 * 86400000;
+      setBackupRisk(
+        !synced &&
+        data.transactions.length >= 20 &&
+        Date.now() - last > staleDays &&
+        Date.now() - snooze > 14 * 86400000
+      );
     } catch {}
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
@@ -288,6 +303,15 @@ export default function TodayPage() {
           </div>
         </div>
       )}
+      {backupRisk && (
+        <div className="flag rise warn" style={{ marginTop: 20 }}>
+          <Link href="/settings" className="flag-txt" style={{ flex: 1 }}>
+            🛟 <b>{data.transactions.length} entries live only on this phone.</b> Back up or turn on sync — it takes a minute.
+          </Link>
+          <button className="btn-icon" onClick={() => { try { localStorage.setItem("mc-backup-snooze", String(Date.now())); } catch {} setBackupRisk(false); }} aria-label="Remind me later"><X size={14} /></button>
+        </div>
+      )}
+
       {installHint && (
         <div className="flag rise" style={{ marginTop: 20 }}>
           <span className="flag-txt">

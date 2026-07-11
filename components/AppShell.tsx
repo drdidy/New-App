@@ -13,6 +13,14 @@ import { isoWeekId } from "@/lib/format";
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, data } = useStore();
 
+  // Ask the browser to protect our storage from eviction — the entire ledger
+  // lives in localStorage, so this is the difference between "app data" and
+  // "disposable cache" to the OS. Safe no-op where unsupported.
+  useEffect(() => {
+    if (!ready || !data.onboarded) return;
+    navigator.storage?.persist?.().catch(() => {});
+  }, [ready, data.onboarded]);
+
   // App-icon badge: bills due today still unpaid, plus an unread Weekly
   // Edition. Cleared the moment there is nothing that needs the user.
   useEffect(() => {
