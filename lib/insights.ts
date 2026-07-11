@@ -218,6 +218,41 @@ export function monthOverMonth(data: AppData): {
   return { thisMonth, lastMonth, changePct };
 }
 
+// Your typical cumulative spend by this point in the month, averaged over up
+// to three prior months (each capped at today's day-of-month so the comparison
+// is like-for-like). Powers the "you're usually at $X by now" pace line.
+export function monthPace(data: AppData): { typical: number; actual: number; day: number; months: number } | null {
+  const day = new Date().getDate();
+  const cur = monthKey();
+  const keys: string[] = [];
+  {
+    const d = new Date();
+    for (let i = 1; i <= 3; i++) {
+      const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      keys.push(monthKey(m));
+    }
+  }
+  const sums = new Map<string, number>(keys.map((k) => [k, 0]));
+  const seen = new Set<string>();
+  let actual = 0;
+  for (const t of data.transactions) {
+    if (t.type !== "expense") continue;
+    const m = t.date.slice(0, 7);
+    if (m === cur) { actual += t.amount; continue; }
+    if (!sums.has(m)) continue;
+    seen.add(m);
+    const dom = parseInt(t.date.slice(8, 10), 10) || 1;
+    if (dom <= day) sums.set(m, (sums.get(m) || 0) + t.amount);
+  }
+  if (seen.size === 0) return null;
+  let total = 0;
+  for (const k of seen) total += sums.get(k) || 0;
+  // No baseline worth speaking of (prior months spent nothing by this day) —
+  // "you're usually at $0" is noise, not insight.
+  if (total <= 0) return null;
+  return { typical: total / seen.size, actual, day, months: seen.size };
+}
+
 // --- accounts / net worth ---------------------------------------------------
 
 // Net of money logged since the balances were last set by hand. Income adds,

@@ -5,7 +5,7 @@ import Link from "next/link";
 import gsap from "gsap";
 import { ArrowRight, Pencil, Plus, ReceiptText, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
-import { budgetStatus, cashOnHand, categoryBreakdown, monthOverMonth, monthlyTotals, netWorth } from "@/lib/insights";
+import { budgetStatus, cashOnHand, categoryBreakdown, monthOverMonth, monthPace, monthlyTotals, netWorth } from "@/lib/insights";
 import { formatMoney } from "@/lib/format";
 import type { AccountType } from "@/lib/types";
 import AnimatedNumber from "@/components/AnimatedNumber";
@@ -46,6 +46,7 @@ export default function SpendingPage() {
   const cats = categoryBreakdown(data);
   const budgets = budgetStatus(data);
   const mom = monthOverMonth(data);
+  const paceLine = monthPace(data);
   const trend = monthlyTotals(data, 7);
   const nw = netWorth(data);
   const cash = cashOnHand(data);
@@ -146,6 +147,13 @@ export default function SpendingPage() {
           )}
         </div>
         <div className="st-num neg" style={{ fontSize: "clamp(28px, 9vw, 38px)", margin: "12px 0 2px" }}>{formatMoney(summary.expenses, cur)}</div>
+        {paceLine && (
+          <p className="sec-sub" style={{ margin: "2px 0 10px" }}>
+            {paceLine.actual <= paceLine.typical
+              ? <>You&apos;re usually at <b style={{ color: "var(--ink)" }}>{formatMoney(paceLine.typical, cur)}</b> by day {paceLine.day} — running {formatMoney(paceLine.typical - paceLine.actual, cur)} under your usual pace. 🌿</>
+              : <>You&apos;re usually at <b style={{ color: "var(--ink)" }}>{formatMoney(paceLine.typical, cur)}</b> by day {paceLine.day} — running {formatMoney(paceLine.actual - paceLine.typical, cur)} over your usual pace.</>}
+          </p>
+        )}
         <Sparkline values={hasExpenses ? trendVals : [0, 0, 0, 0, 0, 0, 0]} labels={trend.map((m) => m.label)} color="#ff7864" height={120} />
       </section>
 

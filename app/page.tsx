@@ -15,7 +15,7 @@ import {
   worthKnowing,
   paycheckPlan,
 } from "@/lib/insights";
-import { formatMoney, friendlyDate, isoWeekId, monthKey } from "@/lib/format";
+import { formatMoney, friendlyDate, isoWeekId, monthKey, monthLabel, prevMonthKey } from "@/lib/format";
 import { success } from "@/lib/haptics";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import QuickCapture from "@/components/QuickCapture";
@@ -40,6 +40,9 @@ export default function TodayPage() {
   const [desc, setDesc] = useState("");
   const [balOpen, setBalOpen] = useState(false);
   const [weekUnread, setWeekUnread] = useState(false);
+  const [monthUnread, setMonthUnread] = useState(false);
+  const [installEvt, setInstallEvt] = useState<{ prompt: () => Promise<void> } | null>(null);
+  const [installHint, setInstallHint] = useState<"" | "prompt" | "ios">("");
   const [balInput, setBalInput] = useState("");
 
   function saveBalance() {
@@ -51,6 +54,28 @@ export default function TodayPage() {
     success();
     setBalOpen(false);
     setBalInput("");
+  }
+
+  useEffect(() => {
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as unknown as { standalone?: boolean }).standalone;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem("mc-install-dismissed") === "1"; } catch {}
+    if (standalone || dismissed) return;
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) { setInstallHint("ios"); return; }
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallEvt(e as unknown as { prompt: () => Promise<void> });
+      setInstallHint("prompt");
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+  }, []);
+
+  function dismissInstall() {
+    try { localStorage.setItem("mc-install-dismissed", "1"); } catch {}
+    setInstallHint("");
   }
 
   function openEdit(t: Transaction) {
@@ -69,11 +94,17 @@ export default function TodayPage() {
   useEffect(() => {
     if (!ready) return;
     try { setWeekUnread(localStorage.getItem("mc-week-read") !== isoWeekId()); } catch {}
+    try {
+      const pm = prevMonthKey();
+      const hadActivity = data.transactions.some((t) => t.date.startsWith(pm));
+      setMonthUnread(new Date().getDate() <= 7 && hadActivity && localStorage.getItem("mc-month-read") !== pm);
+    } catch {}
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
       gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
     }, root);
     return () => ctx.revert();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   if (!ready) return null;
@@ -177,6 +208,13 @@ export default function TodayPage() {
         </span>
       </Link>
 
+      {/* THE MONTHLY STATEMENT — first week of a new month, until read */}
+      {monthUnread && (
+        <Link href="/month" className="flag rise good" style={{ borderBottom: "1px solid var(--rule-soft)", marginBottom: 18 }}>
+          <span className="flag-txt">📜 <b>The Monthly Statement</b> — {monthLabel(prevMonthKey())} has closed. Read how it went ✦</span>
+        </Link>
+      )}
+
       {/* TICKER */}
       <div className="ticker rise">
         <Link href="/spending" className="ticker-cell">
@@ -248,6 +286,17 @@ export default function TodayPage() {
               <Trash2 size={15} /> Delete this entry
             </button>
           </div>
+        </div>
+      )}
+      {installHint && (
+        <div className="flag rise" style={{ marginTop: 20 }}>
+          <span className="flag-txt">
+            📲 <b>Put Money Coach on your home screen</b> — {installHint === "prompt" ? "one tap installs it as a full app." : "in Safari: Share, then “Add to Home Screen”."}
+          </span>
+          {installHint === "prompt" && installEvt && (
+            <button className="btn-ghost sm" onClick={async () => { try { await installEvt.prompt(); } catch {} dismissInstall(); }}>Install</button>
+          )}
+          <button className="btn-icon" onClick={dismissInstall} aria-label="Dismiss"><X size={14} /></button>
         </div>
       )}
     </main>

@@ -1,7 +1,7 @@
 // Minimal offline-capable service worker for Money Coach.
 // Strategy: network-first for navigation/app shell, falling back to cache so
 // the app still opens when the phone is offline. API calls always go to network.
-const CACHE = "money-coach-v46-edition";
+const CACHE = "money-coach-v47-statement";
 const SHELL = [
   "/",
   "/plan",
@@ -10,6 +10,10 @@ const SHELL = [
   "/bills",
   "/settings",
   "/coach",
+  "/buckets",
+  "/ledger",
+  "/week",
+  "/month",
   "/manifest.webmanifest",
   "/icon.svg",
   "/icon-192.png",
@@ -65,5 +69,55 @@ self.addEventListener("fetch", (event) => {
         }
         return Response.error();
       }),
+  );
+});
+
+// --- Weekly Edition reminder -------------------------------------------------
+// Fired by the Periodic Background Sync API (registered from the app when the
+// user turns reminders on). Announces each new ISO week's issue exactly once,
+// using a cache entry as the "already announced" marker since the SW has no
+// localStorage.
+function swIsoWeekId(d) {
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+  const jan4 = new Date(t.getFullYear(), 0, 4);
+  const wk = 1 + Math.round(((t.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  return `${t.getFullYear()}-W${String(wk).padStart(2, "0")}`;
+}
+
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag !== "weekly-edition") return;
+  event.waitUntil(
+    (async () => {
+      if (self.Notification && self.Notification.permission !== "granted") return;
+      const id = swIsoWeekId(new Date());
+      const cache = await caches.open(CACHE);
+      const prev = await cache.match("/__meta/week-notified");
+      if (prev && (await prev.text()) === id) return;
+      await cache.put("/__meta/week-notified", new Response(id));
+      await self.registration.showNotification("The Weekly Edition is out", {
+        body: "Your week in money, typeset. Open the new issue.",
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        tag: "weekly-edition",
+        data: { url: "/week" },
+      });
+    })(),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if ("focus" in w) {
+          w.navigate(url);
+          return w.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });
