@@ -1,6 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 // A compact area+line chart for a series of values (e.g. net worth over months).
+// Cinematic entry: the line traces itself left to right, then the area fill and
+// point markers fade up beneath it. Collapses to a static render for users who
+// prefer reduced motion.
 export default function Sparkline({
   values,
   labels,
@@ -12,6 +17,16 @@ export default function Sparkline({
   color?: string;
   height?: number;
 }) {
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setDrawn(true);
+      return;
+    }
+    const id = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   const w = 300;
   const h = height;
   const pad = 8;
@@ -39,10 +54,32 @@ export default function Sparkline({
             <stop offset="1" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={area} fill={`url(#${fillId})`} />
-        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <path
+          d={area}
+          fill={`url(#${fillId})`}
+          style={{ opacity: drawn ? 1 : 0, transition: "opacity 0.7s ease 0.75s" }}
+        />
+        <path
+          d={line}
+          fill="none"
+          stroke={color}
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray={1}
+          strokeDashoffset={drawn ? 0 : 1}
+          style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(0.22, 1, 0.36, 1) 0.15s" }}
+        />
         {values.map((v, i) => (
-          <circle key={i} cx={x(i)} cy={y(v)} r={n > 12 ? 0 : 3} fill={color} />
+          <circle
+            key={i}
+            cx={x(i)}
+            cy={y(v)}
+            r={n > 12 ? 0 : 3}
+            fill={color}
+            style={{ opacity: drawn ? 1 : 0, transition: `opacity 0.4s ease ${0.3 + (i / n) * 0.85}s` }}
+          />
         ))}
       </svg>
       {labels && (

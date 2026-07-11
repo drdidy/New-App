@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import gsap from "gsap";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   CalendarClock, CheckCircle2, ChevronDown, CreditCard, HandCoins, Landmark,
   Mountain, Pencil, Plus, Snowflake, Sparkles, Trash2, Users, X,
@@ -77,6 +78,17 @@ export default function DebtsPage() {
     ? new Date(new Date().getFullYear(), new Date().getMonth() + sim.months, 1)
     : null;
 
+
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!ready) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+    }, root);
+    return () => ctx.revert();
+  }, [ready]);
+
   if (!ready) return null;
   const hasDebt = iOwe.length > 0;
 
@@ -133,8 +145,8 @@ export default function DebtsPage() {
   }
 
   return (
-    <main className="pg">
-      <div className="pg-head">
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
         <p className="pg-date">Owe to people & organizations</p>
         <button className="btn-text" onClick={() => setDraft(emptyDraft())}>+ Add debt</button>
       </div>
@@ -144,7 +156,7 @@ export default function DebtsPage() {
       {burstKey > 0 && <div style={{ display: "grid", placeItems: "center", height: 0 }}><Burst key={burstKey} /></div>}
 
       {/* STATEMENT */}
-      <div className="st">
+      <div className="st rise">
         <div className="st-row">
           <div>
             <div className="st-label">You owe in total</div>
@@ -175,7 +187,7 @@ export default function DebtsPage() {
 
       {/* PAYOFF PLANNER — a tool, so it lives on a plate */}
       {hasDebt && (
-        <section className="plate">
+        <section className="plate rise">
           <div className="plate-title"><Sparkles /> Payoff planner</div>
           <div className="seg" style={{ marginBottom: 14 }}>
             <button className={method === "snowball" ? "on" : ""} onClick={() => setMethod("snowball")}>
@@ -262,7 +274,7 @@ interface GroupProps {
 function DebtGroup(props: GroupProps) {
   const { title, subtitle, debts, incoming, cur } = props;
   return (
-    <section className="sec">
+    <section className="sec rise">
       <div className="sec-head">
         <h2>{title}</h2>
         <span className="sec-aux"><span className="sec-total">{formatMoney(debts.reduce((s, d) => s + d.balance, 0), cur)}</span></span>
