@@ -60,7 +60,7 @@ export default function BucketsPage() {
     if (!ready) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
-      gsap.from(".lx-reveal", { y: 20, opacity: 0, duration: 0.5, ease: "power3.out", stagger: 0.06 });
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
     }, root);
     return () => ctx.revert();
   }, [ready]);
@@ -143,114 +143,93 @@ export default function BucketsPage() {
   const splitTotal = split.reduce((s, x) => s + x.add, 0);
 
   return (
-    <main className="lx" ref={root}>
-      <header className="lx-top lx-reveal">
-        <div>
-          <p className="lx-eyebrow"><Layers size={13} /> Give every paycheck a job</p>
-          <h1 className="lx-h1">Buckets</h1>
-        </div>
-        <button className="lx-addbtn" onClick={() => openBucket()} aria-label="Add a bucket"><Plus size={20} /></button>
-      </header>
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
+        <p className="pg-date">Give every paycheck a job</p>
+        <button className="btn-text" onClick={() => openBucket()}>+ Add bucket</button>
+      </div>
+      <h1 className="pg-title rise">Buckets</h1>
+      <div className="pg-rule rise" />
 
-      {/* SET-ASIDE HERO */}
-      <div className="lx-hero lx-reveal">
-        <div className="lx-hero-inner">
-          <div className="lx-hero-label">Set aside in buckets</div>
-          <div className="lx-hero-num pos"><AnimatedNumber value={totalSetAside} currency={cur} /></div>
-          <div className="lx-hero-sub">
-            {buckets.length
-              ? `Across ${buckets.length} bucket${buckets.length === 1 ? "" : "s"}. Distribute a paycheck to fill them automatically.`
-              : "Create buckets for savings, investing, tithes, offerings, and giving — then split each paycheck into them."}
+      {/* STATEMENT */}
+      <div className="st rise">
+        <div className="st-label">Set aside in buckets</div>
+        <div className="st-num"><AnimatedNumber value={totalSetAside} currency={cur} /></div>
+        <p className="st-meta">
+          {buckets.length
+            ? `Across ${buckets.length} bucket${buckets.length === 1 ? "" : "s"}. Distribute a paycheck to fill them automatically.`
+            : "Create buckets for savings, investing, tithes, offerings, and giving — then split each paycheck into them."}
+        </p>
+        {giving > 0 && (
+          <div className="st-links">
+            <span className="gold" style={{ borderBottomColor: "rgba(226,179,102,0.4)" }}>🤲 {formatMoney(giving, cur)} set aside to give across {giveBuckets.length} bucket{giveBuckets.length === 1 ? "" : "s"} — generosity in motion</span>
           </div>
-          {buckets.length > 0 && (
-            <button className="lx-primary full" style={{ marginTop: 16 }} onClick={() => { setDistAmt(monthlyIncome ? String(monthlyIncome) : ""); setDistOpen(true); }}>
-              <Sparkles size={16} /> Distribute a paycheck
-            </button>
-          )}
-        </div>
+        )}
+        {buckets.length > 0 && (
+          <button className="btn full" style={{ marginTop: 16 }} onClick={() => { setDistAmt(monthlyIncome ? String(monthlyIncome) : ""); setDistOpen(true); }}>
+            <Sparkles size={16} /> Distribute a paycheck
+          </button>
+        )}
       </div>
 
-      {/* GENEROSITY SNAPSHOT */}
-      {giving > 0 && (
-        <div className="lx-generosity lx-reveal">
-          <div className="lx-generosity-ic">🤲</div>
-          <div className="lx-generosity-meta">
-            <div className="lx-generosity-num">{formatMoney(giving, cur)}</div>
-            <div className="lx-generosity-lbl">set aside to give across {giveBuckets.length} bucket{giveBuckets.length === 1 ? "" : "s"} — generosity in motion. 🙏</div>
-          </div>
-        </div>
-      )}
-
       {/* INCOME */}
-      <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Income</h2>
-          <button className="lx-headadd" onClick={() => openIncome()}><Plus size={16} /> Add</button>
-        </div>
-        {income.length ? (
-          <div className="lx-list">
-            {income.map((x) => {
-              const got = x.lastPaidMonth === month;
-              return (
-                <div className="lx-li" key={x.id}>
-                  <span className="ic"><Banknote size={16} /></span>
-                  <button className="meta" style={{ background: "none", border: "none", textAlign: "left", cursor: "pointer", padding: 0 }} onClick={() => openIncome(x)}>
-                    <div className="t">{x.name}</div>
-                    <div className="s">Lands on the {ordinal(x.dayOfMonth)}{x.autoLog ? " · auto" : ""}{got ? " · received ✓" : ""}</div>
-                  </button>
-                  <div className="amt pos">{formatMoney(x.amount, cur)}</div>
-                  {got ? <span className="lx-paid"><Check size={15} /></span>
-                    : <button className="lx-ghost sm" onClick={() => { receiveIncome(x.id); success(); }}>Receive</button>}
-                  <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${x.name}"?`)) deleteIncome(x.id); }} aria-label="Delete"><Trash2 size={14} /></button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="lx-blank">
+      <section className="sec rise">
+        <div className="sec-head"><h2>Income</h2><span className="sec-aux"><button className="link" onClick={() => openIncome()}>+ Add</button></span></div>
+        {income.length ? income.map((x) => {
+          const got = x.lastPaidMonth === month;
+          return (
+            <div className="row" key={x.id}>
+              <span className="row-ic"><Banknote /></span>
+              <button className="row-meta" style={{ textAlign: "left" }} onClick={() => openIncome(x)}>
+                <div className="row-t">{x.name}</div>
+                <div className="row-s">Lands on the {ordinal(x.dayOfMonth)}{x.autoLog ? " · auto" : ""}{got ? " · received ✓" : ""}</div>
+              </button>
+              <div className="row-amt pos">{formatMoney(x.amount, cur)}</div>
+              {got ? <span className="check"><Check size={15} /></span>
+                : <button className="btn-ghost sm" onClick={() => { receiveIncome(x.id); success(); }}>Receive</button>}
+              <button className="btn-icon danger" onClick={() => { if (confirm(`Delete "${x.name}"?`)) deleteIncome(x.id); }} aria-label="Delete"><Trash2 size={14} /></button>
+            </div>
+          );
+        }) : (
+          <div className="blank">
             <div className="ic"><Banknote size={22} /></div>
             <h4>Add your income</h4>
             <p>Tell the app when your salary lands (e.g. the 30th) and it logs automatically each month.</p>
-            <button className="lx-primary" onClick={() => openIncome()}><Plus size={16} /> Add income</button>
+            <button className="btn" onClick={() => openIncome()}><Plus size={16} /> Add income</button>
           </div>
         )}
       </section>
 
       {/* BUCKETS */}
-      <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Your buckets</h2>
-          {buckets.length > 0 && <span className="lx-group-total">{formatMoney(totalSetAside, cur)}</span>}
+      <section className="sec rise">
+        <div className="sec-head"><h2>Your buckets</h2>
+          {buckets.length > 0 && <span className="sec-aux"><span className="sec-total">{formatMoney(totalSetAside, cur)}</span></span>}
         </div>
-        {buckets.length ? (
-          <div className="lx-bucketlist">
-            {buckets.map((b) => {
-              const Meta = KIND[b.kind];
-              const pct = b.target ? clampPct((b.balance / b.target) * 100) : 0;
-              return (
-                <button className="lx-bucket" key={b.id} onClick={() => openBucket(b)}>
-                  <span className="lx-bucket-ic"><Meta.Icon size={17} /></span>
-                  <div className="lx-bucket-meta">
-                    <div className="lx-bucket-top">
-                      <span className="nm">{b.emoji || Meta.emoji} {b.name}</span>
-                      <b>{formatMoney(b.balance, cur)}</b>
-                    </div>
-                    <div className="lx-bucket-tags">
-                      <span>{Meta.label}</span>
-                      {b.allocType && b.allocValue ? <span className="alloc">{b.allocType === "percent" ? `${b.allocValue}% of pay` : `${formatMoney(b.allocValue, cur)}/pay`}</span> : null}
-                      {b.target ? <span>of {formatMoney(b.target, cur)}</span> : null}
-                    </div>
-                    {b.target ? <div className="lx-bucket-bar"><span style={{ width: `${pct}%` }} /></div> : null}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="lx-blank">
+        {buckets.length ? buckets.map((b) => {
+          const Meta = KIND[b.kind];
+          const pct = b.target ? clampPct((b.balance / b.target) * 100) : 0;
+          const sub = [
+            Meta.label,
+            b.allocType && b.allocValue ? (b.allocType === "percent" ? `${b.allocValue}% of pay` : `${formatMoney(b.allocValue, cur)}/pay`) : null,
+            b.target ? `of ${formatMoney(b.target, cur)}` : null,
+          ].filter(Boolean).join(" · ");
+          return (
+            <button className="row" key={b.id} onClick={() => openBucket(b)} style={{ display: "block" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <span className="row-t">{b.emoji || Meta.emoji} {b.name}</span>
+                <span className="row-amt">{formatMoney(b.balance, cur)}</span>
+              </div>
+              <div className="row-s">{sub}</div>
+              {b.target ? <div className="meter" style={{ margin: "9px 0 2px" }}><span style={{ width: `${pct}%` }} /></div> : null}
+            </button>
+          );
+        }) : (
+          <div className="blank">
             <div className="ic"><Layers size={22} /></div>
             <h4>No buckets yet</h4>
             <p>Set money aside for what matters: savings, investing, tithes, offerings, and blessing others.</p>
-            <button className="lx-primary" onClick={addStarters}><Sparkles size={16} /> Start with a values pack</button>
-            <button className="lx-ghost" style={{ marginTop: 8 }} onClick={() => openBucket()}><Plus size={15} /> Or add one bucket</button>
+            <button className="btn" onClick={addStarters}><Sparkles size={16} /> Start with a values pack</button>
+            <div><button className="btn-ghost" style={{ marginTop: 8 }} onClick={() => openBucket()}><Plus size={15} /> Or add one bucket</button></div>
           </div>
         )}
       </section>
@@ -258,22 +237,22 @@ export default function BucketsPage() {
       {/* INCOME SHEET */}
       {inc && (
         <Sheet title={inc.id ? "Edit income" : "Add income"} onClose={() => setInc(null)}>
-          <label className="lx-field"><span>Name</span>
+          <label className="field"><span>Name</span>
             <input value={inc.name} onChange={(e) => setInc({ ...inc, name: e.target.value })} placeholder="Salary" autoFocus />
           </label>
-          <div className="lx-field-row">
-            <label className="lx-field"><span>Amount</span>
+          <div className="fieldrow">
+            <label className="field"><span>Amount</span>
               <input type="number" inputMode="decimal" value={inc.amount} onChange={(e) => setInc({ ...inc, amount: e.target.value })} placeholder="4200" />
             </label>
-            <label className="lx-field"><span>Day it lands</span>
+            <label className="field"><span>Day it lands</span>
               <input type="number" inputMode="numeric" value={inc.dayOfMonth} onChange={(e) => setInc({ ...inc, dayOfMonth: e.target.value })} placeholder="30" />
             </label>
           </div>
-          <label className="lx-toggle">
+          <label className="toggle">
             <input type="checkbox" checked={inc.autoLog} onChange={(e) => setInc({ ...inc, autoLog: e.target.checked })} />
             <span>Log it automatically each month</span>
           </label>
-          <button className="lx-primary full" style={{ marginTop: 8 }} onClick={saveIncome} disabled={!inc.name.trim() || !(parseFloat(inc.amount) > 0)}>
+          <button className="btn full" style={{ marginTop: 8 }} onClick={saveIncome} disabled={!inc.name.trim() || !(parseFloat(inc.amount) > 0)}>
             {inc.id ? "Save" : "Add income"}
           </button>
         </Sheet>
@@ -282,40 +261,40 @@ export default function BucketsPage() {
       {/* BUCKET SHEET */}
       {bk && (
         <Sheet title={bk.id ? "Edit bucket" : "New bucket"} onClose={() => setBk(null)}>
-          <div className="lx-chips" style={{ marginBottom: 14 }}>
+          <div className="chips" style={{ marginBottom: 14 }}>
             {(Object.keys(KIND) as BucketKind[]).map((k) => (
-              <button key={k} className={"lx-chip" + (bk.kind === k ? " on" : "")} onClick={() => setBk({ ...bk, kind: k, emoji: bk.emoji || KIND[k].emoji })}>
+              <button key={k} className={"chip" + (bk.kind === k ? " on" : "")} onClick={() => setBk({ ...bk, kind: k, emoji: bk.emoji || KIND[k].emoji })}>
                 {KIND[k].emoji} {KIND[k].label}
               </button>
             ))}
           </div>
-          <label className="lx-field"><span>Name</span>
+          <label className="field"><span>Name</span>
             <input value={bk.name} onChange={(e) => setBk({ ...bk, name: e.target.value })} placeholder="Tithe, Emergency fund, Bless others…" autoFocus />
           </label>
-          <div className="lx-field"><span>Fill from each paycheck</span>
-            <div className="lx-seg" style={{ marginTop: 2 }}>
+          <div className="field"><span>Fill from each paycheck</span>
+            <div className="seg" style={{ marginTop: 2 }}>
               <button className={bk.allocType === "percent" ? "on" : ""} onClick={() => setBk({ ...bk, allocType: "percent" })}>% of pay</button>
               <button className={bk.allocType === "fixed" ? "on" : ""} onClick={() => setBk({ ...bk, allocType: "fixed" })}>Fixed</button>
               <button className={bk.allocType === "none" ? "on" : ""} onClick={() => setBk({ ...bk, allocType: "none" })}>Manual</button>
             </div>
           </div>
           {bk.allocType !== "none" && (
-            <label className="lx-field"><span>{bk.allocType === "percent" ? "Percent of each paycheck" : "Fixed amount per paycheck"}</span>
+            <label className="field"><span>{bk.allocType === "percent" ? "Percent of each paycheck" : "Fixed amount per paycheck"}</span>
               <input type="number" inputMode="decimal" value={bk.allocValue} onChange={(e) => setBk({ ...bk, allocValue: e.target.value })} placeholder={bk.allocType === "percent" ? "10" : "50"} />
             </label>
           )}
-          <label className="lx-field"><span>Target (optional)</span>
+          <label className="field"><span>Target (optional)</span>
             <input type="number" inputMode="decimal" value={bk.target} onChange={(e) => setBk({ ...bk, target: e.target.value })} placeholder="e.g. 6000" />
           </label>
-          <button className="lx-primary full" onClick={saveBucket} disabled={!bk.name.trim()}>{bk.id ? "Save changes" : "Create bucket"}</button>
+          <button className="btn full" onClick={saveBucket} disabled={!bk.name.trim()}>{bk.id ? "Save changes" : "Create bucket"}</button>
           {bk.id && (
             <>
-              <div className="lx-pay-row" style={{ marginTop: 12 }}>
-                <input type="number" inputMode="decimal" placeholder="Amount" value={fundId === bk.id ? fundAmt : ""} onChange={(e) => { setFundId(bk.id!); setFundAmt(e.target.value); }} />
-                <button className="lx-primary sm" onClick={() => doFund(bk.id!, 1)} disabled={fundId !== bk.id || !(parseFloat(fundAmt) > 0)}><Plus size={14} /> Add</button>
-                <button className="lx-ghost sm" onClick={() => doFund(bk.id!, -1)} disabled={fundId !== bk.id || !(parseFloat(fundAmt) > 0)}><Minus size={14} /> Spend</button>
+              <div className="inline-form" style={{ marginTop: 12 }}>
+                <input className="input" type="number" inputMode="decimal" placeholder="Amount" value={fundId === bk.id ? fundAmt : ""} onChange={(e) => { setFundId(bk.id!); setFundAmt(e.target.value); }} />
+                <button className="btn sm" onClick={() => doFund(bk.id!, 1)} disabled={fundId !== bk.id || !(parseFloat(fundAmt) > 0)}><Plus size={14} /> Add</button>
+                <button className="btn-ghost sm" onClick={() => doFund(bk.id!, -1)} disabled={fundId !== bk.id || !(parseFloat(fundAmt) > 0)}><Minus size={14} /> Spend</button>
               </div>
-              <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }} onClick={() => { if (confirm(`Delete "${bk.name}"?`)) { deleteBucket(bk.id!); setBk(null); } }}>
+              <button className="btn-ghost danger" style={{ width: "100%", marginTop: 10 }} onClick={() => { if (confirm(`Delete "${bk.name}"?`)) { deleteBucket(bk.id!); setBk(null); } }}>
                 <Trash2 size={15} /> Delete bucket
               </button>
             </>
@@ -326,26 +305,26 @@ export default function BucketsPage() {
       {/* DISTRIBUTE SHEET */}
       {distOpen && (
         <Sheet title="Distribute a paycheck" onClose={() => setDistOpen(false)}>
-          <label className="lx-field"><span>Paycheck amount</span>
+          <label className="field"><span>Paycheck amount</span>
             <input type="number" inputMode="decimal" value={distAmt} onChange={(e) => setDistAmt(e.target.value)} placeholder="4200" autoFocus />
           </label>
           {split.length > 0 ? (
-            <div className="lx-split">
+            <div className="sec" style={{ marginTop: 12, marginBottom: 0 }}>
               {split.map(({ b, add }) => (
-                <div className="lx-split-row" key={b.id}>
+                <div className="row" key={b.id}>
                   <span>{b.emoji || KIND[b.kind].emoji} {b.name}</span>
                   <b className="pos">+{formatMoney(add, cur)}</b>
                 </div>
               ))}
-              <div className="lx-split-row total">
+              <div className="row" style={{ color: "var(--mut)" }}>
                 <span>Left as free cash</span>
                 <b>{formatMoney(Math.max(0, distNum - splitTotal), cur)}</b>
               </div>
             </div>
           ) : (
-            <p className="lx-group-sub">Give buckets a “% of pay” or “fixed” rule and they’ll fill here automatically.</p>
+            <p className="sec-sub">Give buckets a “% of pay” or “fixed” rule and they’ll fill here automatically.</p>
           )}
-          <button className="lx-primary full" style={{ marginTop: 12 }} onClick={() => { distributePaycheck(distNum); success(); setDistOpen(false); }} disabled={!(distNum > 0) || split.length === 0}>
+          <button className="btn full" style={{ marginTop: 12 }} onClick={() => { distributePaycheck(distNum); success(); setDistOpen(false); }} disabled={!(distNum > 0) || split.length === 0}>
             <Repeat size={16} /> Fill {split.length} bucket{split.length === 1 ? "" : "s"}
           </button>
         </Sheet>
@@ -356,11 +335,11 @@ export default function BucketsPage() {
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="lx-sheet-backdrop" onClick={onClose}>
-      <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="lx-sheet-head">
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
           <h3>{title}</h3>
-          <button className="lx-sheet-x" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="btn-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         {children}
       </div>

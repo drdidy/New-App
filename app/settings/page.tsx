@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Plus, Settings as SettingsIcon, Trash2, Upload, X } from "lucide-react";
+import { Download, Plus, Trash2, Upload, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatMoney, CURRENCIES, MEMBER_COLORS, MEMBER_EMOJIS } from "@/lib/format";
 import Avatar from "@/components/Avatar";
@@ -68,26 +68,25 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="lx">
-      <header className="lx-top">
-        <div>
-          <p className="lx-eyebrow"><SettingsIcon size={13} /> You & your setup</p>
-          <h1 className="lx-h1">Settings</h1>
-        </div>
-      </header>
+    <main className="pg">
+      <div className="pg-head">
+        <p className="pg-date">You &amp; your setup</p>
+      </div>
+      <h1 className="pg-title">Settings</h1>
+      <div className="pg-rule" />
 
-      {/* Profile */}
-      <section className="lx-card">
-        <div className="lx-card-head"><h2>Profile</h2></div>
-        <label className="lx-field"><span>Profile or household name</span>
+      {/* PROFILE */}
+      <section className="sec">
+        <div className="sec-head"><h2>Profile</h2></div>
+        <label className="field"><span>Profile or household name</span>
           <input value={data.householdName || ""} onChange={(e) => setHouseholdName(e.target.value)} placeholder="David's Money Plan" />
         </label>
-        <label className="lx-field"><span>Currency</span>
+        <label className="field"><span>Currency</span>
           <select value={data.currency} onChange={(e) => setCurrency(e.target.value)}>
             {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </label>
-        <label className="lx-field"><span>Pay schedule</span>
+        <label className="field"><span>Pay schedule</span>
           <select value={data.payCycle?.type || "monthly"} onChange={(e) => setPayCycle({ type: e.target.value as PayCycleType, anchor: data.payCycle?.anchor })}>
             <option value="monthly">Monthly</option>
             <option value="semimonthly">Twice a month</option>
@@ -96,11 +95,11 @@ export default function SettingsPage() {
           </select>
         </label>
         {data.payCycle?.type !== "monthly" && (
-          <label className="lx-field"><span>Your next (or last) payday</span>
+          <label className="field"><span>Your next (or last) payday</span>
             <input type="date" value={data.payCycle?.anchor || ""} onChange={(e) => setPayCycle({ type: data.payCycle.type, anchor: e.target.value || undefined })} />
           </label>
         )}
-        <label className="lx-toggle">
+        <label className="toggle">
           <input type="checkbox" checked={Boolean(data.remindersEnabled)}
             onChange={async (e) => {
               const on = e.target.checked;
@@ -113,30 +112,30 @@ export default function SettingsPage() {
         </label>
       </section>
 
-      {/* Members */}
-      <section className="lx-card">
-        <div className="lx-card-head"><h2>People in this plan</h2></div>
-        <p className="lx-group-sub">Add people only when their spending is part of this profile.</p>
+      {/* PEOPLE */}
+      <section className="sec">
+        <div className="sec-head"><h2>People in this plan</h2></div>
+        <p className="sec-sub" style={{ marginTop: 0 }}>Add people only when their spending is part of this profile.</p>
         {data.members.map((m) => (
-          <div className="lx-member" key={m.id}>
-            <div className="lx-member-top">
+          <div className="member" key={m.id}>
+            <div className="member-top">
               <Avatar member={m} size={36} />
-              <input className="lx-member-name" value={m.name} onChange={(e) => updateMember(m.id, { name: e.target.value })} />
+              <input value={m.name} onChange={(e) => updateMember(m.id, { name: e.target.value })} aria-label="Name" />
               {data.members.length > 1 && (
-                <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Remove ${m.name}? Their items move to the remaining person.`)) removeMember(m.id); }} aria-label="Remove person"><X size={15} /></button>
+                <button className="btn-icon danger" onClick={() => { if (confirm(`Remove ${m.name}? Their items move to the remaining person.`)) removeMember(m.id); }} aria-label="Remove person"><X size={15} /></button>
               )}
             </div>
-            <div className="lx-emoji-row">
+            <div className="emoji-row">
               {MEMBER_EMOJIS.slice(0, 6).map((e) => (
-                <button key={e} className={"lx-emoji" + (m.emoji === e ? " on" : "")} onClick={() => updateMember(m.id, { emoji: e })}>{e}</button>
+                <button key={e} className={m.emoji === e ? "on" : ""} onClick={() => updateMember(m.id, { emoji: e })}>{e}</button>
               ))}
             </div>
-            <div className="lx-color-row">
+            <div className="color-row">
               {MEMBER_COLORS.map((c) => (
-                <button key={c} className={"lx-color" + (m.color === c ? " on" : "")} style={{ background: c }} onClick={() => updateMember(m.id, { color: c })} aria-label="colour" />
+                <button key={c} className={m.color === c ? "on" : ""} style={{ background: c }} onClick={() => updateMember(m.id, { color: c })} aria-label="colour" />
               ))}
             </div>
-            <input className="lx-member-income" key={`inc-${m.id}`} defaultValue={m.monthlyIncome ?? ""} inputMode="decimal" placeholder="Monthly income (optional)"
+            <input className="income" key={`inc-${m.id}`} defaultValue={m.monthlyIncome ?? ""} inputMode="decimal" placeholder="Monthly income (optional)"
               onBlur={(e) => {
                 // Commit on blur so decimals type naturally ("1200.50" stays intact).
                 const n = parseFloat(e.target.value.replace(/[$,\s]/g, ""));
@@ -145,56 +144,52 @@ export default function SettingsPage() {
           </div>
         ))}
         {data.members.length < 6 && (
-          <button className="lx-ghost" style={{ width: "100%", marginTop: 8 }} onClick={addPerson}><Plus size={15} /> Add a person</button>
+          <button className="btn-ghost" style={{ width: "100%", marginTop: 12 }} onClick={addPerson}><Plus size={15} /> Add a person</button>
         )}
       </section>
 
-      <div className="lx-syncwrap"><SyncCard /></div>
+      <SyncCard />
 
-      {/* Budgets */}
-      <section className="lx-card">
-        <div className="lx-card-head"><h2>Monthly budgets</h2></div>
+      {/* BUDGETS */}
+      <section className="sec">
+        <div className="sec-head"><h2>Monthly budgets</h2></div>
         {data.budgets.length === 0 ? (
-          <p className="lx-group-sub">Cap a category and Spending will show progress and warn you.</p>
-        ) : (
-          <div className="lx-list">
-            {data.budgets.map((b) => (
-              <div className="lx-li" key={b.category}>
-                <span className="ic">🎯</span>
-                <div className="meta"><div className="t">{b.category}</div><div className="s">{formatMoney(b.limit, cur)} / month</div></div>
-                <button className="lx-icon-btn danger" onClick={() => removeBudget(b.category)} aria-label="Remove budget"><Trash2 size={14} /></button>
-              </div>
-            ))}
+          <p className="sec-sub" style={{ marginTop: 0 }}>Cap a category and Spending will show progress and warn you.</p>
+        ) : data.budgets.map((b) => (
+          <div className="row" key={b.category}>
+            <span className="row-ic">🎯</span>
+            <div className="row-meta"><div className="row-t">{b.category}</div><div className="row-s">{formatMoney(b.limit, cur)} / month</div></div>
+            <button className="btn-icon danger" onClick={() => removeBudget(b.category)} aria-label="Remove budget"><Trash2 size={14} /></button>
           </div>
-        )}
-        <div className="lx-field-row" style={{ marginTop: 12 }}>
-          <label className="lx-field"><span>Category</span>
+        ))}
+        <div className="fieldrow" style={{ marginTop: 14 }}>
+          <label className="field"><span>Category</span>
             <input value={newBudgetCat} onChange={(e) => setNewBudgetCat(e.target.value)} placeholder="Dining" />
           </label>
-          <label className="lx-field"><span>Limit / month</span>
+          <label className="field"><span>Limit / month</span>
             <input value={newBudgetLimit} onChange={(e) => setNewBudgetLimit(e.target.value)} inputMode="decimal" placeholder="300" />
           </label>
         </div>
-        <button className="lx-primary full" onClick={saveBudget} disabled={!newBudgetCat.trim() || !(parseFloat(newBudgetLimit) > 0)} style={{ marginTop: 4 }}>Set budget</button>
+        <button className="btn full" onClick={saveBudget} disabled={!newBudgetCat.trim() || !(parseFloat(newBudgetLimit) > 0)}>Set budget</button>
       </section>
 
-      {/* Data */}
-      <section className="lx-card">
-        <div className="lx-card-head"><h2>Your data</h2></div>
-        <p className="lx-group-sub">Everything lives on this device. Back it up to move phones or keep it safe.</p>
-        <div className="lx-field-row">
-          <button className="lx-ghost" onClick={exportData}><Download size={15} /> Back up</button>
-          <button className="lx-ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> Restore</button>
+      {/* DATA */}
+      <section className="sec">
+        <div className="sec-head"><h2>Your data</h2></div>
+        <p className="sec-sub" style={{ marginTop: 0 }}>Everything lives on this device. Back it up to move phones or keep it safe.</p>
+        <div className="fieldrow">
+          <button className="btn-ghost" onClick={exportData}><Download size={15} /> Back up</button>
+          <button className="btn-ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> Restore</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={onImport} />
         </div>
-        <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }}
+        <button className="btn-ghost danger" style={{ width: "100%", marginTop: 10 }}
           onClick={() => { if (confirm("Erase ALL data and start over? This can't be undone.")) resetAll(); }}>
           <Trash2 size={15} /> Erase everything
         </button>
-        {note && <p className="lx-flash">{note}</p>}
+        {note && <p className="flash">{note}</p>}
       </section>
 
-      <p className="lx-footer">Money Coach · your private money companion 💚</p>
+      <p className="colophon">Money Coach — your private money companion</p>
     </main>
   );
 }

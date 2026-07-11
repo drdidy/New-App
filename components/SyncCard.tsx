@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Cloud } from "lucide-react";
 import { useStore } from "@/lib/store";
 
 const WORDS = [
@@ -50,50 +51,38 @@ export default function SyncCard() {
       : "Ready";
 
   return (
-    <div className="card reveal d2">
-      <div className="card-h">Private sync</div>
+    <div className="plate">
+      <div className="plate-title"><Cloud /> Private sync</div>
 
       {!on ? (
         <>
-          <p className="h-sub" style={{ marginBottom: 14 }}>
+          <p className="hint">
             Keep this profile private, or share one household across trusted devices.
-            Anyone with the <strong>same code</strong> can sync this household's budget,
+            Anyone with the <b>same code</b> can sync this household&apos;s budget,
             so only share it with people who should see the same money plan.
           </p>
           {!editing ? (
-            <button className="btn btn-primary btn-block" onClick={() => setEditing(true)}>
+            <button className="btn full" style={{ marginTop: 12 }} onClick={() => setEditing(true)}>
               Turn on household sync
             </button>
           ) : (
             <>
-              <div className="field">
-                <label>Private household code</label>
-                <div className="row">
+              <label className="field" style={{ marginTop: 12 }}><span>Private household code</span>
+                <div className="inline-form" style={{ marginTop: 2 }}>
                   <input
-                    className="mini-input"
+                    className="input"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     placeholder="e.g. maple-river-summit-k4p9x2"
                   />
-                  <button
-                    className="btn btn-ghost"
-                    style={{ flex: "0 0 auto" }}
-                    onClick={() => setCode(suggestCode())}
-                    type="button"
-                  >
-                    New
-                  </button>
+                  <button className="btn-ghost sm" onClick={() => setCode(suggestCode())} type="button">New</button>
                 </div>
+              </label>
+              <div className="fieldrow" style={{ marginTop: 10 }}>
+                <button className="btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
+                <button className="btn" onClick={connect}>Connect</button>
               </div>
-              <div className="capture-actions">
-                <button className="btn btn-ghost" onClick={() => setEditing(false)}>
-                  Cancel
-                </button>
-                <button className="btn btn-primary" onClick={connect}>
-                  Connect
-                </button>
-              </div>
-              <p className="hint" style={{ marginTop: 10 }}>
+              <p className="hint">
                 On another trusted device, install the app, open Settings, and
                 enter this exact code to join. Treat it like a password for your budget.
               </p>
@@ -106,29 +95,22 @@ export default function SyncCard() {
             <span className={"sync-dot " + syncState} />
             <span>{statusText}</span>
           </div>
-          <div className="field" style={{ marginTop: 12 }}>
-            <label>Your household code</label>
-            <div className="row">
-              <input className="mini-input" value={data.syncCode} readOnly />
-              <button className="btn btn-ghost" style={{ flex: "0 0 auto" }} onClick={copy}>
-                {copied ? "Copied" : "Copy"}
-              </button>
+          <label className="field" style={{ marginTop: 12 }}><span>Your household code</span>
+            <div className="inline-form" style={{ marginTop: 2 }}>
+              <input className="input" value={data.syncCode} readOnly />
+              <button className="btn-ghost sm" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
             </div>
+          </label>
+          <div className="fieldrow" style={{ marginTop: 10 }}>
+            <button className="btn-ghost" onClick={() => void syncNow()}>Sync now</button>
+            <button className="btn-ghost danger" onClick={() => setSync(false)}>Turn off</button>
           </div>
-          <div className="capture-actions">
-            <button className="btn btn-ghost" onClick={() => void syncNow()}>
-              Sync now
-            </button>
-            <button className="btn btn-ghost danger" onClick={() => setSync(false)}>
-              Turn off
-            </button>
-          </div>
-          <p className="hint" style={{ marginTop: 10 }}>
+          <p className="hint">
             Sync links this household only. Separate users should create their own
             profile unless they intentionally share money with you.
           </p>
           {syncState === "unconfigured" && (
-            <p className="hint" style={{ marginTop: 10 }}>
+            <p className="hint">
               Sync needs a small cloud add-on on your Vercel project, such as a free KV
               or Upstash store. Once it is added, this connects automatically.
             </p>

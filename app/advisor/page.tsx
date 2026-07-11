@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bot, Mic, Moon, Plus, Send, Sparkles, X } from "lucide-react";
+import { ArrowRight, Mic, Moon, Plus, Send, Sparkles, X } from "lucide-react";
 import { useStore, summarize } from "@/lib/store";
 import {
   affordCheck,
@@ -20,6 +20,7 @@ import {
 import { formatMoney } from "@/lib/format";
 import { success } from "@/lib/haptics";
 import { postJson } from "@/lib/clientApi";
+import AnimatedNumber from "@/components/AnimatedNumber";
 
 interface Msg {
   role: "user" | "assistant";
@@ -205,149 +206,155 @@ export default function AdvisorPage() {
   if (!ready) return null;
 
   const firstName = data.members[0]?.name?.split(" ")[0] || "there";
-  const sum = summarize(data);
   const sts = safeToSpend(data);
   const debtTotal = data.debts.filter((d) => d.direction === "i_owe").reduce((s, d) => s + d.balance, 0);
   const hasMoneyHistory =
     data.transactions.length > 0 || data.recurringBills.length > 0 || data.goals.length > 0 || debtTotal > 0 || (data.accounts?.length ?? 0) > 0;
   const cur = data.currency;
+  const nw = netWorth(data);
+
+  const COOL_DAYS = 3;
+  const pendingWishes = (data.wishlist || []).filter((w) => !w.outcome).sort((a, b) => a.createdAt - b.createdAt);
+  const savedByWaiting = (data.wishlist || []).filter((w) => w.outcome === "skipped").reduce((s, w) => s + w.amount, 0);
+  const afford = affordCheck(data, parseFloat(affordQ) || 0);
+
+  function addW() {
+    const a = parseFloat(wishAmt);
+    if (!wishName.trim() || !(a > 0)) return;
+    addWish(wishName.trim(), a); success(); setWishName(""); setWishAmt("");
+  }
 
   return (
-    <main className="lx lx-coach">
-      <header className="lx-top">
-        <div>
-          <p className="lx-eyebrow"><Sparkles size={13} /> Built on your real numbers</p>
-          <h1 className="lx-h1">Coach</h1>
-        </div>
-        <span className="lx-coach-avatar"><Bot size={20} /></span>
-      </header>
+    <main className="pg">
+      <div className="pg-head">
+        <p className="pg-date">Built on your real numbers</p>
+      </div>
+      <h1 className="pg-title">Coach</h1>
+      <div className="pg-rule" />
 
       {hasMoneyHistory && (
-        <div className="lx-coach-strip">
-          <Link href="/">
-            <span>Safe to spend</span>
-            <b className={sts.safe >= 0 ? "pos" : "neg"}>{formatMoney(sts.safe, cur)}</b>
+        <div className="ticker">
+          <Link href="/" className="ticker-cell">
+            <span className="tk-l">Safe to spend</span>
+            <span className={"tk-v" + (sts.safe >= 0 ? " pos" : " neg")}><AnimatedNumber value={sts.safe} currency={cur} /></span>
           </Link>
-          <Link href="/debt">
-            <span>You owe</span>
-            <b className="neg">{formatMoney(debtTotal, cur)}</b>
+          <Link href="/debt" className="ticker-cell">
+            <span className="tk-l">You owe</span>
+            <span className="tk-v neg"><AnimatedNumber value={debtTotal} currency={cur} /></span>
           </Link>
-          <Link href="/spending">
-            <span>Net worth</span>
-            <b>{formatMoney(netWorth(data), cur)}</b>
+          <Link href="/spending" className="ticker-cell">
+            <span className="tk-l">Net worth</span>
+            <span className={"tk-v" + (nw >= 0 ? " pos" : " mut")}><AnimatedNumber value={nw} currency={cur} /></span>
           </Link>
         </div>
       )}
 
-      {/* QUICK TOOLS — decisions the coach helps you make */}
-      <div className="lx-afford">
-        <div className="lx-afford-top">
-          <span className="lx-afford-q"><Sparkles size={15} /> Can I afford…</span>
-          <div className="lx-afford-input">
-            <span>{cur === "USD" ? "$" : ""}</span>
-            <input type="number" inputMode="decimal" placeholder="amount" value={affordQ} onChange={(e) => setAffordQ(e.target.value)} />
-          </div>
+      {/* CAN I AFFORD IT — a straight answer before you spend */}
+      <div className="plate">
+        <div className="plate-title"><Sparkles /> Can I afford it?</div>
+        <div className="inline-form" style={{ marginTop: 12 }}>
+          <input
+            className="input"
+            type="number"
+            inputMode="decimal"
+            placeholder="Price — e.g. 120"
+            value={affordQ}
+            onChange={(e) => setAffordQ(e.target.value)}
+          />
         </div>
-        {(() => {
-          const v = affordCheck(data, parseFloat(affordQ) || 0);
-          if (!v) return <p className="lx-afford-hint">Type a price and I’ll tell you straight — grounded in your real cash, not vibes.</p>;
-          return (
-            <div className={"lx-afford-verdict " + v.verdict}>
-              <strong>{v.headline}</strong>
-              <span>{v.detail}</span>
-            </div>
-          );
-        })()}
-      </div>
-
-      {(() => {
-        const COOL_DAYS = 3;
-        const pending = (data.wishlist || []).filter((w) => !w.outcome).sort((a, b) => a.createdAt - b.createdAt);
-        const saved = (data.wishlist || []).filter((w) => w.outcome === "skipped").reduce((s, w) => s + w.amount, 0);
-        const addW = () => {
-          const a = parseFloat(wishAmt);
-          if (!wishName.trim() || !(a > 0)) return;
-          addWish(wishName.trim(), a); success(); setWishName(""); setWishAmt("");
-        };
-        return (
-          <section className="lx-card lx-wish">
-            <div className="lx-card-head">
-              <h2><Moon size={15} style={{ verticalAlign: "-2px" }} /> Sleep on it</h2>
-              {saved > 0 && <span className="lx-wish-saved">{formatMoney(saved, cur)} saved by waiting</span>}
-            </div>
-            <div className="lx-wish-add">
-              <input placeholder="Something you want…" value={wishName} onChange={(e) => setWishName(e.target.value)} />
-              <input className="amt" type="number" inputMode="decimal" placeholder="$" value={wishAmt} onChange={(e) => setWishAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addW()} />
-              <button className="lx-primary sm" onClick={addW} disabled={!wishName.trim() || !(parseFloat(wishAmt) > 0)} aria-label="Add to wishlist"><Plus size={16} /></button>
-            </div>
-            {pending.length > 0 ? (
-              <div className="lx-list">
-                {pending.map((w) => {
-                  const days = Math.floor((Date.now() - w.createdAt) / 86400000);
-                  const left = Math.max(0, COOL_DAYS - days);
-                  const ready = left <= 0;
-                  const v = ready ? affordCheck(data, w.amount) : null;
-                  return (
-                    <div className="lx-wish-row" key={w.id}>
-                      <span className="ic">{ready ? "✨" : "💤"}</span>
-                      <div className="meta">
-                        <div className="t">{w.name}</div>
-                        <div className={"s" + (v ? " " + v.verdict : "")}>{ready ? (v ? v.headline : "Ready to decide") : `${left} day${left === 1 ? "" : "s"} to think it over`}</div>
-                      </div>
-                      <div className="amt">{formatMoney(w.amount, cur)}</div>
-                      {ready && (
-                        <>
-                          <button className="lx-ghost sm" onClick={() => { decideWish(w.id, "skipped"); success(); }}>Skip</button>
-                          <button className="lx-primary sm" onClick={() => { decideWish(w.id, "bought"); success(); }}>Buy</button>
-                        </>
-                      )}
-                      {/* Always removable — "changed my mind" shouldn't pollute the saved-by-waiting stat */}
-                      <button className="lx-icon-btn danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="lx-wish-hint">Tempted by something? Add it here. I’ll hold it for {COOL_DAYS} days — most urges fade, and you’ll see if you can truly afford it then.</p>
-            )}
-          </section>
-        );
-      })()}
-
-      <div className="lx-chat">
-        {msgs.length === 0 && (
-          <>
-            <div className="lx-bubble coach">
-              {hasMoneyHistory
-                ? `Hi ${firstName === "there" ? "there" : firstName} — I can see your latest numbers. Ask me anything, or tap a starter below.`
-                : "Welcome in. Add a few transactions, bills, or balances and I'll turn them into a calm, specific plan. Ask me anything to start."}
-            </div>
-            <div className="lx-chips lx-coach-starters">
-              {STARTERS.map((s) => (
-                <button key={s} className="lx-chip" onClick={() => send(s)}>{s} <ArrowRight size={12} /></button>
-              ))}
-            </div>
-          </>
+        {afford ? (
+          <div className={"verdict " + afford.verdict}>
+            <strong>{afford.headline}</strong>
+            <span>{afford.detail}</span>
+          </div>
+        ) : (
+          <p className="hint">Type a price and I’ll tell you straight — grounded in your real cash, not vibes.</p>
         )}
-        {msgs.map((m, i) => (
-          <div key={i} className={"lx-bubble " + (m.role === "user" ? "me" : "coach")}>{m.content}</div>
-        ))}
-        {busy && <div className="lx-typing"><span /><span /><span /></div>}
-        <div ref={endRef} />
       </div>
 
-      {voiceNote && <p className="lx-voicenote">{voiceNote}</p>}
-
-      <div className="lx-chatbar">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") send(input); }}
-          placeholder={listening ? "Listening…" : "Ask your coach anything…"}
-        />
-        <button aria-label={listening ? "Stop voice input" : "Voice input"} className={"ghost" + (listening ? " live" : "")} onClick={toggleVoice}><Mic size={18} /></button>
-        <button aria-label="Send" onClick={() => send(input)} disabled={busy}><Send size={18} /></button>
+      {/* SLEEP ON IT */}
+      <div className="plate">
+        <div className="plate-title">
+          <Moon /> Sleep on it
+          {savedByWaiting > 0 && <span style={{ marginLeft: "auto", color: "var(--pos)", fontSize: 11.5, letterSpacing: 0, textTransform: "none", fontWeight: 700 }}>{formatMoney(savedByWaiting, cur)} saved by waiting</span>}
+        </div>
+        <div className="inline-form" style={{ marginTop: 12 }}>
+          <input className="input" placeholder="Something you want…" value={wishName} onChange={(e) => setWishName(e.target.value)} />
+          <input className="input" style={{ maxWidth: 90, flex: "0 1 90px" }} type="number" inputMode="decimal" placeholder="$" value={wishAmt} onChange={(e) => setWishAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addW()} />
+          <button className="btn sm" onClick={addW} disabled={!wishName.trim() || !(parseFloat(wishAmt) > 0)} aria-label="Add to wishlist"><Plus size={15} /></button>
+        </div>
+        {pendingWishes.length > 0 ? (
+          <div style={{ marginTop: 4 }}>
+            {pendingWishes.map((w) => {
+              const days = Math.floor((Date.now() - w.createdAt) / 86400000);
+              const left = Math.max(0, COOL_DAYS - days);
+              const readyToDecide = left <= 0;
+              const v = readyToDecide ? affordCheck(data, w.amount) : null;
+              return (
+                <div className="row" key={w.id} style={{ flexWrap: "wrap" }}>
+                  <span className="row-ic">{readyToDecide ? "✨" : "💤"}</span>
+                  <div className="row-meta">
+                    <div className="row-t">{w.name}</div>
+                    <div className={"row-s" + (v ? (v.verdict === "yes" ? " pos" : v.verdict === "wait" ? " neg" : "") : "")}>
+                      {readyToDecide ? (v ? v.headline : "Ready to decide") : `${left} day${left === 1 ? "" : "s"} to think it over`}
+                    </div>
+                  </div>
+                  <div className="row-amt">{formatMoney(w.amount, cur)}</div>
+                  {/* Always removable — "changed my mind" shouldn't pollute the saved-by-waiting stat */}
+                  <button className="btn-icon danger" onClick={() => deleteWish(w.id)} aria-label="Remove"><X size={14} /></button>
+                  {readyToDecide && (
+                    <div style={{ flexBasis: "100%", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button className="btn-ghost sm" onClick={() => { decideWish(w.id, "skipped"); success(); }}>Skip</button>
+                      <button className="btn sm" onClick={() => { decideWish(w.id, "bought"); success(); }}>Buy</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="hint">Tempted by something? Add it here. I’ll hold it for {COOL_DAYS} days — most urges fade, and you’ll see if you can truly afford it then.</p>
+        )}
       </div>
+
+      {/* CORRESPONDENCE */}
+      <section className="sec">
+        <div className="sec-head"><h2>Ask your coach</h2></div>
+        <div className="chat">
+          {msgs.length === 0 && (
+            <>
+              <div className="bubble coach">
+                {hasMoneyHistory
+                  ? `Hi ${firstName === "there" ? "there" : firstName} — I can see your latest numbers. Ask me anything, or tap a starter below.`
+                  : "Welcome in. Add a few transactions, bills, or balances and I'll turn them into a calm, specific plan. Ask me anything to start."}
+              </div>
+              <div className="chips">
+                {STARTERS.map((s) => (
+                  <button key={s} className="chip" onClick={() => send(s)}>{s} <ArrowRight size={12} style={{ display: "inline", verticalAlign: "-2px" }} /></button>
+                ))}
+              </div>
+            </>
+          )}
+          {msgs.map((m, i) => (
+            <div key={i} className={"bubble " + (m.role === "user" ? "me" : "coach")}>{m.content}</div>
+          ))}
+          {busy && <div className="typing"><span /><span /><span /></div>}
+          <div ref={endRef} />
+        </div>
+
+        {voiceNote && <p className="voicenote">{voiceNote}</p>}
+
+        <div className="chatbar">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") send(input); }}
+            placeholder={listening ? "Listening…" : "Ask your coach anything…"}
+          />
+          <button aria-label={listening ? "Stop voice input" : "Voice input"} className={"mic" + (listening ? " live" : "")} onClick={toggleVoice}><Mic size={18} /></button>
+          <button aria-label="Send" className="send" onClick={() => send(input)} disabled={busy}><Send size={18} /></button>
+        </div>
+      </section>
     </main>
   );
 }

@@ -56,7 +56,7 @@ export default function Onboarding() {
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
-      gsap.from(".onb2-rise", { y: 22, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
     }, root);
     return () => ctx.revert();
   }, [step, joining]);
@@ -99,112 +99,112 @@ export default function Onboarding() {
   // ---- Join an existing household ----
   if (joining) {
     return (
-      <div className="onb2" ref={root}>
-        <div className="onb2-aura" aria-hidden="true" />
-        <div className="onb2-inner onb2-rise">
-          <div className="onb2-mark"><LockKeyhole size={26} /></div>
-          <h1 className="onb2-h1">Join a <span>household</span></h1>
-          <p className="onb2-sub">Enter the private code from Settings on the other device. Treat it like a password — it syncs shared budget data.</p>
-          <label className="lx-field"><span>Household code</span>
-            <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="example-household-code"
-              onKeyDown={(e) => e.key === "Enter" && void joinHousehold()} autoFocus />
-          </label>
-          {joinError && <p className="onb2-err">{joinError}</p>}
-          <button className="lx-primary full" onClick={() => void joinHousehold()} disabled={joinBusy || joinCode.trim().length < 16}>
+      <div className="onb" ref={root}>
+        <div className="rise" style={{ marginTop: 24 }}>
+          <span className="seal lg"><LockKeyhole size={24} /></span>
+          <h1 className="onb-h1">Join a <em>household</em></h1>
+          <p className="onb-sub">Enter the private code from Settings on the other device. Treat it like a password — it syncs shared budget data.</p>
+        </div>
+        <label className="field rise"><span>Household code</span>
+          <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="example-household-code"
+            onKeyDown={(e) => e.key === "Enter" && void joinHousehold()} autoFocus />
+        </label>
+        {joinError && <p className="onb-err">{joinError}</p>}
+        <div className="onb-actions rise">
+          <button className="btn full" onClick={() => void joinHousehold()} disabled={joinBusy || joinCode.trim().length < 16}>
             {joinBusy ? "Joining…" : "Join household"}
           </button>
-          <button className="onb2-link" onClick={() => setJoining(false)}><ArrowLeft size={15} /> Back</button>
+          <button className="onb-link" onClick={() => setJoining(false)}><ArrowLeft size={15} /> Back</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="onb2" ref={root}>
-      <div className="onb2-aura" aria-hidden="true" />
-
-      {/* progress dots */}
-      <div className="onb2-dots">
+    <div className="onb" ref={root}>
+      {/* progress */}
+      <div className="onb-steps">
         {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
           <span key={i} className={i <= step ? "on" : ""} />
         ))}
       </div>
 
-      {/* STEP 0 — welcome */}
+      {/* STEP 0 — frontispiece */}
       {step === 0 && (
-        <div className="onb2-inner">
-          <div className="onb2-hero onb2-rise">
-            <div className="onb2-mark big">MC</div>
-            <h1 className="onb2-h1">Money that finally <span>makes sense.</span></h1>
-            <p className="onb2-sub">A calm, private money app you actually want to open. Talk to it, and it turns your real life into clarity.</p>
+        <>
+          <div className="rise">
+            <span className="seal lg">MC</span>
+            <h1 className="onb-h1">Money that finally <em>makes sense.</em></h1>
+            <p className="onb-sub">A calm, private money app you actually want to open. Talk to it, and it turns your real life into clarity.</p>
           </div>
-          <div className="onb2-features">
+          <div className="pg-rule rise" style={{ margin: "0 0 4px" }} />
+          <div>
             {FEATURES.map(({ Icon, title, body }) => (
-              <div className="onb2-feature onb2-rise" key={title}>
-                <span className="ic"><Icon size={20} /></span>
+              <div className="onb-feat rise" key={title}>
+                <span className="ic"><Icon size={19} /></span>
                 <div><strong>{title}</strong><p>{body}</p></div>
               </div>
             ))}
           </div>
-          <div className="onb2-actions onb2-rise">
-            <button className="lx-primary full" onClick={() => setStep(1)}>Get started <ArrowRight size={18} /></button>
-            <button className="onb2-link" onClick={() => setJoining(true)}>Join an existing household</button>
+          <div className="onb-actions rise">
+            <button className="btn full" onClick={() => setStep(1)}>Get started <ArrowRight size={17} /></button>
+            <button className="onb-link" onClick={() => setJoining(true)}>Join an existing household</button>
           </div>
-          <p className="onb2-privacy onb2-rise"><ShieldCheck size={14} /> Private and on your device by default.</p>
-        </div>
+          <p className="onb-privacy rise"><ShieldCheck size={14} /> Private and on your device by default.</p>
+        </>
       )}
 
       {/* STEP 1 — you */}
       {step === 1 && (
-        <div className="onb2-inner">
-          <div className="onb2-rise">
-            <div className="onb2-mark"><Sparkles size={24} /></div>
-            <h1 className="onb2-h1">Hi — what should I <span>call you?</span></h1>
-            <p className="onb2-sub">Just a first name. Everything else is optional, and you can change it anytime.</p>
+        <>
+          <div className="rise">
+            <span className="seal lg"><Sparkles size={22} /></span>
+            <h1 className="onb-h1">Hi — what should I <em>call you?</em></h1>
+            <p className="onb-sub">Just a first name. Everything else is optional, and you can change it anytime.</p>
           </div>
-          <label className="lx-field onb2-rise"><span>Your name</span>
+          <label className="field rise"><span>Your name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Dave" autoFocus />
           </label>
-          <label className="lx-field onb2-rise"><span>How much do you have right now?</span>
+          <label className="field rise"><span>How much do you have right now?</span>
             <input value={onHand} onChange={(e) => setOnHand(e.target.value)} inputMode="decimal" placeholder="e.g. 19" />
           </label>
-          <p className="onb2-hint onb2-rise">Your real checking + cash balance today. This is what makes <b>“safe to spend” accurate</b> — even starting mid-month.</p>
-          <label className="lx-field onb2-rise"><span>Monthly take-home income (optional)</span>
+          <p className="onb-hint rise">Your real checking + cash balance today. This is what makes <b>“safe to spend” accurate</b> — even starting mid-month.</p>
+          <label className="field rise"><span>Monthly take-home income (optional)</span>
             <input value={income} onChange={(e) => setIncome(e.target.value)} inputMode="decimal" placeholder="e.g. 4,200" />
           </label>
-          <label className="lx-field onb2-rise"><span>Currency</span>
+          <label className="field rise"><span>Currency</span>
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
               {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>
           </label>
-          <div className="onb2-actions onb2-rise">
-            <button className="lx-primary full" onClick={() => setStep(2)}>Continue <ArrowRight size={18} /></button>
-            <button className="onb2-link" onClick={() => setStep(0)}><ArrowLeft size={15} /> Back</button>
+          <div className="onb-actions rise">
+            <button className="btn full" onClick={() => setStep(2)}>Continue <ArrowRight size={17} /></button>
+            <button className="onb-link" onClick={() => setStep(0)}><ArrowLeft size={15} /> Back</button>
           </div>
-        </div>
+        </>
       )}
 
       {/* STEP 2 — partner / finish */}
       {step === 2 && (
-        <div className="onb2-inner">
-          <div className="onb2-rise">
-            <div className="onb2-mark"><Landmark size={24} /></div>
-            <h1 className="onb2-h1">Sharing money with <span>someone?</span></h1>
-            <p className="onb2-sub">Add a partner so spending and plans roll up together. Totally optional — skip if it&apos;s just you.</p>
+        <>
+          <div className="rise">
+            <span className="seal lg"><Landmark size={22} /></span>
+            <h1 className="onb-h1">Sharing money with <em>someone?</em></h1>
+            <p className="onb-sub">Add a partner so spending and plans roll up together. Totally optional — skip if it&apos;s just you.</p>
           </div>
-          <label className="lx-field onb2-rise"><span>Partner&apos;s name (optional)</span>
+          <label className="field rise"><span>Partner&apos;s name (optional)</span>
             <input value={partner} onChange={(e) => setPartner(e.target.value)} placeholder="e.g. Sam" />
           </label>
           {partner.trim() && (
-            <label className="lx-field onb2-rise"><span>Their monthly income (optional)</span>
+            <label className="field rise"><span>Their monthly income (optional)</span>
               <input value={partnerIncome} onChange={(e) => setPartnerIncome(e.target.value)} inputMode="decimal" placeholder="e.g. 3,000" />
             </label>
           )}
-          <div className="onb2-actions onb2-rise">
-            <button className="lx-primary full" onClick={finish}><Check size={18} /> Enter Money Coach</button>
-            <button className="onb2-link" onClick={() => setStep(1)}><ArrowLeft size={15} /> Back</button>
+          <div className="onb-actions rise">
+            <button className="btn full" onClick={finish}><Check size={17} /> Enter Money Coach</button>
+            <button className="onb-link" onClick={() => setStep(1)}><ArrowLeft size={15} /> Back</button>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

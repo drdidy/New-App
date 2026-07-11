@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Calendar, Check, CreditCard, Landmark, Pencil, Plus, Repeat, Trash2, X, Zap } from "lucide-react";
+import { ArrowRight, Calendar, Check, CreditCard, Landmark, Pencil, Plus, Trash2, X, Zap } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { billsThisMonth } from "@/lib/insights";
 import { formatMoney, monthLabel, monthKey } from "@/lib/format";
@@ -45,7 +45,6 @@ export default function BillsPage() {
   const monthlyTotal = bills.reduce((s, b) => s + b.bill.amount, 0);
   const paidTotal = bills.filter((b) => b.paid).reduce((s, b) => s + b.bill.amount, 0);
 
-  // Recurring loan / card payments come from debts that carry a monthly minimum.
   const month = monthKey();
   const loans = data.debts
     .filter((d) => d.direction === "i_owe" && (d.minPayment || 0) > 0 && d.balance > 0)
@@ -58,7 +57,6 @@ export default function BillsPage() {
     .sort((a, b) => (a.day || 99) - (b.day || 99));
   const loanTotal = loans.reduce((s, l) => s + l.amount, 0);
   const committedTotal = monthlyTotal + loanTotal;
-  // The hero shows bills + loans, so its progress bar must count both too.
   const loanPaidTotal = loans.filter((l) => l.paidThisMonth).reduce((s, l) => s + l.amount, 0);
   const paidPct = committedTotal ? ((paidTotal + loanPaidTotal) / committedTotal) * 100 : 0;
 
@@ -71,7 +69,6 @@ export default function BillsPage() {
     if (!draftValid) return;
     const amt = parseFloat(amount);
     const d = parseInt(day, 10);
-    // memberId included on BOTH paths so editing "whose bill" actually sticks.
     const fields = { name: name.trim(), amount: amt, category, dayOfMonth: d, autoLog, memberId: who ?? data.members[0]?.id };
     if (editId) updateBill(editId, fields);
     else addBill(fields);
@@ -79,141 +76,132 @@ export default function BillsPage() {
   }
 
   return (
-    <main className="lx">
-      <header className="lx-top">
-        <div>
-          <p className="lx-eyebrow"><Repeat size={13} /> Committed each month</p>
-          <h1 className="lx-h1">Recurring</h1>
-        </div>
-        <button className="lx-addbtn" onClick={openAdd} aria-label="Add a bill"><Plus size={20} /></button>
-      </header>
+    <main className="pg">
+      <div className="pg-head">
+        <p className="pg-date">Committed each month</p>
+        <button className="btn-text" onClick={openAdd}>+ Add bill</button>
+      </div>
+      <h1 className="pg-title">Recurring</h1>
+      <div className="pg-rule" />
 
-      <div className="lx-hero">
-        <div className="lx-hero-inner">
-          <div className="lx-hero-label">Recurring this month · {monthLabel(monthKey())}</div>
-          <div className="lx-hero-num neg"><AnimatedNumber value={committedTotal} currency={cur} /></div>
-          <div className="lx-bar"><span style={{ width: `${paidPct}%` }} /></div>
-          <div className="lx-hero-math">
-            <span>{formatMoney(monthlyTotal, cur)} bills</span>
-            {loanTotal > 0 && <span>+ {formatMoney(loanTotal, cur)} loans & cards</span>}
-          </div>
-          {committedTotal > 0 && (
-            <div className="lx-hero-hint" style={{ cursor: "default", borderBottom: "none" }}>
-              ≈ {formatMoney(committedTotal * 12, cur)} a year committed
-            </div>
-          )}
+      {/* STATEMENT */}
+      <div className="st">
+        <div className="st-label">Recurring this month <span className="tag">{monthLabel(monthKey())}</span></div>
+        <div className="st-num neg"><AnimatedNumber value={committedTotal} currency={cur} /></div>
+        <div className="meter"><span style={{ width: `${paidPct}%` }} /></div>
+        <div className="st-links">
+          <span>{formatMoney(monthlyTotal, cur)} bills</span>
+          {loanTotal > 0 && <span>+ {formatMoney(loanTotal, cur)} loans & cards</span>}
+          {committedTotal > 0 && <span className="gold" style={{ borderBottomColor: "rgba(226,179,102,0.4)" }}>≈ {formatMoney(committedTotal * 12, cur)} a year</span>}
         </div>
       </div>
 
-      <section className="lx-card">
+      {/* BILLS */}
+      <section className="sec">
+        <div className="sec-head"><h2>Bills</h2><span className="sec-aux"><span className="sec-total">{formatMoney(monthlyTotal, cur)}</span></span></div>
         {bills.length === 0 ? (
-          <div className="lx-blank">
+          <div className="blank">
             <div className="ic"><Calendar size={22} /></div>
             <h4>No bills yet</h4>
             <p>Add rent and regular bills so your “safe to spend” knows what’s already committed.</p>
-            <button className="lx-primary" onClick={openAdd}><Plus size={16} /> Add a bill</button>
+            <button className="btn" onClick={openAdd}><Plus size={16} /> Add a bill</button>
           </div>
-        ) : (
-          <div className="lx-list">
-            {bills.map((b) => {
-              const m = member(b.bill.memberId);
-              const soon = !b.paid && b.daysAway >= 0 && b.daysAway <= 6;
-              return (
-                <div className="lx-li" key={b.bill.id}>
-                  <span className="ic">{ICON[b.bill.category] || "🧾"}</span>
-                  <div className="meta">
-                    <div className="t">{b.bill.name}</div>
-                    <div className="s">
-                      Due day {b.dueDay}{b.bill.autoLog ? " · auto" : ""}{multi && m ? ` · ${m.emoji}` : ""}
-                      {b.bill.category === "Subscription" ? ` · ${formatMoney(b.bill.amount * 12, cur)}/yr` : ""}
-                      {b.paid ? " · ✓ paid" : soon ? ` · in ${b.daysAway}d` : ""}
-                    </div>
-                  </div>
-                  <div className="amt neg" style={{ opacity: b.paid ? 0.45 : 1 }}>{formatMoney(b.bill.amount, cur)}</div>
-                  {b.paid ? (
-                    <span className="lx-paid"><Check size={15} /></span>
-                  ) : (
-                    <button className="lx-ghost sm" onClick={() => { markBillPaid(b.bill.id); success(); }}>Pay</button>
-                  )}
-                  <button className="lx-icon-btn" onClick={() => openEdit(b.bill)} aria-label="Edit"><Pencil size={14} /></button>
-                  <button className="lx-icon-btn danger" onClick={() => { if (confirm(`Delete "${b.bill.name}"?`)) deleteBill(b.bill.id); }} aria-label="Delete"><Trash2 size={14} /></button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        ) : bills.map((b) => {
+          const m = member(b.bill.memberId);
+          const soon = !b.paid && b.daysAway >= 0 && b.daysAway <= 6;
+          const sub = [
+            `Due day ${b.dueDay}`,
+            b.bill.autoLog ? "auto" : null,
+            multi && m ? m.emoji : null,
+            b.bill.category === "Subscription" ? `${formatMoney(b.bill.amount * 12, cur)}/yr` : null,
+            b.paid ? "✓ paid" : soon ? `in ${b.daysAway}d` : null,
+          ].filter(Boolean).join(" · ");
+          return (
+            <div className="row" key={b.bill.id}>
+              <span className="row-ic">{ICON[b.bill.category] || "🧾"}</span>
+              <div className="row-meta">
+                <div className="row-t">{b.bill.name}</div>
+                <div className="row-s">{sub}</div>
+              </div>
+              <div className="row-amt neg" style={{ opacity: b.paid ? 0.5 : 1 }}>{formatMoney(b.bill.amount, cur)}</div>
+              {b.paid ? (
+                <span className="check"><Check size={15} /></span>
+              ) : (
+                <button className="btn-ghost sm" onClick={() => { markBillPaid(b.bill.id); success(); }}>Pay</button>
+              )}
+              <div className="row-acts">
+                <button className="btn-icon" onClick={() => openEdit(b.bill)} aria-label="Edit"><Pencil size={14} /></button>
+                <button className="btn-icon danger" onClick={() => { if (confirm(`Delete "${b.bill.name}"?`)) deleteBill(b.bill.id); }} aria-label="Delete"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          );
+        })}
       </section>
 
-      {/* LOAN & CARD PAYMENTS (from debts) */}
-      <section className="lx-card">
-        <div className="lx-card-head"><h2>Loan & card payments</h2><Link href="/debt">Manage</Link></div>
+      {/* LOANS & CARDS */}
+      <section className="sec">
+        <div className="sec-head"><h2>Loan & card payments</h2><span className="sec-aux"><Link href="/debt">Manage</Link></span></div>
         {loans.length === 0 ? (
-          <div className="lx-blank">
+          <div className="blank">
             <div className="ic"><Landmark size={22} /></div>
             <h4>No loan payments</h4>
             <p>Car payments, student loans, and card minimums live in Debt. Add one with a minimum + due date and it shows here.</p>
-            <Link href="/debt" className="lx-primary"><Plus size={16} /> Add a loan or card</Link>
+            <Link href="/debt" className="btn"><Plus size={16} /> Add a loan or card</Link>
           </div>
-        ) : (
-          <div className="lx-list">
-            {loans.map(({ debt: d, amount, day, paidThisMonth }) => (
-              <div className="lx-li" key={d.id}>
-                <span className="ic">{(d.kind ?? "loan") === "card" ? <CreditCard size={16} /> : <Landmark size={16} />}</span>
-                <div className="meta">
-                  <div className="t">{d.party}</div>
-                  <div className="s">
-                    {day ? `Due the ${day}` : "Monthly"}{d.autoPay ? " · auto-pay ⚡" : ""}{paidThisMonth ? " · ✓ paid" : ""}
-                  </div>
-                </div>
-                <div className="amt neg" style={{ opacity: paidThisMonth ? 0.45 : 1 }}>{formatMoney(amount, cur)}</div>
-                {paidThisMonth
-                  ? <span className="lx-paid"><Check size={15} /></span>
-                  : <button className="lx-ghost sm" onClick={() => { payDebt(d.id, amount); success(); }}>Pay</button>}
-                <Link href="/debt" className="lx-icon-btn" aria-label="Manage debt"><ArrowRight size={14} /></Link>
-              </div>
-            ))}
+        ) : loans.map(({ debt: d, amount: amt, day: dd, paidThisMonth }) => (
+          <div className="row" key={d.id}>
+            <span className="row-ic">{(d.kind ?? "loan") === "card" ? <CreditCard /> : <Landmark />}</span>
+            <div className="row-meta">
+              <div className="row-t">{d.party}</div>
+              <div className="row-s">{dd ? `Due the ${dd}` : "Monthly"}{d.autoPay ? " · auto-pay ⚡" : ""}{paidThisMonth ? " · ✓ paid" : ""}</div>
+            </div>
+            <div className="row-amt neg" style={{ opacity: paidThisMonth ? 0.5 : 1 }}>{formatMoney(amt, cur)}</div>
+            {paidThisMonth
+              ? <span className="check"><Check size={15} /></span>
+              : <button className="btn-ghost sm" onClick={() => { payDebt(d.id, amt); success(); }}>Pay</button>}
+            <Link href="/debt" className="btn-icon" aria-label="Manage debt"><ArrowRight size={14} /></Link>
           </div>
-        )}
+        ))}
         {loans.some((l) => !l.debt.autoPay) && (
-          <p className="lx-group-sub" style={{ marginTop: 10 }}>
-            <Zap size={12} style={{ verticalAlign: "-2px" }} /> Tip: open a loan in Debt and turn on <b>auto-pay</b> so its minimum logs itself each month.
+          <p className="sec-sub">
+            <Zap size={12} style={{ display: "inline", verticalAlign: "-2px" }} /> Tip: open a loan in Debt and turn on <b>auto-pay</b> so its minimum logs itself each month.
           </p>
         )}
       </section>
 
       {open && (
-        <div className="lx-sheet-backdrop" onClick={() => setOpen(false)}>
-          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="lx-sheet-head">
+        <div className="sheet-backdrop" onClick={() => setOpen(false)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
               <h3>{editId ? "Edit bill" : "Add a recurring bill"}</h3>
-              <button className="lx-sheet-x" onClick={() => setOpen(false)} aria-label="Close"><X size={18} /></button>
+              <button className="btn-icon" onClick={() => setOpen(false)} aria-label="Close"><X size={18} /></button>
             </div>
-            <label className="lx-field"><span>Name</span>
+            <label className="field"><span>Name</span>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rent, Netflix, Electric…" autoFocus />
             </label>
-            <div className="lx-field-row">
-              <label className="lx-field"><span>Amount</span>
+            <div className="fieldrow">
+              <label className="field"><span>Amount</span>
                 <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="1100" />
               </label>
-              <label className="lx-field"><span>Due day</span>
+              <label className="field"><span>Due day</span>
                 <input value={day} onChange={(e) => setDay(e.target.value)} inputMode="numeric" placeholder="1" />
               </label>
             </div>
-            <label className="lx-field"><span>Category</span>
+            <label className="field"><span>Category</span>
               <select value={category} onChange={(e) => setCategory(e.target.value)}>
                 {CATEGORIES.map((c) => <option key={c} value={c}>{ICON[c]} {c}</option>)}
               </select>
             </label>
             {multi && (
-              <label className="lx-field"><span>Whose bill?</span>
+              <label className="field"><span>Whose bill?</span>
                 <MemberPicker members={data.members} value={who ?? data.members[0]?.id} onChange={setWho} size="sm" />
               </label>
             )}
-            <label className="lx-toggle">
+            <label className="toggle">
               <input type="checkbox" checked={autoLog} onChange={(e) => setAutoLog(e.target.checked)} />
               <span>Log it automatically on the due day</span>
             </label>
-            <button className="lx-primary full" onClick={save} disabled={!draftValid} style={{ marginTop: 8 }}>{editId ? "Save changes" : "Save bill"}</button>
+            <button className="btn full" onClick={save} disabled={!draftValid} style={{ marginTop: 8 }}>{editId ? "Save changes" : "Save bill"}</button>
           </div>
         </div>
       )}

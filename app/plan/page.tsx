@@ -3,29 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import gsap from "gsap";
-import {
-  ArrowRight,
-  CalendarDays,
-  Home,
-  Layers,
-  PiggyBank,
-  Plus,
-  Target,
-  TrendingUp,
-  Trash2,
-  Wallet,
-  X,
-} from "lucide-react";
+import { ArrowRight, CalendarDays, Home, Layers, PiggyBank, Plus, TrendingUp, Trash2, Wallet, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { billsThisMonth, budgetStatus, moneyPlan, monthlyTotals, futureProjection } from "@/lib/insights";
 import { clampPct, formatMoney } from "@/lib/format";
 import type { Goal } from "@/lib/types";
-
-const GOAL_EMOJIS = ["🎯", "🛟", "🏠", "🚗", "✈️", "🎄", "💍", "🎓", "🏖️", "💻"];
+import AnimatedNumber from "@/components/AnimatedNumber";
 import Donut from "@/components/Donut";
 import Ring from "@/components/Ring";
-import AnimatedNumber from "@/components/AnimatedNumber";
 import Sparkline from "@/components/Sparkline";
+
+const GOAL_EMOJIS = ["🎯", "🛟", "🏠", "🚗", "✈️", "🎄", "💍", "🎓", "🏖️", "💻"];
 
 const ALLOC = [
   { key: "bills", label: "Bills & needs", color: "#bd8826" },
@@ -75,7 +63,7 @@ export default function PlanPage() {
     if (!ready) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const ctx = gsap.context(() => {
-      gsap.from(".lx-reveal", { y: 20, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
     }, root);
     return () => ctx.revert();
   }, [ready]);
@@ -117,103 +105,88 @@ export default function PlanPage() {
   const forecast = trend.map((m) => m.income - m.expense);
   const hasForecast = forecast.some(Boolean);
   const hasPlan = plan.income > 0 || plan.allocated > 0 || budgets.length > 0 || goals.length > 0 || bills.length > 0;
+  const future = futureProjection(data, 12);
+  const debtFree = future && future.debtFreeInMonths != null && future.debtFreeInMonths <= 12;
 
   return (
-    <main className="lx" ref={root}>
-      <header className="lx-top lx-reveal">
-        <div>
-          <p className="lx-eyebrow"><Target size={13} /> Your money plan</p>
-          <h1 className="lx-h1">Plan</h1>
-        </div>
-      </header>
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
+        <p className="pg-date">Your money plan</p>
+        <button className="btn-text" onClick={() => openGoal()}>+ New goal</button>
+      </div>
+      <h1 className="pg-title rise">Plan</h1>
+      <div className="pg-rule rise" />
 
-      <div className="lx-hero lx-reveal">
-        <div className="lx-hero-inner lx-debt-hero">
+      {/* STATEMENT + GAUGE */}
+      <div className="st rise">
+        <div className="st-row">
           <div>
-            <div className="lx-hero-label">{plan.leftover >= 0 ? "Left to assign" : "Over-allocated"}</div>
-            <div className={"lx-hero-num " + (plan.leftover >= 0 ? "pos" : "neg")}><AnimatedNumber value={Math.abs(plan.leftover)} currency={cur} /></div>
-            <div className="lx-hero-sub">
+            <div className="st-label">{plan.leftover >= 0 ? "Left to assign" : "Over-allocated"}</div>
+            <div className={"st-num" + (plan.leftover >= 0 ? "" : " neg")}>
+              <AnimatedNumber value={Math.abs(plan.leftover)} currency={cur} />
+            </div>
+            <p className="st-meta">
               {hasPlan
                 ? plan.leftover >= 0
                   ? "Give every dollar a job — assign this to a goal or buffer."
                   : "You've planned more than you earn. Trim a budget or goal."
                 : "Add income, bills, budgets, or goals to build your plan."}
-            </div>
+            </p>
           </div>
-          <Ring pct={allocationPct} size={92} stroke={9} color="#e2b366" track="rgba(242,234,217,0.08)">
+          <Ring pct={allocationPct} size={92} stroke={8} color="#e2b366" track="rgba(241,233,216,0.1)">
             <strong>{Math.round(allocationPct)}%</strong>
             <span>assigned</span>
           </Ring>
         </div>
+        <div className="st-links">
+          <Link href="/buckets">Income {plan.income ? formatMoney(plan.income, cur) : "—"}</Link>
+          <Link href="/buckets" className="pos" style={{ borderBottomColor: "rgba(76,195,138,0.4)" }}>Saving {formatMoney(plan.savings, cur)}</Link>
+          <span>Surplus {formatMoney(plan.leftover, cur)}</span>
+        </div>
       </div>
 
-      <Link href="/buckets" className="lx-card lx-cta lx-reveal">
-        <div className="lx-cta-ic"><Layers size={22} /></div>
-        <div className="lx-cta-meta">
-          <div className="lx-cta-t">Income & buckets</div>
-          <div className="lx-cta-s">Set your salary date · set aside for savings, investing, tithes & giving.</div>
-        </div>
-        <ArrowRight size={18} className="lx-cta-arrow" />
+      {/* INCOME & BUCKETS DOOR */}
+      <Link href="/buckets" className="flag rise" style={{ marginBottom: 18 }}>
+        <span className="flag-txt">
+          <Layers size={13} style={{ display: "inline", marginRight: 6, verticalAlign: "-2px" }} />
+          <b>Income & buckets</b> — set your salary date; set aside for savings, investing, tithes & giving. <ArrowRight size={12} style={{ display: "inline" }} />
+        </span>
       </Link>
 
-      {/* FUTURE YOU — where the current pace leads */}
-      {(() => {
-        const f = futureProjection(data, 12);
-        if (!f) return null;
-        const debtFree = f.debtFreeInMonths != null && f.debtFreeInMonths <= 12;
-        return (
-          <section className="lx-future lx-reveal">
-            <div className="lx-future-head">🔮 Future you · 12 months</div>
-            <p className="lx-future-lead">If you keep this up:</p>
-            <div className="lx-future-grid">
-              {f.debtNow > 0 && (
-                <div className="lx-future-item">
-                  <span className="l">Debt</span>
-                  <span className="v">{debtFree ? "Debt-free 🎉" : `${formatMoney(f.debtNow, cur)} → ${formatMoney(f.debtThen, cur)}`}</span>
-                </div>
-              )}
-              {f.savedAdded > 0 && (
-                <div className="lx-future-item">
-                  <span className="l">Saved</span>
-                  <span className="v pos">+{formatMoney(f.savedAdded, cur)}</span>
-                </div>
-              )}
-              <div className="lx-future-item">
-                <span className="l">Net worth</span>
-                <span className="v">about {formatMoney(f.netWorthThen, cur)}</span>
-              </div>
+      {/* FUTURE YOU */}
+      {future && (
+        <section className="sec rise">
+          <div className="sec-head"><h2>🔮 Future you · 12 months</h2></div>
+          <p className="sec-sub">If you keep this up:</p>
+          {future.debtNow > 0 && (
+            <div className="row" style={{ padding: "9px 0" }}>
+              <div className="row-meta"><div className="row-t mut" style={{ fontWeight: 600 }}>Debt</div></div>
+              <div className="row-amt">{debtFree ? "Debt-free 🎉" : `${formatMoney(future.debtNow, cur)} → ${formatMoney(future.debtThen, cur)}`}</div>
             </div>
-            <p className="lx-future-foot">An estimate from your current saving & payment pace — every extra dollar beats it.</p>
-          </section>
-        );
-      })()}
+          )}
+          {future.savedAdded > 0 && (
+            <div className="row" style={{ padding: "9px 0" }}>
+              <div className="row-meta"><div className="row-t mut" style={{ fontWeight: 600 }}>Saved</div></div>
+              <div className="row-amt pos">+{formatMoney(future.savedAdded, cur)}</div>
+            </div>
+          )}
+          <div className="row" style={{ padding: "9px 0" }}>
+            <div className="row-meta"><div className="row-t mut" style={{ fontWeight: 600 }}>Net worth</div></div>
+            <div className="row-amt">about {formatMoney(future.netWorthThen, cur)}</div>
+          </div>
+          <p className="sec-sub">An estimate from your current saving & payment pace — every extra dollar beats it.</p>
+        </section>
+      )}
 
-      <div className="lx-mgrid three lx-reveal">
-        <Link href="/buckets" className="lx-metric">
-          <div className="ic"><Wallet size={17} /></div>
-          <div className="lx-metric-lbl">Income</div>
-          <div className="lx-metric-num">{plan.income ? formatMoney(plan.income, cur) : "—"}</div>
-        </Link>
-        <Link href="/buckets" className="lx-metric">
-          <div className="ic"><PiggyBank size={17} /></div>
-          <div className="lx-metric-lbl">Saving</div>
-          <div className="lx-metric-num pos">{formatMoney(plan.savings, cur)}</div>
-        </Link>
-        <div className="lx-metric">
-          <div className="ic gold"><TrendingUp size={17} /></div>
-          <div className="lx-metric-lbl">Surplus</div>
-          <div className={"lx-metric-num " + (plan.leftover >= 0 ? "" : "neg")}>{formatMoney(plan.leftover, cur)}</div>
-        </div>
-      </div>
-
-      <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Where it goes</h2><Link href="/settings">Edit</Link></div>
+      {/* WHERE IT GOES */}
+      <section className="sec rise">
+        <div className="sec-head"><h2>Where it goes</h2><span className="sec-aux"><Link href="/settings">Edit</Link></span></div>
         {slices.length ? (
-          <div className="lx-donutwrap">
-            <Donut slices={slices} centerTop={`${Math.round(allocationPct)}%`} centerSub="assigned" size={168} stroke={24} />
-            <div className="lx-legend">
+          <div className="donut-wrap">
+            <Donut slices={slices} centerTop={`${Math.round(allocationPct)}%`} centerSub="assigned" size={158} stroke={22} />
+            <div className="legend">
               {slices.map((s) => (
-                <div className="lx-legend-row" key={s.label}>
+                <div className="legend-row" key={s.label}>
                   <span className="sw" style={{ background: s.color }} />
                   <span className="nm">{s.label}</span>
                   <span className="am">{formatMoney(s.value, cur)}</span>
@@ -222,7 +195,7 @@ export default function PlanPage() {
             </div>
           </div>
         ) : (
-          <div className="lx-blank">
+          <div className="blank">
             <div className="ic"><Wallet size={22} /></div>
             <h4>Nothing assigned yet</h4>
             <p>Add bills, budgets, or goals so every dollar gets a role.</p>
@@ -230,109 +203,97 @@ export default function PlanPage() {
         )}
       </section>
 
-      <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Cash flow</h2><span className="lx-plan-free">6 months</span></div>
-        <Sparkline
-          values={hasForecast ? forecast : [0, 0, 0, 0, 0, 0]}
-          labels={trend.map((m) => m.label)}
-          color="#e2b366"
-          height={150}
-        />
-        <p className="lx-proj-note"><TrendingUp size={13} /> Money in minus money out, month by month.</p>
+      {/* CASH FLOW */}
+      <section className="sec rise">
+        <div className="sec-head"><h2>Cash flow</h2><span className="sec-aux"><span className="tag">6 months</span></span></div>
+        <Sparkline values={hasForecast ? forecast : [0, 0, 0, 0, 0, 0]} labels={trend.map((m) => m.label)} color="#e2b366" height={140} />
+        <p className="sec-sub"><TrendingUp size={12} style={{ display: "inline", verticalAlign: "-2px" }} /> Money in minus money out, month by month.</p>
       </section>
 
+      {/* BUDGETS */}
       {budgets.length > 0 && (
-        <section className="lx-card lx-reveal">
-          <div className="lx-card-head"><h2>Budgets</h2><Link href="/settings">Edit</Link></div>
-          <div className="lx-barlist">
-            {budgets.slice(0, 6).map((b) => (
-              <div className="lx-barrow" key={b.category}>
-                <div className="top">
-                  <span className="nm">{b.category}</span>
-                  <span className="vals">{formatMoney(b.spent, cur)} / {formatMoney(b.limit, cur)}</span>
-                </div>
-                <div className="track"><span className={b.over ? "over" : ""} style={{ width: `${Math.min(100, b.pct)}%` }} /></div>
+        <section className="sec rise">
+          <div className="sec-head"><h2>Budgets</h2><span className="sec-aux"><Link href="/settings">Edit</Link></span></div>
+          {budgets.slice(0, 6).map((b) => (
+            <div className="row" key={b.category} style={{ display: "block" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <span className="row-t">{b.category}</span>
+                <span className={"row-amt" + (b.over ? " neg" : "")}>{formatMoney(b.spent, cur)} / {formatMoney(b.limit, cur)}</span>
               </div>
-            ))}
-          </div>
+              <div className="meter" style={{ margin: "9px 0 2px" }}><span className={b.over ? "over" : ""} style={{ width: `${Math.min(100, b.pct)}%` }} /></div>
+            </div>
+          ))}
         </section>
       )}
 
-      <section className="lx-card lx-reveal">
-        <div className="lx-card-head"><h2>Savings goals</h2>
-          <button className="lx-headadd" onClick={() => openGoal()}><Plus size={16} /> Add</button>
-        </div>
-        {goals.length ? (
-          <div className="lx-barlist">
-            {goals.map((g) => (
-              <button className="lx-barrow lx-barrow-tap" key={g.id} onClick={() => openGoal(g)}>
-                <div className="top">
-                  <span className="nm">{g.emoji} {g.name}</span>
-                  <span className="vals">{formatMoney(g.saved, cur)} / {formatMoney(g.target, cur)}</span>
-                </div>
-                <div className="track"><span style={{ width: `${g.target > 0 ? clampPct((g.saved / g.target) * 100) : 0}%` }} /></div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="lx-blank">
+      {/* SAVINGS GOALS */}
+      <section className="sec rise">
+        <div className="sec-head"><h2>Savings goals</h2><span className="sec-aux"><button className="link" onClick={() => openGoal()}>+ Add</button></span></div>
+        {goals.length ? goals.map((g) => (
+          <button className="row" key={g.id} onClick={() => openGoal(g)} style={{ display: "block" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <span className="row-t">{g.emoji} {g.name}</span>
+              <span className="row-amt">{formatMoney(g.saved, cur)} / {formatMoney(g.target, cur)}</span>
+            </div>
+            <div className="meter" style={{ margin: "9px 0 2px" }}><span style={{ width: `${g.target > 0 ? clampPct((g.saved / g.target) * 100) : 0}%` }} /></div>
+          </button>
+        )) : (
+          <div className="blank">
             <div className="ic"><PiggyBank size={22} /></div>
             <h4>No goals yet</h4>
             <p>Create your first goal to protect money before you spend it.</p>
-            <button className="lx-primary" onClick={() => openGoal()}><Plus size={16} /> Create a goal</button>
+            <button className="btn" onClick={() => openGoal()}><Plus size={16} /> Create a goal</button>
           </div>
         )}
       </section>
 
+      {/* COMING UP */}
       {events.length > 0 && (
-        <section className="lx-card lx-reveal">
-          <div className="lx-card-head"><h2>Coming up</h2><Link href="/bills">Bills</Link></div>
-          <div className="lx-list">
-            {events.map((e) => (
-              <div className="lx-li" key={e.id}>
-                <span className="ic"><e.Icon size={16} /></span>
-                <div className="meta"><div className="t">{e.label}</div><div className="s">{e.sub}</div></div>
-                <div className="amt neg">{formatMoney(e.amount, cur)}</div>
-              </div>
-            ))}
-          </div>
-          <Link href="/bills" className="lx-proj-note" style={{ marginTop: 10 }}>Manage bills <ArrowRight size={13} /></Link>
+        <section className="sec rise">
+          <div className="sec-head"><h2>Coming up</h2><span className="sec-aux"><Link href="/bills">Bills</Link></span></div>
+          {events.map((e) => (
+            <div className="row" key={e.id}>
+              <span className="row-ic"><e.Icon /></span>
+              <div className="row-meta"><div className="row-t">{e.label}</div><div className="row-s">{e.sub}</div></div>
+              <div className="row-amt neg">{formatMoney(e.amount, cur)}</div>
+            </div>
+          ))}
         </section>
       )}
 
       {gDraft && (
-        <div className="lx-sheet-backdrop" onClick={() => setGDraft(null)}>
-          <div className="lx-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="lx-sheet-head">
+        <div className="sheet-backdrop" onClick={() => setGDraft(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
               <h3>{gDraft.id ? "Edit goal" : "New goal"}</h3>
-              <button className="lx-sheet-x" onClick={() => setGDraft(null)} aria-label="Close"><X size={18} /></button>
+              <button className="btn-icon" onClick={() => setGDraft(null)} aria-label="Close"><X size={18} /></button>
             </div>
-            <div className="lx-emoji-row" style={{ flexWrap: "wrap" }}>
+            <div className="chips" style={{ marginBottom: 14 }}>
               {GOAL_EMOJIS.map((em) => (
-                <button key={em} className={"lx-emoji" + (gDraft.emoji === em ? " on" : "")} onClick={() => setGDraft({ ...gDraft, emoji: em })}>{em}</button>
+                <button key={em} className={"chip" + (gDraft.emoji === em ? " on" : "")} onClick={() => setGDraft({ ...gDraft, emoji: em })}>{em}</button>
               ))}
             </div>
-            <label className="lx-field"><span>Goal name</span>
+            <label className="field"><span>Goal name</span>
               <input value={gDraft.name} onChange={(e) => setGDraft({ ...gDraft, name: e.target.value })} placeholder="Emergency fund" autoFocus />
             </label>
-            <div className="lx-field-row">
-              <label className="lx-field"><span>Target</span>
+            <div className="fieldrow">
+              <label className="field"><span>Target</span>
                 <input type="number" inputMode="decimal" value={gDraft.target} onChange={(e) => setGDraft({ ...gDraft, target: e.target.value })} placeholder="6000" />
               </label>
-              <label className="lx-field"><span>Per month</span>
+              <label className="field"><span>Per month</span>
                 <input type="number" inputMode="decimal" value={gDraft.monthly} onChange={(e) => setGDraft({ ...gDraft, monthly: e.target.value })} placeholder="300" />
               </label>
             </div>
-            <button className="lx-primary full" onClick={saveGoal} disabled={!gDraft.name.trim() || !(parseFloat(gDraft.target) > 0)}>
+            <button className="btn full" onClick={saveGoal} disabled={!gDraft.name.trim() || !(parseFloat(gDraft.target) > 0)}>
               {gDraft.id ? "Save changes" : "Create goal"}
             </button>
             {gDraft.id && (
               <>
-                <div className="lx-pay-row" style={{ marginTop: 12 }}>
-                  <input type="number" inputMode="decimal" placeholder="Add money" value={addAmt} onChange={(e) => setAddAmt(e.target.value)} />
-                  <button className="lx-primary sm" onClick={addToGoal} disabled={!(parseFloat(addAmt) > 0)}>Add to saved</button>
+                <div className="inline-form" style={{ marginTop: 12 }}>
+                  <input className="input" type="number" inputMode="decimal" placeholder="Add money" value={addAmt} onChange={(e) => setAddAmt(e.target.value)} />
+                  <button className="btn sm" onClick={addToGoal} disabled={!(parseFloat(addAmt) > 0)}>Add to saved</button>
                 </div>
-                <button className="lx-ghost danger" style={{ width: "100%", marginTop: 10 }}
+                <button className="btn-ghost danger" style={{ width: "100%", marginTop: 10 }}
                   onClick={() => { if (confirm(`Delete "${gDraft.name}"?`)) { deleteGoal(gDraft.id!); setGDraft(null); } }}>
                   <Trash2 size={15} /> Delete goal
                 </button>
