@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppData } from "./types";
 import {
   inferDebtKind,
+  monthPace,
   payoffProjection,
   safeToSpend,
   simulatePayoff,
@@ -228,5 +229,36 @@ describe("payoffProjection", () => {
     expect(payoffProjection(base(), "snowball", 50)).toEqual([0]);
     expect(safeToSpend(base()).safe).toBe(0);
     expect(todayISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("monthPace", () => {
+  function txAt(monthsBack: number, day: number, amount: number) {
+    const d = new Date();
+    const m = new Date(d.getFullYear(), d.getMonth() - monthsBack, Math.min(day, 28));
+    const iso = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")}`;
+    return { id: `t${monthsBack}-${day}-${amount}`, type: "expense" as const, amount, category: "Groceries", description: "", date: iso, createdAt: 0 };
+  }
+
+  it("returns null with no prior-month history", () => {
+    expect(monthPace(base())).toBeNull();
+    expect(monthPace(base({ transactions: [txAt(0, 1, 50)] }))).toBeNull();
+  });
+
+  it("averages prior months capped at today's day and reports current spend", () => {
+    const today = new Date().getDate();
+    const data = base({
+      transactions: [
+        txAt(0, 1, 40),        // this month
+        txAt(1, 1, 100),       // last month, always within cap
+        txAt(2, 1, 200),       // two months ago
+      ],
+    });
+    const p = monthPace(data)!;
+    expect(p).not.toBeNull();
+    expect(p.day).toBe(today);
+    expect(p.months).toBe(2);
+    expect(p.actual).toBe(40);
+    expect(p.typical).toBe(150);
   });
 });
