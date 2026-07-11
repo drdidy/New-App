@@ -67,6 +67,7 @@ const transactionSchema = z.object({
   createdAt: z.number().finite().nonnegative(),
   updatedAt: timestamp,
   lineItems: z.array(receiptLineItemSchema).max(100).optional(),
+  debtId: shortText(80).optional(),
 });
 
 const debtPaymentSchema = z.object({

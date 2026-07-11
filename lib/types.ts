@@ -28,6 +28,8 @@ export interface Transaction {
   createdAt: number; // epoch ms
   updatedAt?: number; // epoch ms; used by sync conflict resolution
   lineItems?: ReceiptLineItem[]; // optional receipt/category breakdown
+  debtId?: string; // set when this entry was logged by a debt payment, so a
+  // debt rename can follow through to the ledger
 }
 
 export interface ReceiptLineItem {

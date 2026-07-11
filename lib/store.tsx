@@ -445,6 +445,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: `Payment to ${x.party}`,
             date: todayISO(),
             memberId: x.memberId,
+            debtId: x.id,
             createdAt: nowMs,
             updatedAt: nowMs,
           })),
@@ -638,10 +639,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const updateDebt = useCallback((id: string, patch: Partial<Debt>) => {
     const now = Date.now();
-    setData((d) => ({
-      ...d,
-      debts: d.debts.map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x)),
-    }));
+    setData((d) => {
+      const prev = d.debts.find((x) => x.id === id);
+      const debts = d.debts.map((x) => (x.id === id ? { ...x, ...patch, updatedAt: now } : x));
+      let transactions = d.transactions;
+      const newParty = patch.party?.trim();
+      // Renaming who you owe must follow through to the ledger: payment
+      // entries logged for this debt carry the name in their description.
+      // Only the app-generated descriptions are rewritten (a custom note from
+      // a voice log stays untouched), and entries stamped with a DIFFERENT
+      // debt's id are left alone even if the display names collide.
+      if (prev && newParty && newParty !== prev.party) {
+        const oldPay = `Payment to ${prev.party}`;
+        const oldRepay = `Repayment from ${prev.party}`;
+        transactions = transactions.map((t) => {
+          if (t.debtId && t.debtId !== id) return t;
+          if (t.type === "expense" && t.description === oldPay) {
+            return { ...t, description: `Payment to ${newParty}`, updatedAt: now };
+          }
+          if (t.type === "income" && t.description === oldRepay) {
+            return { ...t, description: `Repayment from ${newParty}`, updatedAt: now };
+          }
+          return t;
+        });
+      }
+      return { ...d, debts, transactions };
+    });
   }, []);
 
   const payDebt = useCallback((id: string, rawAmount: number, memberId?: string) => {
@@ -676,6 +699,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: `Payment to ${target.party}`,
             date: todayISO(),
             memberId: memberId ?? target.memberId,
+            debtId: id,
             createdAt: now,
             updatedAt: now,
           },
@@ -691,6 +715,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             description: `Repayment from ${target.party}`,
             date: todayISO(),
             memberId: memberId ?? target.memberId,
+            debtId: id,
             createdAt: now,
             updatedAt: now,
           },
@@ -811,6 +836,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 description: e.summary || `Payment to ${e.party ?? ""}`,
                 date: todayISO(),
                 memberId: owner,
+                debtId: match?.id,
                 createdAt: now,
                 updatedAt: now,
               },
