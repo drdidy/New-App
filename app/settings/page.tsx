@@ -2,7 +2,7 @@
 
 import gsap from "gsap";
 import { useEffect, useRef, useState } from "react";
-import { Download, Plus, Trash2, Upload, X } from "lucide-react";
+import { Download, FileSpreadsheet, Plus, Trash2, Upload, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatMoney, CURRENCIES, MEMBER_COLORS, MEMBER_EMOJIS } from "@/lib/format";
 import Avatar from "@/components/Avatar";
@@ -58,6 +58,27 @@ export default function SettingsPage() {
     } catch {
       flash("That file didn't look like a valid backup.");
     }
+  }
+
+  function exportCsv() {
+    const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+    const nameOf = (id?: string) => data.members.find((m) => m.id === id)?.name || "";
+    const rows = [
+      ["date", "type", "amount", "category", "description", "who"],
+      ...data.transactions
+        .slice()
+        .sort((a, b) => (a.date < b.date ? -1 : 1))
+        .map((t) => [t.date, t.type, String(t.amount), t.category, t.description || "", nameOf(t.memberId)]),
+    ];
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `money-coach-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash("Ledger exported as CSV ✓");
   }
 
   function flash(msg: string) {
@@ -194,6 +215,9 @@ export default function SettingsPage() {
           <button className="btn-ghost" onClick={() => fileRef.current?.click()}><Upload size={15} /> Restore</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={onImport} />
         </div>
+        <button className="btn-ghost" style={{ width: "100%", marginTop: 10 }} onClick={exportCsv}>
+          <FileSpreadsheet size={15} /> Export ledger as CSV (for spreadsheets)
+        </button>
         <button className="btn-ghost danger" style={{ width: "100%", marginTop: 10 }}
           onClick={() => { if (confirm("Erase ALL data and start over? This can't be undone.")) resetAll(); }}>
           <Trash2 size={15} /> Erase everything
