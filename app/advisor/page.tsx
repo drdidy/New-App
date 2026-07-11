@@ -1,5 +1,6 @@
 "use client";
 
+import gsap from "gsap";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Mic, Moon, Plus, Send, Sparkles, X } from "lucide-react";
@@ -203,6 +204,17 @@ export default function AdvisorPage() {
     }
   }
 
+
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!ready) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+    }, root);
+    return () => ctx.revert();
+  }, [ready]);
+
   if (!ready) return null;
 
   const firstName = data.members[0]?.name?.split(" ")[0] || "there";
@@ -225,15 +237,15 @@ export default function AdvisorPage() {
   }
 
   return (
-    <main className="pg">
-      <div className="pg-head">
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
         <p className="pg-date">Built on your real numbers</p>
       </div>
       <h1 className="pg-title">Coach</h1>
       <div className="pg-rule" />
 
       {hasMoneyHistory && (
-        <div className="ticker">
+        <div className="ticker rise">
           <Link href="/" className="ticker-cell">
             <span className="tk-l">Safe to spend</span>
             <span className={"tk-v" + (sts.safe >= 0 ? " pos" : " neg")}><AnimatedNumber value={sts.safe} currency={cur} /></span>
@@ -250,7 +262,7 @@ export default function AdvisorPage() {
       )}
 
       {/* CAN I AFFORD IT — a straight answer before you spend */}
-      <div className="plate">
+      <div className="plate rise">
         <div className="plate-title"><Sparkles /> Can I afford it?</div>
         <div className="inline-form" style={{ marginTop: 12 }}>
           <input
@@ -273,7 +285,7 @@ export default function AdvisorPage() {
       </div>
 
       {/* SLEEP ON IT */}
-      <div className="plate">
+      <div className="plate rise">
         <div className="plate-title">
           <Moon /> Sleep on it
           {savedByWaiting > 0 && <span style={{ marginLeft: "auto", color: "var(--pos)", fontSize: 11.5, letterSpacing: 0, textTransform: "none", fontWeight: 700 }}>{formatMoney(savedByWaiting, cur)} saved by waiting</span>}
@@ -318,7 +330,7 @@ export default function AdvisorPage() {
       </div>
 
       {/* CORRESPONDENCE */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>Ask your coach</h2></div>
         <div className="chat">
           {msgs.length === 0 && (

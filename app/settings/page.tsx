@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import gsap from "gsap";
+import { useEffect, useRef, useState } from "react";
 import { Download, Plus, Trash2, Upload, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatMoney, CURRENCIES, MEMBER_COLORS, MEMBER_EMOJIS } from "@/lib/format";
@@ -17,6 +18,17 @@ export default function SettingsPage() {
   const [newBudgetLimit, setNewBudgetLimit] = useState("");
   const [note, setNote] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!ready) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+    }, root);
+    return () => ctx.revert();
+  }, [ready]);
 
   if (!ready) return null;
   const cur = data.currency;
@@ -68,15 +80,15 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="pg">
-      <div className="pg-head">
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
         <p className="pg-date">You &amp; your setup</p>
       </div>
       <h1 className="pg-title">Settings</h1>
       <div className="pg-rule" />
 
       {/* PROFILE */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>Profile</h2></div>
         <label className="field"><span>Profile or household name</span>
           <input value={data.householdName || ""} onChange={(e) => setHouseholdName(e.target.value)} placeholder="David's Money Plan" />
@@ -113,7 +125,7 @@ export default function SettingsPage() {
       </section>
 
       {/* PEOPLE */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>People in this plan</h2></div>
         <p className="sec-sub" style={{ marginTop: 0 }}>Add people only when their spending is part of this profile.</p>
         {data.members.map((m) => (
@@ -151,7 +163,7 @@ export default function SettingsPage() {
       <SyncCard />
 
       {/* BUDGETS */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>Monthly budgets</h2></div>
         {data.budgets.length === 0 ? (
           <p className="sec-sub" style={{ marginTop: 0 }}>Cap a category and Spending will show progress and warn you.</p>
@@ -174,7 +186,7 @@ export default function SettingsPage() {
       </section>
 
       {/* DATA */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>Your data</h2></div>
         <p className="sec-sub" style={{ marginTop: 0 }}>Everything lives on this device. Back it up to move phones or keep it safe.</p>
         <div className="fieldrow">

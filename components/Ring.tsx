@@ -43,7 +43,10 @@ export default function Ring({
           strokeDasharray={c}
           strokeDashoffset={offset}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: "stroke-dashoffset 0.9s cubic-bezier(0.22,1,0.36,1)" }}
+          style={{
+            transition: "stroke-dashoffset 0.9s cubic-bezier(0.22,1,0.36,1)",
+            filter: `drop-shadow(0 0 ${Math.max(4, stroke)}px ${color}55)`,
+          }}
         />
       </svg>
       {children != null && <div className="ring-label">{children}</div>}

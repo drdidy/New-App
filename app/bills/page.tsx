@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import gsap from "gsap";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowRight, Calendar, Check, CreditCard, Landmark, Pencil, Plus, Trash2, X, Zap } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -36,6 +37,17 @@ export default function BillsPage() {
     setDay(String(b.dayOfMonth)); setWho(b.memberId); setAutoLog(Boolean(b.autoLog));
     setOpen(true);
   }
+
+
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!ready) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from(".rise", { y: 18, opacity: 0, duration: 0.55, ease: "power3.out", stagger: 0.07 });
+    }, root);
+    return () => ctx.revert();
+  }, [ready]);
 
   if (!ready) return null;
 
@@ -76,8 +88,8 @@ export default function BillsPage() {
   }
 
   return (
-    <main className="pg">
-      <div className="pg-head">
+    <main className="pg" ref={root}>
+      <div className="pg-head rise">
         <p className="pg-date">Committed each month</p>
         <button className="btn-text" onClick={openAdd}>+ Add bill</button>
       </div>
@@ -85,7 +97,7 @@ export default function BillsPage() {
       <div className="pg-rule" />
 
       {/* STATEMENT */}
-      <div className="st">
+      <div className="st rise">
         <div className="st-label">Recurring this month <span className="tag">{monthLabel(monthKey())}</span></div>
         <div className="st-num neg"><AnimatedNumber value={committedTotal} currency={cur} /></div>
         <div className="meter"><span style={{ width: `${paidPct}%` }} /></div>
@@ -97,7 +109,7 @@ export default function BillsPage() {
       </div>
 
       {/* BILLS */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>Bills</h2><span className="sec-aux"><span className="sec-total">{formatMoney(monthlyTotal, cur)}</span></span></div>
         {bills.length === 0 ? (
           <div className="blank">
@@ -139,7 +151,7 @@ export default function BillsPage() {
       </section>
 
       {/* LOANS & CARDS */}
-      <section className="sec">
+      <section className="sec rise">
         <div className="sec-head"><h2>Loan & card payments</h2><span className="sec-aux"><Link href="/debt">Manage</Link></span></div>
         {loans.length === 0 ? (
           <div className="blank">
