@@ -1,0 +1,1321 @@
+//@version=6
+indicator("Prophet Engine Pro", shorttitle="PE Pro", overlay=true, max_lines_count=220, max_labels_count=250, max_boxes_count=80)
+// ============================================================================
+// Prophet Engine Pro
+// Entry engine only. Use with Prophet Map Pro for shelf/rail context.
+// Highest-probability production bias from validation:
+// - Main RTH window is 08:50-10:55 CT. No entries before 08:50; GET READY
+//   states may show earlier while a setup is forming.
+// - Pivot-break (break-high/break-low) play: 8:50-10:00am CT ONLY, and only
+//   on a CLOSE beyond the pivot made before. After 10:00 the engine sticks
+//   to the low-pivot / high-pivot pocket entry trades.
+// - Swings and pivots are only identified from the 8:30am CT open onward.
+//   Premarket bars never anchor a setup.
+// - Stops are close-based by default (30m close): a loss only counts on a
+//   close below the low pivot (longs) or above the high pivot (shorts).
+//   A wick through the level is not a loss.
+// - Afternoon reload is optional and off by default.
+// - Target stack: T1 1.382 (main booked target), T2 1.5 (runner),
+//   T3 1.618 (stretch). The engine's stats close at T1.
+// - The 20m EMA50 trend filter is a WARNING grade by default, not a block.
+//   Trades against it still fire, labeled CAUTION, with a protect-faster
+//   alert. Hard-block inputs remain available but default off.
+// - Momentum Exhaustion Guard: a failed bounce off the 1m EMA50 marks that
+//   side's momentum weak for a window; trades that side are downgraded to
+//   CAUTION (default) or blocked, per input.
+// - Shock guard is the only default hard context block: BLOCKED: OPEN SHOCK.
+// - More than one trade per session is allowed only after the prior trade
+//   fully closes (T1, stop, or time-flat). Max 2 morning / 1 afternoon.
+//
+// Beginner display map (what you see on the chart):
+// - Shaded background   = the engine is live and hunting.
+// - Yellow band/level   = ENTRY ZONE. Wait for the ENTER label; never front-run.
+// - Red dashed line     = STOP. Trade is wrong past this line.
+// - Bold green line     = T1 main target. Softer green T2 = runner.
+//   Dotted T3           = stretch target.
+// - Faint red box       = risk zone. Faint green box = reward zone.
+// - Bottom banner       = current state plus the exact action to take.
+// - Command panel       = full trade plan. Hover any row for a plain tip.
+// Works with Prophet Map Pro on the same chart: wire the three map sources
+// in Context guards settings and the engine grades entries against the
+// map's nearest support/resistance and control gates.
+// ============================================================================
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+gSig = "Signal"
+fastLen = input.int(21, "Fast EMA", minval=1, maxval=100, group=gSig, display=display.none)
+slowLen = input.int(50, "Slow EMA", minval=2, maxval=200, group=gSig, display=display.none)
+pivotLeft = input.int(1, "Pivot left", minval=1, maxval=10, group=gSig, display=display.none)
+pivotRight = input.int(1, "Pivot right", minval=1, maxval=10, group=gSig, display=display.none)
+pivotSession = input.session("0830-1500:23456", "Pivot detection window (CT)", group=gSig, tooltip="Swing lows and swing highs are only identified from the 8:30am CT open onward. Bars before the open can never anchor a setup.", display=display.none)
+lookbackBars = input.int(120, "Pivot lookback bars", minval=20, maxval=300, group=gSig, display=display.none)
+postCrossBars = input.int(3, "Bars to confirm post-50 pivot", minval=1, maxval=20, group=gSig, display=display.none)
+retestBars = input.int(72, "Pocket retest window", minval=5, maxval=240, group=gSig, display=display.none)
+cooldownBars = input.int(5, "Cooldown after closed setup", minval=0, maxval=120, group=gSig, display=display.none)
+requireCandleColor = input.bool(true, "Require direction candle on entry", group=gSig, display=display.none)
+follow50Slope = input.bool(true, "Cross follows 50 EMA slope", group=gSig, display=display.none)
+slopeBars = input.int(3, "50 EMA slope lookback", minval=1, maxval=50, group=gSig, display=display.none)
+enableEarlyPivotBreak = input.bool(true, "Early 50-cross pivot-break entry", group=gSig, display=display.none)
+earlyBreakRequiresHtf = input.bool(false, "Early pivot-break hard-blocked by 20m trend", group=gSig, tooltip="Off (default): a pivot break against the 20m trend still fires, labeled CAUTION. On: it is blocked.", display=display.none)
+gSess = "Sessions"
+mainSession = input.session("0850-1055:23456", "Morning EMA-pocket window", group=gSess, display=display.none)
+earlyBreakScanSession = input.session("0830-1000:23456", "Early pivot-break scan window", group=gSess, tooltip="The break play may form and show GET READY here (from the 8:30am CT open). Actual break entries never fire before the entry window below, and the break play ends at 10:00am.", display=display.none)
+earlyBreakEntrySession = input.session("0850-1000:23456", "Early pivot-break entry window", group=gSess, tooltip="Pivot-break entries only fire 8:50-10:00am CT, and only when price breaks and CLOSES beyond the pivot made before. After 10am the engine only takes pocket trades.", display=display.none)
+mainTz = input.string("America/Chicago", "Main timezone", group=gSess, display=display.none)
+afternoonMode = input.string("Off", "Afternoon reload", options=["Off", "Warn only", "On"], group=gSess, display=display.none)
+afternoonSession = input.session("1205-1355:23456", "Afternoon reload window", group=gSess, display=display.none)
+flatAtWindowEnd = input.bool(true, "Time-flat at window end", group=gSess, display=display.none)
+maxMorningTrades = input.int(2, "Max morning trades", minval=1, maxval=4, group=gSess, tooltip="The engine may scan again after a trade fully closes (T1, stop, or time-flat), up to this many morning trades. Trades never overlap.", display=display.none)
+maxAfternoonTrades = input.int(1, "Max afternoon trades", minval=0, maxval=3, group=gSess, display=display.none)
+gRisk = "Risk and targets"
+nearFib = input.float(0.5, "Pocket near edge", options=[0.5, 0.618], group=gRisk, display=display.none)
+deepFib = input.float(0.786, "Pocket far edge", options=[0.618, 0.705, 0.786], group=gRisk, display=display.none)
+t1Mult = input.float(1.382, "T1 main target", options=[1.272, 1.382, 1.5, 1.618], group=gRisk, tooltip="T1 is the main booked target. The engine's stats close here.", display=display.none)
+t2Mult = input.float(1.5, "T2 runner", options=[1.382, 1.5, 1.618], group=gRisk, display=display.none)
+t3Mult = input.float(1.618, "T3 stretch", options=[1.5, 1.618, 1.786, 2.0], group=gRisk, display=display.none)
+stopMode = input.string("30m close", "Stop invalidation", options=["30m close", "1m close", "1m wick"], group=gRisk, tooltip="Default 30m close: a loss only counts when a bar CLOSES beyond the pivot - close below the low pivot for longs, close above the high pivot for shorts. A wick through the level is not a loss.", display=display.none)
+gMom = "Momentum guard"
+momGuardMode = input.string("Caution", "Momentum guard mode", options=["Off", "Caution", "Block"], group=gMom, tooltip="If price touches the 1m 50 EMA from one side and fails to resume within the bounce test window, that side's momentum is marked weak. Caution (default): trades that side still fire, labeled CAUTION. Block: they are blocked.", display=display.none)
+bounceBars = input.int(8, "Bounce test lookahead bars", minval=2, maxval=20, group=gMom, tooltip="After touching the 1m 50 EMA, price has this many bars to make a new higher high (bull) or lower low (bear) or momentum is marked weak.", display=display.none)
+weakBars = input.int(30, "Weak momentum duration bars", minval=5, maxval=120, group=gMom, display=display.none)
+gCtx = "Context guards"
+useShockGuard = input.bool(true, "Block counter-shock trades", group=gCtx, display=display.none)
+shockSession = input.session("0830-1500:23456", "Shock session", group=gCtx, display=display.none)
+shockTz = input.string("America/Chicago", "Shock timezone", group=gCtx, display=display.none)
+shockAuto = input.bool(true, "Auto shock size by symbol", group=gCtx, display=display.none)
+manualShock = input.float(80.0, "Manual shock size", step=1.0, group=gCtx, display=display.none)
+htfWarnTf = input.timeframe("20", "Trend warning timeframe", group=gCtx, display=display.none)
+htfWarnLen = input.int(50, "Trend warning EMA", minval=2, maxval=200, group=gCtx, display=display.none)
+morningRequiresHtf = input.bool(false, "20m trend hard-blocks morning entries", group=gCtx, tooltip="Off (default): trades against the 20m EMA50 still fire, labeled CAUTION, with a protect-faster warning. On: they are blocked.", display=display.none)
+protectR = input.float(0.10, "Protect heads-up at R", minval=0.01, maxval=1.0, step=0.01, group=gCtx, tooltip="Data check: 11 of the 12 bad trades still reached about +0.10R. This fires a Telegram/chart heads-up to protect faster.", display=display.none)
+noPushR = input.float(0.15, "No-push required R", minval=0.01, maxval=1.0, step=0.01, group=gCtx, tooltip="If the trade has not pushed this far after the no-push timer, the signal is losing momentum.", display=display.none)
+noPushMinutes = input.int(10, "No-push timer minutes", minval=1, maxval=60, group=gCtx, display=display.none)
+useMapGateWarning = input.bool(true, "Warn near Prophet Map diagonal gate", group=gCtx, tooltip="Warning only. The study found bad trades were much more often born near a diagonal control gate, but blocking every one would also remove winners.", display=display.none)
+srcMapGate = input.source(close, "Prophet Map nearest diagonal gate", group=gCtx, tooltip="Optional: set this to Prophet Map Pro > PM Nearest diagonal gate. Leave unchanged if you do not use the map.", display=display.none)
+mapGateWarnPts = input.float(0.0, "Gate warning distance, 0 = auto", minval=0.0, step=0.1, group=gCtx, tooltip="Auto uses 0.20 for SPY and 2.0 for SPX/ES.", display=display.none)
+srcMapRes = input.source(close, "Prophet Map nearest resistance", group=gCtx, tooltip="Optional: set this to Prophet Map Pro > PM Nearest resistance. Warns when a BUY triggers right under a map sell shelf. Leave unchanged if you do not use the map.", display=display.none)
+srcMapSup = input.source(close, "Prophet Map nearest support", group=gCtx, tooltip="Optional: set this to Prophet Map Pro > PM Nearest support. Warns when a SELL triggers right above a map buy shelf. Leave unchanged if you do not use the map.", display=display.none)
+gOpt = "SPXW contract guide"
+showContract = input.bool(true, "Show SPXW guide (estimate only)", group=gOpt, display=display.none)
+vixSymbol = input.symbol("CBOE:VIX", "VIX symbol", group=gOpt, display=display.none)
+strikeStep = input.int(5, "Strike step", minval=1, group=gOpt, display=display.none)
+normalBandLo = input.int(20, "Normal OTM low", minval=0, group=gOpt, display=display.none)
+normalBandHi = input.int(40, "Normal OTM high", minval=5, group=gOpt, display=display.none)
+elevBandLo = input.int(40, "Elevated OTM low", minval=0, group=gOpt, display=display.none)
+elevBandHi = input.int(60, "Elevated OTM high", minval=5, group=gOpt, display=display.none)
+vixLow = input.float(15.0, "Low VIX below", step=0.5, group=gOpt, display=display.none)
+vixElev = input.float(20.0, "Elevated VIX above", step=0.5, group=gOpt, display=display.none)
+gDisp = "Display"
+theme = input.string("Light", "Theme", options=["Midnight", "Aurora", "Light"], group=gDisp, display=display.none)
+showRibbon = input.bool(true, "Show EMA ribbon", group=gDisp, display=display.none)
+showHtfGate = input.bool(true, "Show 20m trend gate", group=gDisp, display=display.none)
+showZones = input.bool(true, "Show current setup zones", group=gDisp, display=display.none)
+historyKeep = input.int(6, "Historical setups to keep", minval=1, maxval=10, group=gDisp, display=display.none)
+eventLabelsKeep = input.int(80, "Trade event labels to keep", minval=10, maxval=160, group=gDisp, display=display.none)
+showReplayMarkers = input.bool(false, "Use compact replay markers instead of rich labels", group=gDisp, display=display.none)
+showReplayTable = input.bool(false, "Show 7-day replay table", group=gDisp, display=display.none)
+reviewDays = input.int(7, "Replay trading days", minval=1, maxval=20, group=gDisp, display=display.none)
+reviewRows = input.int(14, "Replay table rows", minval=3, maxval=14, group=gDisp, display=display.none)
+reviewPanelPosInput = input.string("Bottom left", "Replay table position", options=["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"], group=gDisp, display=display.none)
+showSetupLabels = input.bool(true, "Show trade-plan labels", group=gDisp, display=display.none)
+showCrossMarks = input.bool(false, "Show 21/50 cross markers", group=gDisp, display=display.none)
+showPanel = input.bool(true, "Show command panel", group=gDisp, display=display.none)
+showAdvanced = input.bool(false, "Show advanced rows (R:R, protect, stats)", group=gDisp, tooltip="Adds reward-to-risk, the protect tracker and the win/loss/flat record with win percentage to the panel. Off keeps the beginner panel clean.", display=display.none)
+showBanner = input.bool(true, "Show bottom state banner", group=gDisp, display=display.none)
+showSessionShade = input.bool(true, "Shade the live trading window", group=gDisp, tooltip="Softly tints the chart background while the engine is allowed to hunt, so you always know when signals can fire.", display=display.none)
+showGuide = input.bool(false, "Show beginner chart guide", group=gDisp, display=display.none)
+panelPosInput = input.string("Top right", "Panel position", options=["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"], group=gDisp, display=display.none)
+gAlerts = "Alerts"
+enableAlerts = input.bool(true, "Use alert() messages", group=gAlerts, display=display.none)
+// ---------------------------------------------------------------------------
+// Palette (cohesive with Prophet Map Pro: controlled red/green, amber entry)
+// ---------------------------------------------------------------------------
+color cLong = theme == "Aurora" ? #00E5A8 : theme == "Light" ? #2E9C67 : #2BD98B
+color cShort = theme == "Aurora" ? #FF4D6D : theme == "Light" ? #C64949 : #FF5A6A
+color cEntry = theme == "Aurora" ? #FFD166 : #F59E0B
+color cStop = #EF4444
+color cFast = theme == "Light" ? #2563EB : #4F8CFF
+color cPanel = theme == "Light" ? color.new(#FFFFFF, 3) : color.new(#111827, 5)
+color cHdr = theme == "Light" ? #E5E7EB : #14162D
+color cText = theme == "Light" ? #111827 : #F8FAFC
+color cMuted = theme == "Light" ? #64748B : #94A3B8
+color cShadeMain = theme == "Light" ? color.new(#2563EB, 96) : color.new(#4F8CFF, 93)
+color cShadeScan = theme == "Light" ? color.new(#2563EB, 98) : color.new(#4F8CFF, 97)
+color cShadePm = color.new(cEntry, 96)
+// ---------------------------------------------------------------------------
+// Core series
+// ---------------------------------------------------------------------------
+tickerUpper = str.upper(syminfo.ticker)
+isSpy = str.contains(tickerUpper, "SPY") and not str.contains(tickerUpper, "SPX")
+isIndexLike = str.contains(tickerUpper, "SPX") or str.contains(tickerUpper, "ES") or str.contains(tickerUpper, "US500") or str.contains(tickerUpper, "SPX500")
+string pfx = tickerUpper + " PROPHET "
+shockSize = shockAuto ? (isSpy ? 8.0 : 80.0) : manualShock
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+emaMid = ta.ema(close, math.round((fastLen + slowLen) / 2.0))
+emaUp = emaFast >= emaSlow
+htfClose = request.security(syminfo.tickerid, htfWarnTf, close, lookahead=barmerge.lookahead_off)
+htfEma = request.security(syminfo.tickerid, htfWarnTf, ta.ema(close, htfWarnLen), lookahead=barmerge.lookahead_off)
+vix = request.security(vixSymbol, timeframe.period, close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+rawCrossUp = ta.crossover(emaFast, emaSlow)
+rawCrossDn = ta.crossunder(emaFast, emaSlow)
+priceCrossUp50 = ta.crossover(close, emaSlow)
+priceCrossDn50 = ta.crossunder(close, emaSlow)
+inMain = not na(time(timeframe.period, mainSession, mainTz))
+inEarlyBreakScan = not na(time(timeframe.period, earlyBreakScanSession, mainTz))
+inEarlyBreakEntry = not na(time(timeframe.period, earlyBreakEntrySession, mainTz))
+inAfternoon = afternoonMode != "Off" and not na(time(timeframe.period, afternoonSession, mainTz))
+inLiveWindow = inMain or inAfternoon
+windowName = inMain ? "morning" : inAfternoon ? "afternoon" : ""
+afternoonWarnOnly = afternoonMode == "Warn only"
+inShock = not na(time(timeframe.period, shockSession, shockTz))
+newShockSession = inShock and not (inShock[1] == true)
+var float rthOpen = na
+var float rthHighFromOpen = na
+var float rthLowFromOpen = na
+if newShockSession
+    rthOpen := open
+    rthHighFromOpen := high
+    rthLowFromOpen := low
+else if inShock
+    rthHighFromOpen := na(rthHighFromOpen) ? high : math.max(rthHighFromOpen, high)
+    rthLowFromOpen := na(rthLowFromOpen) ? low : math.min(rthLowFromOpen, low)
+downShockActive = useShockGuard and not na(rthOpen) and not na(rthLowFromOpen) and rthOpen - rthLowFromOpen >= shockSize and close < rthOpen
+upShockActive = useShockGuard and not na(rthOpen) and not na(rthHighFromOpen) and rthHighFromOpen - rthOpen >= shockSize and close > rthOpen
+// ---------------------------------------------------------------------------
+// Momentum Exhaustion Guard
+// Bull side: price above the 1m EMA50 pulls back and touches it. If no new
+// higher high (vs the pre-touch swing) prints within bounceBars, bullish
+// momentum is weak for weakBars. Mirror logic for the bear side. While weak,
+// trades in that direction are downgraded to CAUTION or blocked per input.
+// ---------------------------------------------------------------------------
+momRefHigh = ta.highest(high, 20)
+momRefLow = ta.lowest(low, 20)
+bool momOn = momGuardMode != "Off"
+var int bullTouchBar = na
+var float bullRefHigh = na
+var int weakBullUntil = na
+var int bearTouchBar = na
+var float bearRefLow = na
+var int weakBearUntil = na
+bool bullTouch = momOn and close[1] > emaSlow[1] and low <= emaSlow
+bool bearTouch = momOn and close[1] < emaSlow[1] and high >= emaSlow
+if na(bullTouchBar) and bullTouch
+    bullTouchBar := bar_index
+    bullRefHigh := momRefHigh
+if not na(bullTouchBar) and bar_index > bullTouchBar
+    if high > bullRefHigh
+        bullTouchBar := na
+        bullRefHigh := na
+    else if bar_index - bullTouchBar >= bounceBars
+        weakBullUntil := bar_index + weakBars
+        bullTouchBar := na
+        bullRefHigh := na
+if na(bearTouchBar) and bearTouch
+    bearTouchBar := bar_index
+    bearRefLow := momRefLow
+if not na(bearTouchBar) and bar_index > bearTouchBar
+    if low < bearRefLow
+        bearTouchBar := na
+        bearRefLow := na
+    else if bar_index - bearTouchBar >= bounceBars
+        weakBearUntil := bar_index + weakBars
+        bearTouchBar := na
+        bearRefLow := na
+bool weakBull = momOn and not na(weakBullUntil) and bar_index <= weakBullUntil
+bool weakBear = momOn and not na(weakBearUntil) and bar_index <= weakBearUntil
+bool momBlockLong = momGuardMode == "Block" and weakBull
+bool momBlockShort = momGuardMode == "Block" and weakBear
+bool momCautionLong = momGuardMode == "Caution" and weakBull
+bool momCautionShort = momGuardMode == "Caution" and weakBear
+// ---------------------------------------------------------------------------
+// Plots
+// ---------------------------------------------------------------------------
+bgcolor(showSessionShade ? (inMain ? cShadeMain : inAfternoon ? cShadePm : inEarlyBreakScan ? cShadeScan : na) : na, title="Live window shading", editable=false)
+pFast = plot(emaFast, "Fast EMA", color=cFast, linewidth=2, display=display.all - display.status_line)
+pSlow = plot(emaSlow, "Slow EMA", color=theme == "Light" ? #111827 : #E5E7EB, linewidth=2, display=display.all - display.status_line)
+pMid = plot(showRibbon ? emaMid : na, "Ribbon mid", color=na, editable=false, display=display.none)
+fill(pFast, pMid, color=showRibbon ? color.new(emaUp ? cLong : cShort, 78) : na, title="Ribbon inner")
+fill(pMid, pSlow, color=showRibbon ? color.new(emaUp ? cLong : cShort, 90) : na, title="Ribbon outer")
+pHtfGlow = plot(showHtfGate ? htfEma : na, "20m trend gate glow", color=color.new(cEntry, 82), linewidth=8, display=display.all - display.status_line)
+pHtfGate = plot(showHtfGate ? htfEma : na, "20m trend gate", color=color.new(cEntry, 8), linewidth=2, display=display.all - display.status_line)
+// ---------------------------------------------------------------------------
+// State and storage
+// ---------------------------------------------------------------------------
+var array<float> lowVals = array.new_float()
+var array<int> lowBars = array.new_int()
+var array<float> highVals = array.new_float()
+var array<int> highBars = array.new_int()
+inPivotWin = not na(time(timeframe.period, pivotSession, mainTz))
+pl = ta.pivotlow(low, pivotLeft, pivotRight)
+ph = ta.pivothigh(high, pivotLeft, pivotRight)
+if not na(pl) and inPivotWin[pivotRight] and open[pivotRight] < emaSlow[pivotRight]
+    array.push(lowVals, pl)
+    array.push(lowBars, bar_index - pivotRight)
+    while array.size(lowBars) > lookbackBars * 2
+        array.shift(lowVals)
+        array.shift(lowBars)
+if not na(ph) and inPivotWin[pivotRight] and open[pivotRight] > emaSlow[pivotRight]
+    array.push(highVals, ph)
+    array.push(highBars, bar_index - pivotRight)
+    while array.size(highBars) > lookbackBars * 2
+        array.shift(highVals)
+        array.shift(highBars)
+findLastBefore(array<int> bars, array<float> vals, int boundary, int startBar) =>
+    float v = na
+    int b = na
+    int n = array.size(bars)
+    if n > 0
+        for i = 0 to n - 1
+            int cb = array.get(bars, i)
+            if cb >= startBar and cb < boundary and boundary - cb <= lookbackBars
+                v := array.get(vals, i)
+                b := cb
+    [v, b]
+findFirstAfter(array<int> bars, array<float> vals, int boundary, int maxBar) =>
+    float v = na
+    int b = na
+    int n = array.size(bars)
+    if n > 0
+        for i = 0 to n - 1
+            int cb = array.get(bars, i)
+            if cb >= boundary and cb <= maxBar and cb - boundary <= lookbackBars and (na(b) or cb < b)
+                v := array.get(vals, i)
+                b := cb
+    [v, b]
+findPreCrossTouch(int startBar, bool isLong, float nearPrice, float deepPrice) =>
+    bool found = false
+    int foundOffset = na
+    float zoneLo = math.min(nearPrice, deepPrice)
+    float zoneHi = math.max(nearPrice, deepPrice)
+    if not na(startBar) and not na(zoneLo) and not na(zoneHi)
+        for i = 1 to lookbackBars
+            int candidateBar = bar_index - i
+            if not found and candidateBar >= startBar
+                bool touched = low[i] <= zoneHi and high[i] >= zoneLo
+                bool closeOk = isLong ? close[i] >= nearPrice : close[i] <= nearPrice
+                bool colorOk = not requireCandleColor or (isLong ? close[i] > open[i] : close[i] < open[i])
+                if touched and closeOk and colorOk
+                    found := true
+                    foundOffset := i
+    [found, foundOffset]
+targetFromLeg(float lo, float hi, bool isLong, float mult) =>
+    float r = math.abs(hi - lo)
+    isLong ? hi + r * (mult - 1.0) : lo - r * (mult - 1.0)
+// setup state
+var bool armed = false
+var bool tradeActive = false
+var bool pending = false
+var string pendingDir = ""
+var int pendingEmaCrossBar = na
+var int pendingPriceCrossBar = na
+var int lastPriceCrossUpBar = na
+var int lastPriceCrossDnBar = na
+var int lastClosedBar = na
+var bool earlyBreakArmed = false
+var string earlyBreakDir = ""
+var int earlyBreakCrossBar = na
+var float earlyBreakPivot = na
+var int earlyBreakPivotBar = na
+var float earlyBreakStop = na
+var int earlyBreakStopBar = na
+var int armedBar = na
+var int entryBar = na
+var string direction = ""
+var string state = "SCANNING"
+var string stateDetail = "waiting for cross"
+var string activeWindow = ""
+var float pLow = na
+var float pHigh = na
+var int pLowBar = na
+var int pHighBar = na
+var float fibNear = na
+var float fibDeep = na
+var float stop = na
+var float t1 = na
+var float t2 = na
+var float t3 = na
+var float invClose = na
+var string setupKind = ""
+var bool t1Done = false
+var bool t2Done = false
+var int wins = 0
+var int losses = 0
+var int flats = 0
+var float rSum = 0.0
+var array<string> recent = array.new_string()
+// Replay memory. A "trading day" here means each loaded chart date in the
+// engine timezone, so weekend gaps do not erase the prior completed sessions.
+dateKey = year(time, mainTz) * 10000 + month(time, mainTz) * 100 + dayofmonth(time, mainTz)
+newEngineDay = not na(dateKey[1]) and dateKey != dateKey[1]
+var int currentDateKey = na
+var int reviewSeq = 0
+if na(currentDateKey)
+    currentDateKey := dateKey
+else if dateKey != currentDateKey
+    currentDateKey := dateKey
+    reviewSeq += 1
+var int morningTradeCount = 0
+var int afternoonTradeCount = 0
+if newEngineDay
+    morningTradeCount := 0
+    afternoonTradeCount := 0
+    if not tradeActive
+        direction := ""
+        activeWindow := ""
+        setupKind := ""
+        state := "SCANNING"
+        stateDetail := "new day"
+    earlyBreakArmed := false
+    earlyBreakDir := ""
+    earlyBreakCrossBar := na
+    earlyBreakPivot := na
+    earlyBreakPivotBar := na
+    earlyBreakStop := na
+    earlyBreakStopBar := na
+var int activeEntryTime = na
+var float activeEntryPx = na
+var string activeEntrySide = ""
+var string activeEntryWindow = ""
+var int activeEntrySeq = na
+var bool protectAlerted = false
+var bool noPushAlerted = false
+var float activeBestR = 0.0
+var bool activeGateNear = false
+var string activeGateMsg = ""
+var bool activeShelfNear = false
+var string activeShelfMsg = ""
+var bool activeCaution = false
+var string activeCautionWhy = ""
+var bool runnerWatch = false
+var float runnerT2 = na
+var bool runner3Watch = false
+var float runnerT3 = na
+var string runnerDir = ""
+var array<int> tradeSeqs = array.new_int()
+var array<int> tradeEntryTimes = array.new_int()
+var array<int> tradeExitTimes = array.new_int()
+var array<string> tradeSides = array.new_string()
+var array<string> tradeWindows = array.new_string()
+var array<string> tradeResults = array.new_string()
+var array<float> tradeEntryPxs = array.new_float()
+var array<float> tradeExitPxs = array.new_float()
+var array<float> tradeRs = array.new_float()
+// Drawing handles. Fixed per-setup object counts: 6 lines (near, deep, T1,
+// T2, T3, stop), 4 boxes, 7 labels (2 swings + 5 pinned plan labels).
+int linesPerSetup = 6
+int labelsPerSetup = 7
+int pinnedLabels = 5
+var array<line> setupLines = array.new_line()
+var array<box> setupBoxes = array.new_box()
+var array<label> setupLabels = array.new_label()
+var array<label> eventLabels = array.new_label()
+var array<int> eventLabelSeqs = array.new_int()
+keepEventLabel(label lb) =>
+    if showReplayMarkers
+        label.delete(lb)
+    else
+        array.push(eventLabels, lb)
+        array.push(eventLabelSeqs, reviewSeq)
+        while array.size(eventLabels) > eventLabelsKeep
+            label.delete(array.shift(eventLabels))
+            array.shift(eventLabelSeqs)
+    0
+trimReplay() =>
+    while array.size(tradeSeqs) > 80
+        array.shift(tradeSeqs)
+        array.shift(tradeEntryTimes)
+        array.shift(tradeExitTimes)
+        array.shift(tradeSides)
+        array.shift(tradeWindows)
+        array.shift(tradeResults)
+        array.shift(tradeEntryPxs)
+        array.shift(tradeExitPxs)
+        array.shift(tradeRs)
+recordTrade(string result, float exitPx, float rVal) =>
+    array.push(tradeSeqs, na(activeEntrySeq) ? reviewSeq : activeEntrySeq)
+    array.push(tradeEntryTimes, activeEntryTime)
+    array.push(tradeExitTimes, time)
+    array.push(tradeSides, activeEntrySide)
+    array.push(tradeWindows, activeEntryWindow)
+    array.push(tradeResults, result)
+    array.push(tradeEntryPxs, activeEntryPx)
+    array.push(tradeExitPxs, exitPx)
+    array.push(tradeRs, rVal)
+    trimReplay()
+clearOldDrawings() =>
+    while array.size(setupLines) > historyKeep * linesPerSetup
+        line.delete(array.shift(setupLines))
+    while array.size(setupBoxes) > historyKeep * 4
+        box.delete(array.shift(setupBoxes))
+    while array.size(setupLabels) > historyKeep * labelsPerSetup
+        label.delete(array.shift(setupLabels))
+fmt(float v) => na(v) ? "-" : str.tostring(v, format.mintick)
+drawSetup() =>
+    if showZones
+        int x1 = math.min(pLowBar, pHighBar)
+        int x2 = bar_index
+        color dc = direction == "long" ? cLong : cShort
+        string dirWord = direction == "long" ? "BUY" : "SELL"
+        float entryTop = math.max(fibNear, fibDeep)
+        float entryBot = math.min(fibNear, fibDeep)
+        float riskTop = math.max(fibNear, stop)
+        float riskBot = math.min(fibNear, stop)
+        float rewardTop = math.max(fibNear, t1)
+        float rewardBot = math.min(fibNear, t1)
+        float stretchTop = math.max(t1, t3)
+        float stretchBot = math.min(t1, t3)
+        box bEntry = box.new(x1, entryTop, x2, entryBot, xloc=xloc.bar_index, bgcolor=color.new(cEntry, 78), border_color=color.new(cEntry, 8), border_width=1)
+        box bRisk = box.new(x1, riskTop, x2, riskBot, xloc=xloc.bar_index, bgcolor=color.new(cStop, 88), border_color=color.new(cStop, 40), border_width=0, text=showSetupLabels ? "RISK" : "", text_color=color.new(cStop, 55), text_size=size.tiny, text_halign=text.align_left, text_valign=text.align_center)
+        box bReward = box.new(x1, rewardTop, x2, rewardBot, xloc=xloc.bar_index, bgcolor=color.new(cLong, 84), border_color=color.new(cLong, 45), border_width=0, text=showSetupLabels ? "REWARD" : "", text_color=color.new(cLong, 45), text_size=size.tiny, text_halign=text.align_left, text_valign=text.align_center)
+        box bStretch = box.new(x1, stretchTop, x2, stretchBot, xloc=xloc.bar_index, bgcolor=color.new(cLong, 92), border_color=color.new(cLong, 70), border_width=0, text=showSetupLabels ? "STRETCH" : "", text_color=color.new(cLong, 60), text_size=size.tiny, text_halign=text.align_left, text_valign=text.align_center)
+        line lNear = line.new(x1, fibNear, x2, fibNear, xloc=xloc.bar_index, color=cEntry, width=3)
+        line lDeep = line.new(x1, fibDeep, x2, fibDeep, xloc=xloc.bar_index, color=color.new(cEntry, 20), width=1, style=line.style_dashed)
+        line lT1 = line.new(x1, t1, x2, t1, xloc=xloc.bar_index, color=cLong, width=3)
+        line lT2 = line.new(x1, t2, x2, t2, xloc=xloc.bar_index, color=color.new(cLong, 30), width=1, style=line.style_dashed)
+        line lT3 = line.new(x1, t3, x2, t3, xloc=xloc.bar_index, color=color.new(cLong, 55), width=1, style=line.style_dotted)
+        line lStop = line.new(x1, stop, x2, stop, xloc=xloc.bar_index, color=cStop, width=3, style=line.style_dashed)
+        array.push(setupLines, lNear)
+        array.push(setupLines, lDeep)
+        array.push(setupLines, lT1)
+        array.push(setupLines, lT2)
+        array.push(setupLines, lT3)
+        array.push(setupLines, lStop)
+        array.push(setupBoxes, bEntry)
+        array.push(setupBoxes, bRisk)
+        array.push(setupBoxes, bReward)
+        array.push(setupBoxes, bStretch)
+        if showSetupLabels
+            float entryMid = (entryTop + entryBot) / 2.0
+            label lp = label.new(pLowBar, pLow, "SWING LOW", xloc=xloc.bar_index, style=label.style_label_up, color=color.new(cLong, 0), textcolor=color.white, size=size.tiny, tooltip="The swing low that anchors this setup's price leg.")
+            label hp = label.new(pHighBar, pHigh, "SWING HIGH", xloc=xloc.bar_index, style=label.style_label_down, color=color.new(cShort, 0), textcolor=color.white, size=size.tiny, tooltip="The swing high that anchors this setup's price leg.")
+            string entryTxt = setupKind == "PIVOT BREAK" ? "BREAK LEVEL - wait for ENTER\n" + fmt(fibNear) : "ENTRY ZONE - wait for ENTER\n" + fmt(entryBot) + " - " + fmt(entryTop)
+            label le = label.new(bar_index, entryMid, entryTxt, xloc=xloc.bar_index, style=label.style_label_left, color=cEntry, textcolor=color.black, size=size.small, tooltip="Where the trade triggers. Do not enter on your own - wait for the ENTER label. The engine confirms the trigger for you.")
+            label lt = label.new(bar_index, t1, "T1 - main target\n" + fmt(t1), xloc=xloc.bar_index, style=label.style_label_left, color=cLong, textcolor=color.white, size=size.small, tooltip="Main profit target (1.382). The engine books the trade here. Take profit or start trailing a runner.")
+            label lt2 = label.new(bar_index, t2, "T2 - runner\n" + fmt(t2), xloc=xloc.bar_index, style=label.style_label_left, color=color.new(cLong, 35), textcolor=color.white, size=size.small, tooltip="Runner target (1.5) for any piece you keep after T1. The engine's stats close at T1.")
+            label lt3 = label.new(bar_index, t3, "T3 - stretch\n" + fmt(t3), xloc=xloc.bar_index, style=label.style_label_left, color=color.new(cLong, 55), textcolor=color.white, size=size.small, tooltip="Stretch target (1.618) for the last piece of a runner. Watch-only; stats are unchanged.")
+            label ls = label.new(bar_index, stop, "STOP - trade is wrong past here\n" + fmt(stop), xloc=xloc.bar_index, style=label.style_label_left, color=cStop, textcolor=color.white, size=size.small, tooltip="The trade is wrong past this line, judged by your stop mode. Exit without hesitation.")
+            array.push(setupLabels, lp)
+            array.push(setupLabels, hp)
+            array.push(setupLabels, le)
+            array.push(setupLabels, lt)
+            array.push(setupLabels, lt2)
+            array.push(setupLabels, lt3)
+            array.push(setupLabels, ls)
+        clearOldDrawings()
+extendActiveDrawings() =>
+    int lineN = array.size(setupLines)
+    if lineN > 0
+        int lineStart = math.max(0, lineN - linesPerSetup)
+        for i = lineStart to lineN - 1
+            line.set_x2(array.get(setupLines, i), bar_index)
+    int boxN = array.size(setupBoxes)
+    if boxN > 0
+        int boxStart = math.max(0, boxN - 4)
+        for i = boxStart to boxN - 1
+            box.set_right(array.get(setupBoxes, i), bar_index)
+    // Keep the entry, targets and stop labels pinned to the live right edge so
+    // the trade plan is always readable next to current price.
+    int lblN = array.size(setupLabels)
+    if showSetupLabels and lblN >= pinnedLabels
+        for i = lblN - pinnedLabels to lblN - 1
+            label.set_x(array.get(setupLabels, i), bar_index)
+    0
+send(string msg) =>
+    if enableAlerts and barstate.isrealtime
+        alert(msg, alert.freq_once_per_bar_close)
+mapGateLinked = useMapGateWarning and srcMapGate != close
+mapGateLimit = mapGateWarnPts > 0 ? mapGateWarnPts : isSpy ? 0.20 : 2.0
+nearMapGate(float px) =>
+    mapGateLinked and not na(px) and not na(srcMapGate) and math.abs(px - srcMapGate) <= mapGateLimit
+mapGateText(bool isNear) =>
+    isNear ? " WARNING: map control gate is close; protect faster." : ""
+// Directional shelf caution: a BUY right under the map's nearest sell shelf,
+// or a SELL right above its nearest buy shelf, is warned but never blocked.
+mapResLinked = useMapGateWarning and srcMapRes != close
+mapSupLinked = useMapGateWarning and srcMapSup != close
+nearMapShelf(bool isLong, float px) =>
+    isLong ? (mapResLinked and not na(px) and not na(srcMapRes) and math.abs(srcMapRes - px) <= mapGateLimit) : (mapSupLinked and not na(px) and not na(srcMapSup) and math.abs(px - srcMapSup) <= mapGateLimit)
+// Builds the plain-English reason string for a CAUTION-grade entry.
+cautionWhyText(bool trendWarn, bool momWarn, bool shelfWarn, bool isLong) =>
+    string s = ""
+    if trendWarn
+        s := "20m trend disagrees"
+    if momWarn
+        s := s == "" ? "momentum guard active" : s + " / momentum guard active"
+    if shelfWarn
+        string shelfTxt = isLong ? "map sell shelf near" : "map buy shelf near"
+        s := s == "" ? shelfTxt : s + " / " + shelfTxt
+    s
+// Telegram-friendly entry alert. Clean entries confirm the 20m trend; caution
+// entries explain exactly why and tell the trader to protect faster.
+entryAlertText(bool isLong, bool caution, string why, float e, float t1v, float t2v, float t3v, float st, bool gateNear) =>
+    string sideWord = isLong ? "BUY" : "SELL"
+    string levels = "Entry " + fmt(e) + " | T1 " + fmt(t1v) + " | T2 " + fmt(t2v) + " | T3 " + fmt(t3v) + " | Stop " + fmt(st)
+    caution ? pfx + "CAUTION " + sideWord + ": Valid " + (isLong ? "buy" : "sell") + ", but " + why + ". Protect faster. " + levels + "." + mapGateText(gateNear) : pfx + "ENTER " + sideWord + ": " + levels + ". 20m trend aligned. Follow the chart lines." + mapGateText(gateNear)
+displayState(string s) =>
+    s == "SCANNING" ? "SCANNING" :
+     s == "READY" ? "GET READY" :
+     s == "WATCH" ? "WATCH ENTRY" :
+     s == "ENTER" ? (activeCaution ? "CAUTION " + (direction == "long" ? "BUY" : "SELL") : "ENTER " + (direction == "long" ? "BUY" : "SELL") + " NOW") :
+     s == "PROTECT" ? "PROTECT PROFIT" :
+     s == "NO PUSH" ? "NO PUSH" :
+     s == "STOP" ? "STOP HIT" :
+     s == "TIME FLAT" ? "TIME FLAT" :
+     s == "TARGET HIT" ? "TARGET HIT" :
+     s == "BLOCKED" ? "BLOCKED" :
+     s == "EXPIRED" ? "EXPIRED" : s
+// One plain-English instruction per state. This drives the banner subtitle and
+// the "Do this" row of the panel so a beginner always knows the next action.
+nextStep(string s) =>
+    s == "SCANNING" ? "Wait. The engine is scanning." :
+     s == "READY" ? "Setup forming. Do not enter yet." :
+     s == "WATCH" ? "Watch the yellow entry zone." :
+     s == "ENTER" ? (activeCaution ? "Trade is live with a warning. Protect faster." : "Trade is live. Follow the lines.") :
+     s == "PROTECT" ? "Move your stop to entry." :
+     s == "NO PUSH" ? "Weak move. Tighten or exit." :
+     s == "STOP" ? "Exit now. Setup failed." :
+     s == "TIME FLAT" ? "Close it. The window is over." :
+     s == "TARGET HIT" ? "Take profit. Runner aims T2/T3." :
+     s == "BLOCKED" ? "Stand aside. A guard is active." :
+     s == "EXPIRED" ? "Setup expired. Wait for the next." :
+     "Follow the panel."
+seasonBias(int m, int w) =>
+    string s = "mixed"
+    if m == 1 and w == 1
+        s := "bullish 70%"
+    else if m == 1 and w == 2
+        s := "bullish 90%"
+    else if m == 1 and w == 4
+        s := "bullish 80%"
+    else if m == 2 and w == 1
+        s := "bullish 70%"
+    else if m == 3 and w == 1
+        s := "bearish 90%"
+    else if m == 3 and w == 4
+        s := "bullish 80%"
+    else if m == 4 and w == 4
+        s := "bullish 70%"
+    else if m == 5 and w == 1
+        s := "bullish 70%"
+    else if m == 5 and w == 4
+        s := "bullish 80%"
+    else if m == 6 and w == 1
+        s := "bullish 70%"
+    else if m == 6 and w == 3
+        s := "bullish 70%"
+    else if m == 6 and w == 4
+        s := "bearish 70%"
+    else if m == 7 and w == 1
+        s := "bullish 70%"
+    else if m == 7 and w == 2
+        s := "bullish 80%"
+    else if m == 7 and w == 4
+        s := "bullish 70%"
+    else if m == 7 and w == 5
+        s := "bearish 80%"
+    else if m == 8 and w == 1
+        s := "bullish 70%"
+    else if m == 8 and w == 2
+        s := "bullish 70%"
+    else if m == 8 and w == 4
+        s := "bullish 70%"
+    else if m == 9 and w == 1
+        s := "bearish 70%"
+    else if m == 9 and w == 2
+        s := "bullish 70%"
+    else if m == 10 and w == 1
+        s := "bullish 70%"
+    else if m == 10 and w == 3
+        s := "bullish 70%"
+    else if m == 11 and w == 1
+        s := "bullish 80%"
+    else if m == 11 and w == 4
+        s := "bullish 80%"
+    else if m == 12 and w == 4
+        s := "bullish 70%"
+    s
+rr() =>
+    float risk = math.abs(fibNear - stop)
+    risk > 0 ? math.abs(t1 - fibNear) / risk : na
+// ---------------------------------------------------------------------------
+// State machine
+// ---------------------------------------------------------------------------
+bool entryNow = false
+if priceCrossUp50
+    lastPriceCrossUpBar := bar_index
+if priceCrossDn50
+    lastPriceCrossDnBar := bar_index
+bool morningLimitReached = morningTradeCount >= maxMorningTrades
+bool afternoonLimitReached = afternoonTradeCount >= maxAfternoonTrades
+bool windowLimitReached = windowName == "morning" ? morningLimitReached : windowName == "afternoon" ? afternoonLimitReached : true
+canStart = inLiveWindow and not windowLimitReached and not tradeActive and (na(lastClosedBar) or bar_index - lastClosedBar >= cooldownBars)
+canStartFresh = canStart and not armed and not pending
+canStartEarly = inEarlyBreakScan and not morningLimitReached and not tradeActive and (na(lastClosedBar) or bar_index - lastClosedBar >= cooldownBars)
+canStartEarlyFresh = canStartEarly and not armed and not pending
+longTrendOk = not follow50Slope or emaSlow > emaSlow[slopeBars]
+shortTrendOk = not follow50Slope or emaSlow < emaSlow[slopeBars]
+if enableEarlyPivotBreak and canStartEarlyFresh and priceCrossUp50
+    [seedStopLong, seedStopLongBar] = findLastBefore(lowBars, lowVals, bar_index, math.max(0, bar_index - lookbackBars))
+    earlyBreakArmed := true
+    earlyBreakDir := "long"
+    earlyBreakCrossBar := bar_index
+    earlyBreakPivot := na
+    earlyBreakPivotBar := na
+    earlyBreakStop := na(seedStopLong) ? low : seedStopLong
+    earlyBreakStopBar := na(seedStopLongBar) ? bar_index : seedStopLongBar
+    state := "READY"
+    stateDetail := "price crossed 50, wait pivot break"
+    send(pfx + "GET READY: Price crossed above the 50. Waiting for a close above the post-cross pivot high. Do not enter yet.")
+if enableEarlyPivotBreak and canStartEarlyFresh and priceCrossDn50
+    [seedStopShort, seedStopShortBar] = findLastBefore(highBars, highVals, bar_index, math.max(0, bar_index - lookbackBars))
+    earlyBreakArmed := true
+    earlyBreakDir := "short"
+    earlyBreakCrossBar := bar_index
+    earlyBreakPivot := na
+    earlyBreakPivotBar := na
+    earlyBreakStop := na(seedStopShort) ? high : seedStopShort
+    earlyBreakStopBar := na(seedStopShortBar) ? bar_index : seedStopShortBar
+    state := "READY"
+    stateDetail := "price crossed 50, wait pivot break"
+    send(pfx + "GET READY: Price crossed below the 50. Waiting for a close below the post-cross pivot low. Do not enter yet.")
+bool flipEarlyToLong = enableEarlyPivotBreak and earlyBreakArmed and earlyBreakDir == "short" and inEarlyBreakScan and not morningLimitReached and not tradeActive and priceCrossUp50
+bool flipEarlyToShort = enableEarlyPivotBreak and earlyBreakArmed and earlyBreakDir == "long" and inEarlyBreakScan and not morningLimitReached and not tradeActive and priceCrossDn50
+if flipEarlyToLong
+    [seedStopLongFlip, seedStopLongFlipBar] = findLastBefore(lowBars, lowVals, bar_index, math.max(0, bar_index - lookbackBars))
+    earlyBreakDir := "long"
+    earlyBreakCrossBar := bar_index
+    earlyBreakPivot := na
+    earlyBreakPivotBar := na
+    earlyBreakStop := na(seedStopLongFlip) ? low : seedStopLongFlip
+    earlyBreakStopBar := na(seedStopLongFlipBar) ? bar_index : seedStopLongFlipBar
+    state := "READY"
+    stateDetail := "flipped above 50, wait pivot break"
+    send(pfx + "GET READY: Early fakeout flipped. Price crossed back above the 50. Waiting for the bullish pivot break.")
+if flipEarlyToShort
+    [seedStopShortFlip, seedStopShortFlipBar] = findLastBefore(highBars, highVals, bar_index, math.max(0, bar_index - lookbackBars))
+    earlyBreakDir := "short"
+    earlyBreakCrossBar := bar_index
+    earlyBreakPivot := na
+    earlyBreakPivotBar := na
+    earlyBreakStop := na(seedStopShortFlip) ? high : seedStopShortFlip
+    earlyBreakStopBar := na(seedStopShortFlipBar) ? bar_index : seedStopShortFlipBar
+    state := "READY"
+    stateDetail := "flipped below 50, wait pivot break"
+    send(pfx + "GET READY: Early fakeout flipped. Price crossed back below the 50. Waiting for the bearish pivot break.")
+if earlyBreakArmed and (not inEarlyBreakScan or bar_index - earlyBreakCrossBar > retestBars or tradeActive or morningLimitReached)
+    earlyBreakArmed := false
+    earlyBreakDir := ""
+    earlyBreakCrossBar := na
+    earlyBreakPivot := na
+    earlyBreakPivotBar := na
+    earlyBreakStop := na
+    earlyBreakStopBar := na
+if earlyBreakArmed and earlyBreakDir == "long"
+    if low < earlyBreakStop
+        earlyBreakStop := low
+        earlyBreakStopBar := bar_index
+    if not na(ph)
+        int ebPhBar = bar_index - pivotRight
+        if ebPhBar >= earlyBreakCrossBar and inPivotWin[pivotRight] and open[pivotRight] > emaSlow[pivotRight] and (na(earlyBreakPivot) or ph > earlyBreakPivot)
+            earlyBreakPivot := ph
+            earlyBreakPivotBar := ebPhBar
+    bool earlyLongBreak = inEarlyBreakEntry and not na(earlyBreakPivot) and bar_index > earlyBreakPivotBar and close > earlyBreakPivot and close > emaSlow and earlyBreakPivot > earlyBreakStop
+    bool earlyLongHtfOk = close > htfEma
+    bool earlyLongBlocked = (useShockGuard and downShockActive) or (earlyBreakRequiresHtf and not earlyLongHtfOk) or momBlockLong
+    if earlyLongBreak and not earlyLongBlocked
+        direction := "long"
+        pLow := earlyBreakStop
+        pLowBar := earlyBreakStopBar
+        pHigh := earlyBreakPivot
+        pHighBar := earlyBreakPivotBar
+        fibNear := earlyBreakPivot
+        fibDeep := earlyBreakPivot
+        t1 := targetFromLeg(pLow, pHigh, true, t1Mult)
+        t2 := targetFromLeg(pLow, pHigh, true, t2Mult)
+        t3 := targetFromLeg(pLow, pHigh, true, t3Mult)
+        stop := pLow
+        activeWindow := "morning"
+        setupKind := "PIVOT BREAK"
+        drawSetup()
+        tradeActive := true
+        pending := false
+        pendingDir := ""
+        armed := false
+        armedBar := na
+        earlyBreakArmed := false
+        entryBar := bar_index
+        activeEntryTime := time
+        activeEntryPx := earlyBreakPivot
+        activeEntrySide := "BUY"
+        activeEntryWindow := activeWindow
+        activeEntrySeq := reviewSeq
+        protectAlerted := false
+        noPushAlerted := false
+        activeBestR := 0.0
+        activeGateNear := nearMapGate(activeEntryPx)
+        activeGateMsg := activeGateNear ? "control gate near" : ""
+        activeShelfNear := nearMapShelf(true, activeEntryPx)
+        activeShelfMsg := activeShelfNear ? "sell shelf" : ""
+        activeCaution := not earlyLongHtfOk or momCautionLong or activeShelfNear
+        activeCautionWhy := cautionWhyText(not earlyLongHtfOk, momCautionLong, activeShelfNear, true)
+        invClose := na
+        t1Done := false
+        t2Done := false
+        entryNow := true
+        morningTradeCount += 1
+        state := "ENTER"
+        stateDetail := activeCaution ? "BUY pivot break, caution" : "BUY pivot break"
+        keepEventLabel(label.new(bar_index, low, (activeCaution ? "CAUTION BUY\n" : "ENTER BUY\n") + fmt(activeEntryPx), xloc=xloc.bar_index, style=label.style_label_up, color=activeCaution ? cEntry : cLong, textcolor=activeCaution ? color.black : color.white, size=size.normal))
+        send(entryAlertText(true, activeCaution, activeCautionWhy, activeEntryPx, t1, t2, t3, stop, activeGateNear))
+    else if earlyLongBreak and earlyLongBlocked
+        earlyBreakArmed := false
+        state := "BLOCKED"
+        stateDetail := (useShockGuard and downShockActive) ? "OPEN SHOCK" : momBlockLong ? "momentum guard" : "20m trend blocked"
+        send(pfx + "BLOCKED: BUY pivot break blocked. " + (stateDetail == "OPEN SHOCK" ? "Open shock is active - do not fight the shock move." : stateDetail + ".") + " Stand aside.")
+if earlyBreakArmed and earlyBreakDir == "short"
+    if high > earlyBreakStop
+        earlyBreakStop := high
+        earlyBreakStopBar := bar_index
+    if not na(pl)
+        int ebPlBar = bar_index - pivotRight
+        if ebPlBar >= earlyBreakCrossBar and inPivotWin[pivotRight] and open[pivotRight] < emaSlow[pivotRight] and (na(earlyBreakPivot) or pl < earlyBreakPivot)
+            earlyBreakPivot := pl
+            earlyBreakPivotBar := ebPlBar
+    bool earlyShortBreak = inEarlyBreakEntry and not na(earlyBreakPivot) and bar_index > earlyBreakPivotBar and close < earlyBreakPivot and close < emaSlow and earlyBreakPivot < earlyBreakStop
+    bool earlyShortHtfOk = close < htfEma
+    bool earlyShortBlocked = (useShockGuard and upShockActive) or (earlyBreakRequiresHtf and not earlyShortHtfOk) or momBlockShort
+    if earlyShortBreak and not earlyShortBlocked
+        direction := "short"
+        pLow := earlyBreakPivot
+        pLowBar := earlyBreakPivotBar
+        pHigh := earlyBreakStop
+        pHighBar := earlyBreakStopBar
+        fibNear := earlyBreakPivot
+        fibDeep := earlyBreakPivot
+        t1 := targetFromLeg(pLow, pHigh, false, t1Mult)
+        t2 := targetFromLeg(pLow, pHigh, false, t2Mult)
+        t3 := targetFromLeg(pLow, pHigh, false, t3Mult)
+        stop := pHigh
+        activeWindow := "morning"
+        setupKind := "PIVOT BREAK"
+        drawSetup()
+        tradeActive := true
+        pending := false
+        pendingDir := ""
+        armed := false
+        armedBar := na
+        earlyBreakArmed := false
+        entryBar := bar_index
+        activeEntryTime := time
+        activeEntryPx := earlyBreakPivot
+        activeEntrySide := "SELL"
+        activeEntryWindow := activeWindow
+        activeEntrySeq := reviewSeq
+        protectAlerted := false
+        noPushAlerted := false
+        activeBestR := 0.0
+        activeGateNear := nearMapGate(activeEntryPx)
+        activeGateMsg := activeGateNear ? "control gate near" : ""
+        activeShelfNear := nearMapShelf(false, activeEntryPx)
+        activeShelfMsg := activeShelfNear ? "buy shelf" : ""
+        activeCaution := not earlyShortHtfOk or momCautionShort or activeShelfNear
+        activeCautionWhy := cautionWhyText(not earlyShortHtfOk, momCautionShort, activeShelfNear, false)
+        invClose := na
+        t1Done := false
+        t2Done := false
+        entryNow := true
+        morningTradeCount += 1
+        state := "ENTER"
+        stateDetail := activeCaution ? "SELL pivot break, caution" : "SELL pivot break"
+        keepEventLabel(label.new(bar_index, high, (activeCaution ? "CAUTION SELL\n" : "ENTER SELL\n") + fmt(activeEntryPx), xloc=xloc.bar_index, style=label.style_label_down, color=activeCaution ? cEntry : cShort, textcolor=activeCaution ? color.black : color.white, size=size.normal))
+        send(entryAlertText(false, activeCaution, activeCautionWhy, activeEntryPx, t1, t2, t3, stop, activeGateNear))
+    else if earlyShortBreak and earlyShortBlocked
+        earlyBreakArmed := false
+        state := "BLOCKED"
+        stateDetail := (useShockGuard and upShockActive) ? "OPEN SHOCK" : momBlockShort ? "momentum guard" : "20m trend blocked"
+        send(pfx + "BLOCKED: SELL pivot break blocked. " + (stateDetail == "OPEN SHOCK" ? "Open shock is active - do not fight the shock move." : stateDetail + ".") + " Stand aside.")
+if canStart and not tradeActive and rawCrossUp and not na(lastPriceCrossUpBar) and longTrendOk
+    pending := true
+    pendingDir := "long"
+    pendingEmaCrossBar := bar_index
+    pendingPriceCrossBar := lastPriceCrossUpBar
+    state := "READY"
+    stateDetail := "bull cross, finding bracket"
+    send(pfx + "GET READY: Bull 21/50 cross. Waiting for entry pocket. Do not enter yet.")
+if canStart and not tradeActive and rawCrossDn and not na(lastPriceCrossDnBar) and shortTrendOk
+    pending := true
+    pendingDir := "short"
+    pendingEmaCrossBar := bar_index
+    pendingPriceCrossBar := lastPriceCrossDnBar
+    state := "READY"
+    stateDetail := "bear cross, finding bracket"
+    send(pfx + "GET READY: Bear 21/50 cross. Waiting for entry pocket. Do not enter yet.")
+if pending and (bar_index - pendingEmaCrossBar > postCrossBars or not inLiveWindow or tradeActive)
+    pending := false
+    pendingDir := ""
+if pending
+    if pendingDir == "long"
+        [loV, loB] = findLastBefore(lowBars, lowVals, pendingPriceCrossBar, math.max(0, bar_index - lookbackBars))
+        [hiV, hiB] = findFirstAfter(highBars, highVals, pendingPriceCrossBar, bar_index)
+        if not na(loV) and not na(hiV) and hiV > loV
+            direction := "long"
+            pLow := loV
+            pLowBar := loB
+            pHigh := hiV
+            pHighBar := hiB
+            float rng = pHigh - pLow
+            fibNear := pHigh - rng * nearFib
+            fibDeep := pHigh - rng * deepFib
+            t1 := targetFromLeg(pLow, pHigh, true, t1Mult)
+            t2 := targetFromLeg(pLow, pHigh, true, t2Mult)
+            t3 := targetFromLeg(pLow, pHigh, true, t3Mult)
+            stop := pLow
+            activeWindow := windowName
+            pending := false
+            setupKind := "ENTRY POCKET"
+            drawSetup()
+            [preFound, preOffset] = findPreCrossTouch(pLowBar, true, fibNear, fibDeep)
+            bool preTargetAhead = close < t1
+            bool preShockBlocked = useShockGuard and downShockActive
+            bool preHtfWarnOk = close > htfEma
+            bool preHtfBlocked = activeWindow == "morning" and morningRequiresHtf and not preHtfWarnOk
+            if preFound and preTargetAhead and not preShockBlocked and not preHtfBlocked and not momBlockLong and not (activeWindow == "afternoon" and afternoonWarnOnly)
+                tradeActive := true
+                armed := false
+                armedBar := na
+                entryBar := bar_index
+                activeEntryTime := time
+                activeEntryPx := fibNear
+                activeEntrySide := "BUY"
+                activeEntryWindow := activeWindow
+                activeEntrySeq := reviewSeq
+                protectAlerted := false
+                noPushAlerted := false
+                activeBestR := 0.0
+                activeGateNear := nearMapGate(activeEntryPx)
+                activeGateMsg := activeGateNear ? "control gate near" : ""
+                activeShelfNear := nearMapShelf(true, activeEntryPx)
+                activeShelfMsg := activeShelfNear ? "sell shelf" : ""
+                activeCaution := not preHtfWarnOk or momCautionLong or activeShelfNear
+                activeCautionWhy := cautionWhyText(not preHtfWarnOk, momCautionLong, activeShelfNear, true)
+                invClose := na
+                t1Done := false
+                t2Done := false
+                entryNow := true
+                if activeWindow == "morning"
+                    morningTradeCount += 1
+                else if activeWindow == "afternoon"
+                    afternoonTradeCount += 1
+                state := "ENTER"
+                stateDetail := activeCaution ? "LONG confirmed, caution" : "LONG confirmed"
+                keepEventLabel(label.new(bar_index, low, (activeCaution ? "CAUTION BUY\n" : "ENTER BUY\n") + fmt(activeEntryPx), xloc=xloc.bar_index, style=label.style_label_up, color=activeCaution ? cEntry : cLong, textcolor=activeCaution ? color.black : color.white, size=size.normal))
+                send(entryAlertText(true, activeCaution, activeCautionWhy, activeEntryPx, t1, t2, t3, stop, activeGateNear))
+            else if preFound and preShockBlocked
+                armed := false
+                armedBar := na
+                state := "BLOCKED"
+                stateDetail := "OPEN SHOCK"
+                lastClosedBar := bar_index
+                send(pfx + "BLOCKED: OPEN SHOCK. LONG entry blocked - do not fight the shock move. Stand aside.")
+            else
+                armed := true
+                armedBar := bar_index
+                state := "WATCH"
+                stateDetail := "long pocket armed"
+                send(pfx + "WATCH ENTRY: Long setup armed. Entry zone " + fmt(math.min(fibNear, fibDeep)) + " to " + fmt(math.max(fibNear, fibDeep)) + ". Wait for ENTER.")
+    else
+        [hiV, hiB] = findLastBefore(highBars, highVals, pendingPriceCrossBar, math.max(0, bar_index - lookbackBars))
+        [loV, loB] = findFirstAfter(lowBars, lowVals, pendingPriceCrossBar, bar_index)
+        if not na(loV) and not na(hiV) and hiV > loV
+            direction := "short"
+            pLow := loV
+            pLowBar := loB
+            pHigh := hiV
+            pHighBar := hiB
+            float rng = pHigh - pLow
+            fibNear := pLow + rng * nearFib
+            fibDeep := pLow + rng * deepFib
+            t1 := targetFromLeg(pLow, pHigh, false, t1Mult)
+            t2 := targetFromLeg(pLow, pHigh, false, t2Mult)
+            t3 := targetFromLeg(pLow, pHigh, false, t3Mult)
+            stop := pHigh
+            activeWindow := windowName
+            pending := false
+            setupKind := "ENTRY POCKET"
+            drawSetup()
+            [preFound, preOffset] = findPreCrossTouch(pHighBar, false, fibNear, fibDeep)
+            bool preTargetAhead = close > t1
+            bool preShockBlocked = useShockGuard and upShockActive
+            bool preHtfWarnOk = close < htfEma
+            bool preHtfBlocked = activeWindow == "morning" and morningRequiresHtf and not preHtfWarnOk
+            if preFound and preTargetAhead and not preShockBlocked and not preHtfBlocked and not momBlockShort and not (activeWindow == "afternoon" and afternoonWarnOnly)
+                tradeActive := true
+                armed := false
+                armedBar := na
+                entryBar := bar_index
+                activeEntryTime := time
+                activeEntryPx := fibNear
+                activeEntrySide := "SELL"
+                activeEntryWindow := activeWindow
+                activeEntrySeq := reviewSeq
+                protectAlerted := false
+                noPushAlerted := false
+                activeBestR := 0.0
+                activeGateNear := nearMapGate(activeEntryPx)
+                activeGateMsg := activeGateNear ? "control gate near" : ""
+                activeShelfNear := nearMapShelf(false, activeEntryPx)
+                activeShelfMsg := activeShelfNear ? "buy shelf" : ""
+                activeCaution := not preHtfWarnOk or momCautionShort or activeShelfNear
+                activeCautionWhy := cautionWhyText(not preHtfWarnOk, momCautionShort, activeShelfNear, false)
+                invClose := na
+                t1Done := false
+                t2Done := false
+                entryNow := true
+                if activeWindow == "morning"
+                    morningTradeCount += 1
+                else if activeWindow == "afternoon"
+                    afternoonTradeCount += 1
+                state := "ENTER"
+                stateDetail := activeCaution ? "SHORT confirmed, caution" : "SHORT confirmed"
+                keepEventLabel(label.new(bar_index, high, (activeCaution ? "CAUTION SELL\n" : "ENTER SELL\n") + fmt(activeEntryPx), xloc=xloc.bar_index, style=label.style_label_down, color=activeCaution ? cEntry : cShort, textcolor=activeCaution ? color.black : color.white, size=size.normal))
+                send(entryAlertText(false, activeCaution, activeCautionWhy, activeEntryPx, t1, t2, t3, stop, activeGateNear))
+            else if preFound and preShockBlocked
+                armed := false
+                armedBar := na
+                state := "BLOCKED"
+                stateDetail := "OPEN SHOCK"
+                lastClosedBar := bar_index
+                send(pfx + "BLOCKED: OPEN SHOCK. SHORT entry blocked - do not fight the shock move. Stand aside.")
+            else
+                armed := true
+                armedBar := bar_index
+                state := "WATCH"
+                stateDetail := "short pocket armed"
+                send(pfx + "WATCH ENTRY: Short setup armed. Entry zone " + fmt(math.min(fibNear, fibDeep)) + " to " + fmt(math.max(fibNear, fibDeep)) + ". Wait for ENTER.")
+if armed and (bar_index - armedBar > retestBars or not inLiveWindow)
+    armed := false
+    state := "EXPIRED"
+    stateDetail := "pocket expired"
+    lastClosedBar := bar_index
+zoneLow = math.min(fibNear, fibDeep)
+zoneHigh = math.max(fibNear, fibDeep)
+touchedPocket = armed and low <= zoneHigh and high >= zoneLow
+htfWarnOk = direction == "long" ? close > htfEma : direction == "short" ? close < htfEma : true
+shockBlocksLong = direction == "long" and downShockActive
+shockBlocksShort = direction == "short" and upShockActive
+shockBlocked = shockBlocksLong or shockBlocksShort
+htfBlocked = activeWindow == "morning" and morningRequiresHtf and not htfWarnOk
+momBlockedDir = direction == "long" ? momBlockLong : direction == "short" ? momBlockShort : false
+momCautionDir = direction == "long" ? momCautionLong : direction == "short" ? momCautionShort : false
+entryLong = armed and direction == "long" and touchedPocket and close >= fibNear and close < t1 and (not requireCandleColor or close > open)
+entryShort = armed and direction == "short" and touchedPocket and close <= fibNear and close > t1 and (not requireCandleColor or close < open)
+entrySignal = (entryLong or entryShort) and not shockBlocked and not htfBlocked and not momBlockedDir
+entryWarnOnly = (entryLong or entryShort) and (shockBlocked or htfBlocked or momBlockedDir)
+if touchedPocket and not entrySignal
+    state := "READY"
+    stateDetail := shockBlocked ? "shock guard blocking" : momBlockedDir ? "momentum guard blocking" : "pocket testing"
+if entryWarnOnly
+    state := "BLOCKED"
+    stateDetail := shockBlocked ? "OPEN SHOCK" : momBlockedDir ? "momentum guard" : "20m trend blocked"
+    send(pfx + "BLOCKED: " + str.upper(direction) + " entry blocked. " + (shockBlocked ? "OPEN SHOCK - do not fight the shock move." : stateDetail + ".") + " Stand aside.")
+if entrySignal
+    if activeWindow == "afternoon" and afternoonWarnOnly
+        state := "READY"
+        stateDetail := "afternoon warn only"
+        keepEventLabel(label.new(bar_index, close, "AFTERNOON WATCH", xloc=xloc.bar_index, style=label.style_label_left, color=cEntry, textcolor=color.black, size=size.small))
+        send(pfx + "WATCH ENTRY: Afternoon " + str.upper(direction) + " setup reached entry, but afternoon mode is Warn only.")
+        armed := false
+        lastClosedBar := bar_index
+    else
+        tradeActive := true
+        armed := false
+        entryBar := bar_index
+        activeEntryTime := time
+        activeEntryPx := fibNear
+        activeEntrySide := direction == "long" ? "BUY" : "SELL"
+        activeEntryWindow := activeWindow
+        activeEntrySeq := reviewSeq
+        protectAlerted := false
+        noPushAlerted := false
+        activeBestR := 0.0
+        activeGateNear := nearMapGate(activeEntryPx)
+        activeGateMsg := activeGateNear ? "control gate near" : ""
+        activeShelfNear := nearMapShelf(direction == "long", activeEntryPx)
+        activeShelfMsg := activeShelfNear ? (direction == "long" ? "sell shelf" : "buy shelf") : ""
+        activeCaution := not htfWarnOk or momCautionDir or activeShelfNear
+        activeCautionWhy := cautionWhyText(not htfWarnOk, momCautionDir, activeShelfNear, direction == "long")
+        invClose := na
+        t1Done := false
+        t2Done := false
+        entryNow := true
+        if activeWindow == "morning"
+            morningTradeCount += 1
+        else if activeWindow == "afternoon"
+            afternoonTradeCount += 1
+        state := "ENTER"
+        stateDetail := str.upper(direction) + (activeCaution ? " confirmed, caution" : " confirmed")
+        string enterTxt = (activeCaution ? "CAUTION " : "ENTER ") + (direction == "long" ? "BUY" : "SELL") + "\n" + fmt(activeEntryPx)
+        keepEventLabel(label.new(bar_index, direction == "long" ? low : high, enterTxt, xloc=xloc.bar_index, style=direction == "long" ? label.style_label_up : label.style_label_down, color=activeCaution ? cEntry : (direction == "long" ? cLong : cShort), textcolor=activeCaution ? color.black : color.white, size=size.normal))
+        send(entryAlertText(direction == "long", activeCaution, activeCautionWhy, activeEntryPx, t1, t2, t3, stop, activeGateNear))
+// Stop and targets.
+new30 = ta.change(time("30")) != 0
+target1Hit = tradeActive and bar_index > entryBar and not t1Done and ((direction == "long" and high >= t1) or (direction == "short" and low <= t1))
+target2Hit = tradeActive and bar_index > entryBar and ((direction == "long" and high >= t2) or (direction == "short" and low <= t2))
+stopHit = false
+if tradeActive and bar_index > entryBar and not target1Hit
+    if stopMode == "1m wick"
+        stopHit := direction == "long" ? low <= stop : high >= stop
+        invClose := stopHit ? stop : na
+    else if stopMode == "1m close"
+        stopHit := direction == "long" ? close < stop : close > stop
+        invClose := stopHit ? close : na
+    else if new30
+        stopHit := direction == "long" ? close[1] < stop : close[1] > stop
+        invClose := stopHit ? close[1] : na
+windowEnded = tradeActive and flatAtWindowEnd and ((activeWindow == "morning" and not (inMain or inEarlyBreakScan)) or (activeWindow == "afternoon" and not inAfternoon))
+float liveRisk = math.abs(fibNear - stop)
+float liveMfeR = tradeActive and liveRisk > 0 ? (direction == "long" ? (high - fibNear) / liveRisk : (fibNear - low) / liveRisk) : na
+if tradeActive and bar_index > entryBar and not na(liveMfeR)
+    activeBestR := math.max(activeBestR, liveMfeR)
+protectNow = tradeActive and bar_index > entryBar and not target1Hit and not stopHit and not protectAlerted and not na(liveMfeR) and liveMfeR >= protectR
+if protectNow
+    protectAlerted := true
+    state := "PROTECT"
+    stateDetail := "+ " + str.tostring(protectR, "#.##") + "R reached"
+    keepEventLabel(label.new(bar_index, direction == "long" ? high : low, "PROTECT\n+" + str.tostring(protectR, "#.##") + "R", xloc=xloc.bar_index, style=direction == "long" ? label.style_label_down : label.style_label_up, color=cEntry, textcolor=color.black, size=size.small))
+    send(pfx + "PROTECT PROFIT: " + str.upper(direction) + " reached +" + str.tostring(protectR, "#.##") + "R. Move your stop to entry and protect faster, especially on 0DTE." + (activeGateNear ? " Map control gate was near entry." : "") + (activeCaution ? " This was a CAUTION entry - protect even faster." : ""))
+noPushNow = tradeActive and bar_index > entryBar and not target1Hit and not stopHit and not noPushAlerted and not na(activeEntryTime) and (time - activeEntryTime) >= noPushMinutes * 60000 and activeBestR < noPushR
+if noPushNow
+    noPushAlerted := true
+    state := "NO PUSH"
+    stateDetail := "no " + str.tostring(noPushR, "#.##") + "R push in " + str.tostring(noPushMinutes) + "m"
+    keepEventLabel(label.new(bar_index, close, "NO PUSH\nmanage out", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(cStop, 0), textcolor=color.white, size=size.small))
+    send(pfx + "NO PUSH: " + str.upper(direction) + " has not reached +" + str.tostring(noPushR, "#.##") + "R after " + str.tostring(noPushMinutes) + " minutes. Momentum is weak; tighten or exit.")
+if target1Hit
+    t1Done := true
+    tradeActive := false
+    float rWin = rr()
+    wins += 1
+    rSum += na(rWin) ? 0.0 : rWin
+    recordTrade("T1", t1, rWin)
+    array.push(recent, "W")
+    while array.size(recent) > 14
+        array.shift(recent)
+    state := "TARGET HIT"
+    stateDetail := "T1 booked"
+    keepEventLabel(label.new(bar_index, direction == "long" ? high : low, "WIN +" + str.tostring(rWin, "#.##") + "R\nT1 HIT", xloc=xloc.bar_index, style=direction == "long" ? label.style_label_down : label.style_label_up, color=cLong, textcolor=color.white, size=size.normal))
+    send(pfx + "T1 HIT: Main target reached on " + str.upper(direction) + ". Result +" + str.tostring(rWin, "#.##") + "R booked. Runner aims T2 " + fmt(t2) + " then T3 " + fmt(t3) + ".")
+    if target2Hit
+        keepEventLabel(label.new(bar_index, direction == "long" ? high : low, "T2 HIT", xloc=xloc.bar_index, style=label.style_label_left, color=color.new(cLong, 10), textcolor=color.white, size=size.small))
+        send(pfx + "T2 HIT: Runner target " + fmt(t2) + " reached. Book the runner or aim T3 " + fmt(t3) + ".")
+        runner3Watch := true
+        runnerT3 := t3
+        runnerDir := direction
+    else
+        runnerWatch := true
+        runnerT2 := t2
+        runnerT3 := t3
+        runnerDir := direction
+    activeGateNear := false
+    activeShelfNear := false
+    activeShelfMsg := ""
+    lastClosedBar := bar_index
+else if stopHit
+    tradeActive := false
+    float risk = math.abs(fibNear - stop)
+    float rLoss = risk > 0 ? (direction == "long" ? (invClose - fibNear) / risk : (fibNear - invClose) / risk) : -1.0
+    losses += 1
+    rSum += rLoss
+    recordTrade("STOP", invClose, rLoss)
+    array.push(recent, "L")
+    while array.size(recent) > 14
+        array.shift(recent)
+    state := "STOP"
+    stateDetail := "invalidated"
+    keepEventLabel(label.new(bar_index, direction == "long" ? low : high, "LOSS " + str.tostring(rLoss, "#.##") + "R\nSTOP HIT", xloc=xloc.bar_index, style=direction == "long" ? label.style_label_up : label.style_label_down, color=cStop, textcolor=color.white, size=size.normal))
+    send(pfx + "STOP HIT: " + str.upper(direction) + " invalidated. Exit now. Result " + str.tostring(rLoss, "#.##") + "R.")
+    activeGateNear := false
+    activeShelfNear := false
+    activeShelfMsg := ""
+    lastClosedBar := bar_index
+else if windowEnded
+    tradeActive := false
+    flats += 1
+    float riskFlat = math.abs(fibNear - stop)
+    float rFlat = riskFlat > 0 ? (direction == "long" ? (close - fibNear) / riskFlat : (fibNear - close) / riskFlat) : 0.0
+    recordTrade("FLAT", close, rFlat)
+    array.push(recent, "F")
+    while array.size(recent) > 14
+        array.shift(recent)
+    state := "TIME FLAT"
+    stateDetail := "window ended"
+    keepEventLabel(label.new(bar_index, close, "TIME FLAT", xloc=xloc.bar_index, style=label.style_label_left, color=color.gray, textcolor=color.white, size=size.small))
+    send(pfx + "TIME FLAT: Exit open " + str.upper(direction) + ". Window ended before target or stop.")
+    activeGateNear := false
+    activeShelfNear := false
+    activeShelfMsg := ""
+    lastClosedBar := bar_index
+// Display-only runner tracker: the trade is booked at T1 (stats unchanged),
+// but the runner keeps aiming T2 then T3 inside the same window.
+if entryNow or not inLiveWindow
+    runnerWatch := false
+    runner3Watch := false
+bool runnerT2Hit = runnerWatch and ((runnerDir == "long" and high >= runnerT2) or (runnerDir == "short" and low <= runnerT2))
+if runnerT2Hit
+    runnerWatch := false
+    runner3Watch := true
+    keepEventLabel(label.new(bar_index, runnerDir == "long" ? high : low, "T2 HIT\nrunner", xloc=xloc.bar_index, style=runnerDir == "long" ? label.style_label_down : label.style_label_up, color=color.new(cLong, 10), textcolor=color.white, size=size.small))
+    send(pfx + "T2 HIT: Runner target " + fmt(runnerT2) + " reached after T1. Book the runner or keep the last piece for T3.")
+bool runnerT3Hit = runner3Watch and not na(runnerT3) and ((runnerDir == "long" and high >= runnerT3) or (runnerDir == "short" and low <= runnerT3))
+if runnerT3Hit
+    runner3Watch := false
+    keepEventLabel(label.new(bar_index, runnerDir == "long" ? high : low, "T3 HIT\nstretch", xloc=xloc.bar_index, style=runnerDir == "long" ? label.style_label_down : label.style_label_up, color=color.new(cLong, 20), textcolor=color.white, size=size.small))
+    send(pfx + "T3 HIT: Stretch target " + fmt(runnerT3) + " printed. Close any remaining runner.")
+if not (inLiveWindow or inEarlyBreakScan) and not tradeActive and not armed and not pending and not earlyBreakArmed and state != "TARGET HIT" and state != "STOP" and state != "TIME FLAT"
+    state := "SCANNING"
+    stateDetail := "outside live window"
+// ---------------------------------------------------------------------------
+// Contract guide (estimate only - always confirm the live chain)
+// ---------------------------------------------------------------------------
+roundCall(float anchor, float otm) => math.ceil((anchor + otm) / strikeStep) * strikeStep
+roundPut(float anchor, float otm) => math.floor((anchor - otm) / strikeStep) * strikeStep
+vixRegime = na(vix) ? "unknown" : vix < vixLow ? "low" : vix >= vixElev ? "elevated" : "normal"
+bandLo = vixRegime == "elevated" ? elevBandLo : normalBandLo
+bandHi = vixRegime == "elevated" ? elevBandHi : normalBandHi
+optSide = direction == "long" ? "C" : direction == "short" ? "P" : ""
+k1 = optSide == "C" ? roundCall(close, bandLo) : optSide == "P" ? roundPut(close, bandLo) : na
+k2 = optSide == "C" ? roundCall(close, bandHi) : optSide == "P" ? roundPut(close, bandHi) : na
+// ---------------------------------------------------------------------------
+// Shapes
+// ---------------------------------------------------------------------------
+plotshape(showCrossMarks and rawCrossUp and inLiveWindow, title="Bull cross", style=shape.triangleup, location=location.belowbar, color=cLong, size=size.tiny)
+plotshape(showCrossMarks and rawCrossDn and inLiveWindow, title="Bear cross", style=shape.triangledown, location=location.abovebar, color=cShort, size=size.tiny)
+plotshape(showReplayMarkers and entryNow and direction == "long", title="Replay long entry", style=shape.labelup, location=location.belowbar, color=cLong, text="BUY", textcolor=color.white, size=size.small)
+plotshape(showReplayMarkers and entryNow and direction == "short", title="Replay short entry", style=shape.labeldown, location=location.abovebar, color=cShort, text="SELL", textcolor=color.white, size=size.small)
+plotshape(showReplayMarkers and target1Hit and direction == "long", title="Replay long target", style=shape.flag, location=location.abovebar, color=cLong, text="T1", textcolor=color.white, size=size.tiny)
+plotshape(showReplayMarkers and target1Hit and direction == "short", title="Replay short target", style=shape.flag, location=location.belowbar, color=cLong, text="T1", textcolor=color.white, size=size.tiny)
+plotshape(showReplayMarkers and stopHit and direction == "long", title="Replay long stop", style=shape.xcross, location=location.belowbar, color=cStop, text="STOP", textcolor=cStop, size=size.tiny)
+plotshape(showReplayMarkers and stopHit and direction == "short", title="Replay short stop", style=shape.xcross, location=location.abovebar, color=cStop, text="STOP", textcolor=cStop, size=size.tiny)
+plotshape(showReplayMarkers and windowEnded, title="Replay time flat", style=shape.circle, location=location.abovebar, color=cEntry, text="FLAT", textcolor=cEntry, size=size.tiny)
+alertcondition(rawCrossUp or rawCrossDn or entryNow or protectNow or noPushNow or target1Hit or runnerT2Hit or runnerT3Hit or stopHit or windowEnded, title="Prophet Engine event", message="Use the TradingView alert condition named Any alert() function call for detailed Telegram messages.")
+// ---------------------------------------------------------------------------
+// Panels and banner
+// ---------------------------------------------------------------------------
+panelPos = panelPosInput == "Top left" ? position.top_left : panelPosInput == "Bottom right" ? position.bottom_right : panelPosInput == "Bottom left" ? position.bottom_left : panelPosInput == "Middle right" ? position.middle_right : position.top_right
+reviewPanelPos = reviewPanelPosInput == "Top left" ? position.top_left : reviewPanelPosInput == "Bottom right" ? position.bottom_right : reviewPanelPosInput == "Bottom left" ? position.bottom_left : reviewPanelPosInput == "Middle right" ? position.middle_right : position.top_right
+var table panel = table.new(panelPos, 3, 17, bgcolor=cPanel, frame_color=color.new(cMuted, 50), frame_width=1)
+row(int r, string a, string b, string c, color bc, string tip) =>
+    table.cell(panel, 0, r, a, text_color=cMuted, text_size=size.tiny, text_halign=text.align_left, tooltip=tip)
+    table.cell(panel, 1, r, b, text_color=bc, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(panel, 2, r, c, text_color=cMuted, text_size=size.tiny, text_halign=text.align_right)
+var table banner = table.new(position.bottom_center, 1, 2, bgcolor=na)
+var table guide = table.new(position.bottom_left, 2, 8, bgcolor=cPanel, frame_color=color.new(cMuted, 50), frame_width=1)
+var table replay = table.new(reviewPanelPos, 5, 16, bgcolor=cPanel, frame_color=color.new(cMuted, 55), frame_width=1)
+replayCell(int c, int r, string txt, color tc, color bg, string align) =>
+    table.cell(replay, c, r, txt, text_color=tc, bgcolor=bg, text_size=size.tiny, text_halign=align == "right" ? text.align_right : align == "center" ? text.align_center : text.align_left)
+if barstate.islast
+    trimReplay()
+    color stCol = state == "ENTER" and activeCaution ? cEntry : state == "ENTER" or state == "TARGET HIT" ? cLong : state == "STOP" or state == "BLOCKED" ? cStop : state == "READY" or state == "WATCH" or state == "PROTECT" or state == "NO PUSH" ? cEntry : cMuted
+    if showPanel
+        table.clear(panel, 0, 0, 2, 16)
+        table.cell(panel, 0, 0, "PROPHET", text_color=cText, bgcolor=cHdr, text_size=size.small)
+        table.cell(panel, 1, 0, "ENGINE", text_color=cText, bgcolor=cHdr, text_size=size.small)
+        table.cell(panel, 2, 0, displayState(state), text_color=stCol, bgcolor=cHdr, text_size=size.small, text_halign=text.align_right)
+        row(1, "Do this", nextStep(state), stateDetail, stCol, "The exact action for the current state, in plain English. Details on the right.")
+        row(2, "Setup", direction == "" ? "flat" : str.upper(direction), activeWindow + (activeWindow == "morning" ? " " + str.tostring(morningTradeCount) + "/" + str.tostring(maxMorningTrades) : activeWindow == "afternoon" ? " " + str.tostring(afternoonTradeCount) + "/" + str.tostring(maxAfternoonTrades) : ""), direction == "long" ? cLong : direction == "short" ? cShort : cMuted, "Trade direction, session window and how many trades of the window's allowance are used. 'flat' means no setup is loaded.")
+        string entryPlan = setupKind == "PIVOT BREAK" ? fmt(fibNear) : fmt(math.min(fibNear, fibDeep)) + " to " + fmt(math.max(fibNear, fibDeep))
+        string entryTag = setupKind == "PIVOT BREAK" ? "pivot break" : str.tostring(nearFib) + "-" + str.tostring(deepFib)
+        row(3, "Entry", entryPlan, entryTag, cEntry, "Where the trade triggers. Pocket setups show a price zone; pivot-break setups show a single break level. Wait for ENTER.")
+        row(4, "Stop", fmt(stop), stopMode, cStop, "STOP - trade is wrong past here, judged by the stop mode shown on the right.")
+        row(5, "T1/T2/T3", fmt(t1) + " / " + fmt(t2) + " / " + fmt(t3), str.tostring(t1Mult) + "/" + str.tostring(t2Mult) + "/" + str.tostring(t3Mult), cLong, "T1 is the main booked target. T2 is the runner. T3 is the stretch for the last piece. The engine's stats close at T1.")
+        row(6, "20m trend", htfWarnOk ? "aligned" : "disagrees", morningRequiresHtf ? "hard block on" : "warns only", htfWarnOk ? cLong : cEntry, "The 20-minute EMA50 trend (the glowing line). When it disagrees, trades still fire as CAUTION and you should protect faster. It only hard-blocks if you enable that input.")
+        string momTxt = momGuardMode == "Off" ? "off" : weakBull and weakBear ? "weak both sides" : weakBull ? "weak bull" : weakBear ? "weak bear" : "clear"
+        row(7, "Momentum", momTxt, momGuardMode, weakBull or weakBear ? cEntry : cMuted, "Momentum Exhaustion Guard: a failed bounce off the 1m EMA50 marks that side weak for " + str.tostring(weakBars) + " bars. Weak-side trades are downgraded to CAUTION or blocked per the mode on the right.")
+        row(8, "Shock", downShockActive ? "dump active" : upShockActive ? "rip active" : "normal", str.tostring(shockSize, "#") + " pts", downShockActive or upShockActive ? cStop : cMuted, "Shock guard hard-blocks trades that fight a large opening-range move (BLOCKED: OPEN SHOCK). The size threshold is on the right.")
+        string mapSRTxt = (mapSupLinked or mapResLinked) ? fmt(srcMapSup) + " / " + fmt(srcMapRes) : "not wired"
+        string mapStatus = activeShelfNear ? activeShelfMsg + " near" : activeGateNear ? "gate near" : (mapGateLinked or mapResLinked or mapSupLinked) ? "clear" : "wire in settings"
+        row(9, "Map S/R", mapSRTxt, mapStatus, activeShelfNear or activeGateNear ? cEntry : cMuted, "Prophet Map Pro's nearest support / resistance read live from the map's hidden plots. Warns when an entry is near a control gate or straight into a shelf. Wire the three map sources in Context guards settings.")
+        int weekInMonth = int(math.floor((dayofmonth(time, mainTz) - 1) / 7.0)) + 1
+        string seasonTxt = seasonBias(month(time, mainTz), weekInMonth)
+        color seasonCol = str.contains(seasonTxt, "bearish") ? cShort : str.contains(seasonTxt, "bullish") ? cLong : cMuted
+        row(10, "Season", seasonTxt, "10y ES", seasonCol, "Ten-year ES seasonal bias for this week of the month. Context only - it never blocks a trade.")
+        string contractTxt = not showContract ? "off" : isSpy ? "use live chain" : optSide == "" ? "waiting for setup" : str.tostring(math.min(k1, k2), "#") + " to " + str.tostring(math.max(k1, k2), "#") + optSide
+        row(11, "Contract guide", contractTxt, "confirm live chain", direction == "long" ? cLong : direction == "short" ? cShort : cMuted, "Estimate only - suggested SPXW strike range for the current direction based on the VIX regime. It does not know the live bid/ask. Always confirm the live chain before ordering.")
+        row(12, "OTM band", str.tostring(bandLo) + "-" + str.tostring(bandHi) + " OTM", "VIX " + vixRegime, cText, "How far out-of-the-money the suggested strikes sit. Elevated VIX widens the band. Estimate only.")
+        row(13, "Alerts", "Any alert()", "Telegram", cEntry, "Create one TradingView alert on this indicator using the condition 'Any alert() function call' to receive every plain-English message.")
+        if showAdvanced
+            row(14, "R:R", na(rr()) ? "-" : str.tostring(rr(), "#.##") + "R", "to T1", cText, "Reward-to-risk ratio from entry to T1. Higher is better.")
+            row(15, "Protect", tradeActive ? str.tostring(activeBestR, "#.##") + "R best" : "-", "+" + str.tostring(protectR, "#.##") + "R trigger", tradeActive and activeBestR >= protectR ? cEntry : cMuted, "Best R reached this trade versus the protect heads-up trigger. When it fires, tighten your stop.")
+            int decided = wins + losses
+            string winPct = decided > 0 ? str.tostring(100.0 * wins / decided, "#") + "% win" : "- win"
+            string streakTxt = ""
+            int recN = array.size(recent)
+            if recN > 0
+                for i = math.max(0, recN - 7) to recN - 1
+                    streakTxt += array.get(recent, i) + " "
+            string statsTxt = str.tostring(wins) + "W " + str.tostring(losses) + "L " + str.tostring(flats) + "F | " + winPct + " | " + (rSum >= 0 ? "+" : "") + str.tostring(rSum, "#.##") + "R"
+            row(16, "Stats", statsTxt, streakTxt, rSum >= 0 ? cLong : cShort, "Wins, losses and time-flats across the loaded chart history, with win percentage (wins vs decided trades) and net R. Recent results on the right (newest last). Loaded-history stats, not a full backtest.")
+    if showBanner
+        color bCol = state == "ENTER" ? (activeCaution ? cEntry : direction == "long" ? cLong : cShort) : state == "TARGET HIT" ? cLong : state == "STOP" or state == "BLOCKED" ? cStop : state == "READY" or state == "WATCH" or state == "PROTECT" or state == "NO PUSH" ? cEntry : color.new(cMuted, 20)
+        bool amberState = state == "READY" or state == "WATCH" or state == "PROTECT" or state == "NO PUSH" or (state == "ENTER" and activeCaution)
+        color bTxt = amberState ? color.black : color.white
+        table.cell(banner, 0, 0, displayState(state), text_color=bTxt, bgcolor=bCol, text_size=size.large, text_halign=text.align_center)
+        table.cell(banner, 0, 1, nextStep(state) + (stateDetail == "" ? "" : "  |  " + stateDetail), text_color=bTxt, bgcolor=color.new(bCol, 25), text_size=size.small, text_halign=text.align_center)
+    if showGuide
+        table.clear(guide, 0, 0, 1, 7)
+        table.cell(guide, 0, 0, "CHART GUIDE", text_color=cText, bgcolor=cHdr, text_size=size.tiny)
+        table.cell(guide, 1, 0, "what it means", text_color=cText, bgcolor=cHdr, text_size=size.tiny)
+        table.cell(guide, 0, 1, "Yellow band", text_color=cEntry, text_size=size.tiny)
+        table.cell(guide, 1, 1, "ENTRY ZONE - wait for the ENTER label", text_color=cText, text_size=size.tiny)
+        table.cell(guide, 0, 2, "Red dashed", text_color=cStop, text_size=size.tiny)
+        table.cell(guide, 1, 2, "STOP - trade is wrong past this line", text_color=cText, text_size=size.tiny)
+        table.cell(guide, 0, 3, "Green lines", text_color=cLong, text_size=size.tiny)
+        table.cell(guide, 1, 3, "bold T1 main, softer T2 runner, dotted T3 stretch", text_color=cText, text_size=size.tiny)
+        table.cell(guide, 0, 4, "Glow line", text_color=cEntry, text_size=size.tiny)
+        table.cell(guide, 1, 4, "20m trend - against it means CAUTION", text_color=cText, text_size=size.tiny)
+        table.cell(guide, 0, 5, "Ribbon", text_color=cFast, text_size=size.tiny)
+        table.cell(guide, 1, 5, "21/50 EMA trend: green up, red down", text_color=cText, text_size=size.tiny)
+        table.cell(guide, 0, 6, "Shaded bg", text_color=cMuted, text_size=size.tiny)
+        table.cell(guide, 1, 6, "engine is live and allowed to hunt", text_color=cText, text_size=size.tiny)
+        table.cell(guide, 0, 7, "Banner", text_color=cMuted, text_size=size.tiny)
+        table.cell(guide, 1, 7, "current state plus the action to take", text_color=cText, text_size=size.tiny)
+    if showReplayTable
+        table.clear(replay, 0, 0, 4, 15)
+        replayCell(0, 0, "TRADE REVIEW", cText, cHdr, "left")
+        replayCell(1, 0, "SIDE", cText, cHdr, "center")
+        replayCell(2, 0, "ENTRY", cText, cHdr, "right")
+        replayCell(3, 0, "EXIT", cText, cHdr, "right")
+        replayCell(4, 0, "RESULT", cText, cHdr, "right")
+        int n = array.size(tradeSeqs)
+        int rows = math.min(reviewRows, n)
+        if rows == 0
+            replayCell(0, 1, "No completed trades loaded", cMuted, na, "left")
+            replayCell(1, 1, "", cMuted, na, "center")
+            replayCell(2, 1, "", cMuted, na, "right")
+            replayCell(3, 1, "", cMuted, na, "right")
+            replayCell(4, 1, "", cMuted, na, "right")
+        else
+            for i = 0 to rows - 1
+                int idx = n - 1 - i
+                string side = array.get(tradeSides, idx)
+                string win = array.get(tradeWindows, idx)
+                string res = array.get(tradeResults, idx)
+                float rv = array.get(tradeRs, idx)
+                color sideCol = side == "BUY" ? cLong : cShort
+                color resCol = res == "T1" ? cLong : res == "STOP" ? cStop : cEntry
+                string timeTxt = str.format_time(array.get(tradeEntryTimes, idx), "MM/dd HH:mm", mainTz)
+                string rTxt = res + " " + (rv >= 0 ? "+" : "") + str.tostring(rv, "#.##") + "R"
+                replayCell(0, i + 1, timeTxt, cMuted, na, "left")
+                replayCell(1, i + 1, side, sideCol, na, "center")
+                replayCell(2, i + 1, fmt(array.get(tradeEntryPxs, idx)), cText, na, "right")
+                replayCell(3, i + 1, fmt(array.get(tradeExitPxs, idx)), cText, na, "right")
+                replayCell(4, i + 1, rTxt + (win == "" ? "" : " " + win), resCol, na, "right")
+    else
+        table.clear(replay, 0, 0, 4, 15)
+// Keep only the newest visible setup extended while active. Historical setups
+// freeze where they ended, so yesterday's entry/stop/target zones never stretch
+// into a later trading day.
+if showZones and (armed or tradeActive)
+    extendActiveDrawings()
