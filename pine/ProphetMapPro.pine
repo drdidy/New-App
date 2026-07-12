@@ -11,11 +11,12 @@ indicator("Prophet Map Pro", shorttitle="PM Pro", overlay=true, max_lines_count=
 //   2) DAILY CONTROL (thin dashed red/green)
 //        Same-day 4:00-5:00am CT high wick, same slope and spacing.
 //        Active 8:50am-3:00pm CT. Tactical context, not the main map.
-//   3) MACRO LATTICE (dotted purple)
+//   3) MACRO LATTICE (purple zones)
 //        Fixed daily grid from two hard anchors, +/-6.5 pts per RTH trading
 //        day, gates every 170 pts. All four in-play rails are drawn and
-//        labeled: support and resistance from the descending grid AND from
-//        the ascending grid. Background context under Weekly and Daily.
+//        labeled as zones (dark purple center line, faint edges, soft fill):
+//        support and resistance from the descending grid AND from the
+//        ascending grid. Sits under Weekly and Daily in visual weight.
 //
 // Stability rules honored throughout:
 //   - Anchor highs AND their projected current values are computed on fixed
@@ -56,6 +57,7 @@ ascPrice = input.float(7222.6, "Ascending anchor price", group=gM, display=displ
 ascDate = input.time(timestamp("11 Jun 2026 12:00:00 GMT-5"), "Ascending anchor date", group=gM, display=display.none)
 macroSlope = input.float(6.5, "Macro slope (pts per RTH day)", minval=0.0, group=gM, display=display.none)
 macroSpace = input.float(170.0, "Macro gate spacing", minval=1.0, group=gM, display=display.none)
+macroZone = input.float(8.0, "Macro zone width", minval=0.0, group=gM, tooltip="Reaction band width around each macro rail, drawn like the weekly zones: a dark center line with faint edges and a soft fill.", display=display.none)
 
 gV = "Display"
 theme = input.string("Light", "Theme", options=["Light", "Midnight"], group=gV, display=display.none)
@@ -317,14 +319,20 @@ drawDailyLine(int tA, float yA, float yNow, string txt, color col) =>
 // Macro rail: anchored at its lattice's fixed anchor date/price so both
 // endpoints are exact and deterministic. dir: -1 descending, +1 ascending.
 // All four in-play rails (support and resistance from BOTH lattices) are
-// drawn with equal weight and labeled with their lattice, because any of
-// the four can be the level that matters on the execution timeframe.
+// drawn as zones with the same anatomy as the weekly shelves -- dark purple
+// center line, faint edges, soft fill -- because any of the four can be the
+// level that matters on the execution timeframe.
 drawMacroRail(float g, int dir, string txt) =>
     if not na(g)
         int aT = dir == -1 ? descDate : ascDate
         float ctrl = dir == -1 ? mDesc : mAsc
         float aP = (dir == -1 ? descPrice : ascPrice) + (g - ctrl)
-        timeLine(aT, aP, time, g, color.new(colMacro, 30), 2, line.style_dotted)
+        float half = macroZone / 2.0
+        timeLine(aT, aP, time, g, color.new(colMacro, 5), 2, line.style_solid)
+        if half > 0
+            line top = timeLine(aT, aP + half, time, g + half, color.new(colMacro, 68), 1, line.style_solid)
+            line bot = timeLine(aT, aP - half, time, g - half, color.new(colMacro, 68), 1, line.style_solid)
+            array.push(fills, linefill.new(top, bot, color.new(colMacro, 90)))
         addLabel(txt, g, color.new(colMacro, 10), size.tiny, 0)
 
 drawWeeklyGuide(int tA, float yA, float yNow) =>
