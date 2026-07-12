@@ -2,7 +2,7 @@
 indicator("Prophet Map Pro", shorttitle="PM Pro", overlay=true, max_lines_count=80, max_labels_count=24, calc_bars_count=9000)
 
 // ============================================================================
-// Prophet Map Pro — market structure map. No trade engine, no backtest stats.
+// Prophet Map Pro -- market structure map. No trade engine, no backtest stats.
 //
 // Three layers, strongest to faintest:
 //   1) WEEKLY CONTROL (bold red/green bands)
@@ -11,15 +11,20 @@ indicator("Prophet Map Pro", shorttitle="PM Pro", overlay=true, max_lines_count=
 //   2) DAILY CONTROL (thin dashed red/green)
 //        Same-day 4:00-5:00am CT high wick, same slope and spacing.
 //        Active 8:50am-3:00pm CT. Tactical context, not the main map.
-//   3) MACRO LATTICE (faint dotted purple)
+//   3) MACRO LATTICE (dotted purple)
 //        Fixed daily grid from two hard anchors, +/-6.5 pts per RTH trading
-//        day, gates every 170 pts. Background context.
+//        day, gates every 170 pts. The nearest rail above and below price is
+//        emphasized; the in-play rail of the other lattice is also drawn,
+//        fainter and unlabeled. Background context under Weekly and Daily.
 //
 // Stability rules honored throughout:
-//   - Anchors are detected on fixed 30-min / 5-min feeds via request.security
-//     (lookahead off), so the map is identical on every intraday interval.
-//   - The Macro Lattice is pure arithmetic on calendar trading days since
-//     fixed anchor dates — no bars, no visible range, it never repins.
+//   - Anchor highs AND their projected current values are computed on fixed
+//     30-min (weekly) and 5-min (daily) feeds via request.security with
+//     lookahead off, so the levels are identical on 1m, 5m, 15m, 30m and
+//     1h charts. No chart-interval bar counting is involved.
+//   - The Macro Lattice counts ACTUAL daily trading bars of the symbol
+//     (request.security "D"), not calendar weekdays, so market holidays do
+//     not shift the grid.
 //   - Lines use xloc.bar_time with extend.right: no future bar_index, no
 //     visible-range math, nothing recalculates or shifts when zooming.
 //   - Anchors publish only after their window completes: no repainting.
@@ -28,7 +33,7 @@ indicator("Prophet Map Pro", shorttitle="PM Pro", overlay=true, max_lines_count=
 string TZ = "America/Chicago"
 
 // ---------------------------------------------------------------------------
-// Inputs (all display.none — no status-line spam)
+// Inputs (all display.none -- no status-line spam)
 // ---------------------------------------------------------------------------
 gP = "Instrument profile"
 profile = input.string("Auto", "Profile", options=["Auto", "SPX/ES", "SPY"], group=gP, display=display.none)
@@ -46,12 +51,11 @@ dailyActive = input.session("0850-1500:23456", "Daily layer active window (CT)",
 gM = "Macro Lattice"
 showMacroIn = input.bool(true, "Show Macro Lattice", group=gM, display=display.none)
 descPrice = input.float(7616.5, "Descending anchor price", group=gM, display=display.none)
-descDate = input.time(timestamp("2026-06-03T12:00:00-05:00"), "Descending anchor date", group=gM, display=display.none)
+descDate = input.time(timestamp("03 Jun 2026 12:00:00 GMT-5"), "Descending anchor date", group=gM, display=display.none)
 ascPrice = input.float(7222.6, "Ascending anchor price", group=gM, display=display.none)
-ascDate = input.time(timestamp("2026-06-11T12:00:00-05:00"), "Ascending anchor date", group=gM, display=display.none)
+ascDate = input.time(timestamp("11 Jun 2026 12:00:00 GMT-5"), "Ascending anchor date", group=gM, display=display.none)
 macroSlope = input.float(6.5, "Macro slope (pts per RTH day)", minval=0.0, group=gM, display=display.none)
 macroSpace = input.float(170.0, "Macro gate spacing", minval=1.0, group=gM, display=display.none)
-showMacroGuides = input.bool(false, "Faint next macro rails", group=gM, display=display.none)
 
 gV = "Display"
 theme = input.string("Light", "Theme", options=["Light", "Midnight"], group=gV, display=display.none)
@@ -102,6 +106,9 @@ clearObjects() =>
 fmt(float v) =>
     na(v) ? "-" : str.tostring(v, format.mintick)
 
+dateKeyOf(int t) =>
+    year(t, TZ) * 10000 + month(t, TZ) * 100 + dayofmonth(t, TZ)
+
 // Nearest gate below and above current price on a lattice centered at ctrl.
 gatesAround(float ctrl, float spacing) =>
     float lo = na
@@ -117,122 +124,117 @@ send(string msg) =>
         alert(msg, alert.freq_once_per_bar_close)
 
 // ---------------------------------------------------------------------------
-// Anchor engines — fixed lower-timeframe feeds, interval-proof, no repaint.
-// Each publishes its high wick only after its window completes.
+// Anchor engines -- fixed lower-timeframe feeds, interval-proof, no repaint.
+// Each engine publishes its high wick only after the window completes, and
+// also projects the CURRENT control value on its own feed, so both the
+// anchor and the live value are identical on every chart interval.
 // ---------------------------------------------------------------------------
-// Weekly: high wick of Monday 12:00-2:30pm CT.
+// Weekly: high wick of Monday 12:00-2:30pm CT, decaying on the 30-min feed.
 weeklyEngine() =>
     bool inW = not na(time(timeframe.period, weeklySession, TZ))
     bool newW = inW and not (inW[1] == true)
     bool endW = not inW and (inW[1] == true)
     var float winHigh = na
     var int winHighT = na
+    var int winHighB = na
     var float wH = na
     var int wT = na
+    var int wB = na
     if newW
         winHigh := high
         winHighT := time
+        winHighB := bar_index
     else if inW and (na(winHigh) or high > winHigh)
         winHigh := high
         winHighT := time
+        winHighB := bar_index
     if endW and not na(winHigh)
         wH := winHigh
         wT := winHighT
+        wB := winHighB
         winHigh := na
         winHighT := na
-    [wH, wT]
+        winHighB := na
+    float wNowF = na(wH) or na(wB) ? na : wH - slopeHour * timeframe.in_seconds() / 3600.0 * (bar_index - wB)
+    [wH, wT, wNowF]
 
-// Daily: high wick of the same-day 4:00-5:00am CT window, published at 5:00.
+// Daily: high wick of the same-day 4:00-5:00am CT window, published at 5:00,
+// decaying on the 5-min feed.
 dailyEngine() =>
-    int dk = year(time, TZ) * 10000 + month(time, TZ) * 100 + dayofmonth(time, TZ)
+    int dk = dateKeyOf(time)
     bool inW = not na(time(timeframe.period, dailySession, TZ))
     bool newW = inW and not (inW[1] == true)
     bool endW = not inW and (inW[1] == true)
     var float winHigh = na
     var int winHighT = na
+    var int winHighB = na
     var float dH = na
     var int dT = na
+    var int dB = na
     var int dDay = na
     if newW
         winHigh := high
         winHighT := time
+        winHighB := bar_index
     else if inW and (na(winHigh) or high > winHigh)
         winHigh := high
         winHighT := time
+        winHighB := bar_index
     if endW and not na(winHigh)
         dH := winHigh
         dT := winHighT
+        dB := winHighB
         dDay := dk
         winHigh := na
         winHighT := na
-    [dH, dT, dDay]
+        winHighB := na
+    float dNowF = na(dH) or na(dB) ? na : dH - slopeHour * timeframe.in_seconds() / 3600.0 * (bar_index - dB)
+    [dH, dT, dDay, dNowF]
 
-[aWH, aWT] = request.security(syminfo.tickerid, "30", weeklyEngine(), lookahead=barmerge.lookahead_off)
-[aDH, aDT, aDDay] = request.security(syminfo.tickerid, "5", dailyEngine(), lookahead=barmerge.lookahead_off)
-
-// Convert a published anchor time into a chart bar index. The estimate is
-// capped because anchors always publish within a few hours of forming.
-int maxOff = int(math.ceil(6.0 * 3600.0 / timeframe.in_seconds())) + 2
-captureBar(int tAnchor) =>
-    int est = int(math.round((time - tAnchor) / (tfMs * 1.0)))
-    math.max(0, bar_index - math.min(math.max(est, 0), maxOff))
-
-var float wHigh_ = na
-var int wBar_ = na
-var int wTime_ = na
-var int wSeen = na
-if not na(aWT) and not na(aWH) and (na(wSeen) or aWT != wSeen)
-    wSeen := aWT
-    wHigh_ := aWH
-    wTime_ := aWT
-    wBar_ := captureBar(aWT)
-
-var float dHigh_ = na
-var int dBar_ = na
-var int dTime_ = na
-var int dDay_ = na
-var int dSeen = na
-if not na(aDT) and not na(aDH) and (na(dSeen) or aDT != dSeen)
-    dSeen := aDT
-    dHigh_ := aDH
-    dTime_ := aDT
-    dDay_ := aDDay
-    dBar_ := captureBar(aDT)
+[aWH, aWT, aWNow] = request.security(syminfo.tickerid, "30", weeklyEngine(), lookahead=barmerge.lookahead_off)
+[aDH, aDT, aDDay, aDNow] = request.security(syminfo.tickerid, "5", dailyEngine(), lookahead=barmerge.lookahead_off)
 
 // ---------------------------------------------------------------------------
-// Macro Lattice — deterministic trading-day arithmetic from fixed anchors.
-// No bars, no visible range: only the calendar date of the current bar.
+// Macro Lattice -- counts the symbol's ACTUAL daily trading bars since each
+// anchor date (holidays therefore do not shift the grid). Deterministic:
+// same symbol + same date always yields the same trading-day count.
 // ---------------------------------------------------------------------------
-int TD_EPOCH = timestamp("America/Chicago", 2020, 1, 6, 12, 0)  // a Monday
+int descKey = dateKeyOf(descDate)
+int ascKey = dateKeyOf(ascDate)
 
-// Index of a timestamp's date in weekday trading days since the epoch.
-tdIdx(int t) =>
-    int tn = timestamp(TZ, year(t, TZ), month(t, TZ), dayofmonth(t, TZ), 12, 0)
-    int d = int(math.round((tn - TD_EPOCH) / 86400000.0))
-    int w = int(math.floor(d / 7.0))
-    int r = d - w * 7
-    w * 5 + math.min(r, 5)
+macroDayEngine() =>
+    // time_close dates a daily bar by its trade date (futures daily bars
+    // open the prior evening, so the open time would be off by one day).
+    int dkc = dateKeyOf(time_close)
+    var int descIdx = na
+    var int ascIdx = na
+    if na(descIdx) and dkc >= descKey
+        descIdx := bar_index
+    if na(ascIdx) and dkc >= ascKey
+        ascIdx := bar_index
+    [bar_index, descIdx, ascIdx]
 
-int tdNow = tdIdx(time)
-float mDesc = descPrice - macroSlope * (tdNow - tdIdx(descDate))
-float mAsc = ascPrice + macroSlope * (tdNow - tdIdx(ascDate))
+[dayIdxNow, dayIdxDesc, dayIdxAsc] = request.security(syminfo.tickerid, "D", macroDayEngine(), lookahead=barmerge.lookahead_off)
+
+int tdDesc = na(dayIdxDesc) ? na : dayIdxNow - dayIdxDesc
+int tdAsc = na(dayIdxAsc) ? na : dayIdxNow - dayIdxAsc
+float mDesc = na(tdDesc) ? na : descPrice - macroSlope * tdDesc
+float mAsc = na(tdAsc) ? na : ascPrice + macroSlope * tdAsc
 [mdLo, mdHi] = gatesAround(mDesc, macroSpace)
 [maLo, maHi] = gatesAround(mAsc, macroSpace)
 float mSup = na(mdLo) ? maLo : na(maLo) ? mdLo : math.max(mdLo, maLo)
-int mSupDir = not na(mdLo) and (na(maLo) or mdLo >= maLo) ? -1 : 1
 float mRes = na(mdHi) ? maHi : na(maHi) ? mdHi : math.min(mdHi, maHi)
-int mResDir = not na(mdHi) and (na(maHi) or mdHi <= maHi) ? -1 : 1
 
 // ---------------------------------------------------------------------------
 // Layer values and liveness
 // ---------------------------------------------------------------------------
-float wNow = not na(wHigh_) and not na(wBar_) ? wHigh_ - perBar * (bar_index - wBar_) : na
+float wNow = aWNow
 [wSup, wRes] = gatesAround(wNow, shelfSpacing)
 bool weeklyLive = showWeekly and intradayOk and not na(wNow)
 
-int dateKey = year(time, TZ) * 10000 + month(time, TZ) * 100 + dayofmonth(time, TZ)
-bool dailyToday = not na(dDay_) and dDay_ == dateKey
-float dNow = dailyToday and not na(dHigh_) and not na(dBar_) ? dHigh_ - perBar * (bar_index - dBar_) : na
+int dateKey = dateKeyOf(time)
+bool dailyToday = not na(aDDay) and aDDay == dateKey
+float dNow = dailyToday ? aDNow : na
 [dSup, dRes] = gatesAround(dNow, shelfSpacing)
 bool dailyWindowOn = not na(time(timeframe.period, dailyActive, TZ))
 bool dailyLive = showDailyIn and intradayOk and dailyWindowOn and not na(dNow)
@@ -283,7 +285,7 @@ if nearSup and not nearSup[1]
     send("PROPHET MAP: " + supLayer + " support near " + fmt(nSup) + ". Watch support hold.")
 
 // ---------------------------------------------------------------------------
-// Drawing — time-anchored lines, extended right. Redrawn only on the last bar.
+// Drawing -- time-anchored lines, extended right. Redrawn only on the last bar.
 // ---------------------------------------------------------------------------
 timeLine(int t1, float y1, int t2, float y2, color col, int w, string st) =>
     line ln = line.new(t1, y1, t2, y2, xloc=xloc.bar_time, extend=extend.right, color=col, width=w, style=st)
@@ -312,16 +314,18 @@ drawDailyLine(int tA, float yA, float yNow, string txt, color col) =>
         timeLine(tA, yA, time, yNow, color.new(col, 25), 1, line.style_dashed)
         addLabel(txt, yNow, color.new(col, 25), size.tiny, perBar)
 
-// Macro rail: exact at the current date; drawn back 45 calendar days using
-// the same trading-day formula, so both endpoints are deterministic.
-drawMacroRail(float g, int dir, bool labelIt, string txt) =>
+// Macro rail: anchored at its lattice's fixed anchor date/price so both
+// endpoints are exact and deterministic. dir: -1 descending, +1 ascending.
+// The overall nearest rail above/below price is emphasized and labeled; the
+// other lattice's in-play rail is drawn fainter and unlabeled.
+drawMacroRail(float g, int dir, bool primary, string txt) =>
     if not na(g)
-        int tL = time - 45 * 86400000
-        int back = tdNow - tdIdx(tL)
-        float yL = g - dir * macroSlope * back
-        timeLine(tL, yL, time, g, color.new(colMacro, labelIt ? 45 : 72), 1, line.style_dotted)
-        if labelIt
-            addLabel(txt, g, color.new(colMacro, 15), size.tiny, 0)
+        int aT = dir == -1 ? descDate : ascDate
+        float ctrl = dir == -1 ? mDesc : mAsc
+        float aP = (dir == -1 ? descPrice : ascPrice) + (g - ctrl)
+        timeLine(aT, aP, time, g, color.new(colMacro, primary ? 30 : 55), primary ? 2 : 1, line.style_dotted)
+        if primary
+            addLabel(txt, g, color.new(colMacro, 10), size.tiny, 0)
 
 drawWeeklyGuide(int tA, float yA, float yNow) =>
     if not na(yNow)
@@ -329,30 +333,32 @@ drawWeeklyGuide(int tA, float yA, float yNow) =>
 
 if barstate.islast
     clearObjects()
-    // Macro Lattice first — faint background context.
+    // Macro Lattice first -- background context. Both lattices' in-play
+    // rails are drawn; the overall nearest above/below gets the label.
     if macroLive
-        drawMacroRail(mRes, mResDir, true, "Macro Resistance")
-        drawMacroRail(mSup, mSupDir, true, "Macro Support")
-        if showMacroGuides
-            drawMacroRail(mRes + macroSpace, mResDir, false, "")
-            drawMacroRail(mSup - macroSpace, mSupDir, false, "")
-    // Daily Control — secondary, thin dashed.
+        bool resFromAsc = not na(maHi) and maHi == mRes
+        bool supFromAsc = not na(maLo) and maLo == mSup
+        drawMacroRail(maHi, 1, resFromAsc, "Macro Resistance")
+        drawMacroRail(mdHi, -1, not resFromAsc, "Macro Resistance")
+        drawMacroRail(maLo, 1, supFromAsc, "Macro Support")
+        drawMacroRail(mdLo, -1, not supFromAsc, "Macro Support")
+    // Daily Control -- secondary, thin dashed.
     if dailyLive
-        drawDailyLine(dTime_, dHigh_ + (dRes - dNow), dRes, "Daily Resistance", colRes)
-        drawDailyLine(dTime_, dHigh_ + (dSup - dNow), dSup, "Daily Support", colSup)
-    // Weekly Control — primary, drawn last so it sits on top.
+        drawDailyLine(aDT, aDH + (dRes - dNow), dRes, "Daily Resistance", colRes)
+        drawDailyLine(aDT, aDH + (dSup - dNow), dSup, "Daily Support", colSup)
+    // Weekly Control -- primary, drawn last so it sits on top.
     if weeklyLive
-        drawBand(wTime_, wHigh_ + (wRes - wNow), wRes, "Weekly Resistance", colRes)
-        drawBand(wTime_, wHigh_ + (wSup - wNow), wSup, "Weekly Support", colSup)
+        drawBand(aWT, aWH + (wRes - wNow), wRes, "Weekly Resistance", colRes)
+        drawBand(aWT, aWH + (wSup - wNow), wSup, "Weekly Support", colSup)
         if showWeeklyGuides
-            drawWeeklyGuide(wTime_, wHigh_ + (wRes + shelfSpacing - wNow), wRes + shelfSpacing)
-            drawWeeklyGuide(wTime_, wHigh_ + (wSup - shelfSpacing - wNow), wSup - shelfSpacing)
+            drawWeeklyGuide(aWT, aWH + (wRes + shelfSpacing - wNow), wRes + shelfSpacing)
+            drawWeeklyGuide(aWT, aWH + (wSup - shelfSpacing - wNow), wSup - shelfSpacing)
 
 // ---------------------------------------------------------------------------
 // Map panel
 // ---------------------------------------------------------------------------
 panelPos = panelPosIn == "Top left" ? position.top_left : panelPosIn == "Bottom right" ? position.bottom_right : panelPosIn == "Bottom left" ? position.bottom_left : panelPosIn == "Middle right" ? position.middle_right : position.top_right
-var table panel = table.new(panelPos, 3, 8, bgcolor=colPanel, frame_color=color.new(colMuted, 45), frame_width=1)
+var table panel = table.new(panelPos, 3, 9, bgcolor=colPanel, frame_color=color.new(colMuted, 45), frame_width=1)
 
 trow(int r, string a, string b, string c, color bc, string tip) =>
     table.cell(panel, 0, r, a, text_color=colMuted, text_size=size.tiny, text_halign=text.align_left, tooltip=tip)
@@ -360,18 +366,19 @@ trow(int r, string a, string b, string c, color bc, string tip) =>
     table.cell(panel, 2, r, c, text_color=colMuted, text_size=size.tiny, text_halign=text.align_right)
 
 if barstate.islast and showPanel
-    table.clear(panel, 0, 0, 2, 7)
+    table.clear(panel, 0, 0, 2, 8)
     table.cell(panel, 0, 0, "PROPHET", text_color=colText, bgcolor=colHdr, text_size=size.small)
     table.cell(panel, 1, 0, "MAP", text_color=colText, bgcolor=colHdr, text_size=size.small)
     table.cell(panel, 2, 0, mapState, text_color=mapColor, bgcolor=colHdr, text_size=size.small, text_halign=text.align_right)
-    trow(1, "Resistance", fmt(nRes) + " · " + resLayer, na(distRes) ? "-" : str.tostring(distRes, "#.##") + " away", colRes, "Nearest resistance above price and which layer it comes from (Weekly / Daily / Macro).")
-    trow(2, "Support", fmt(nSup) + " · " + supLayer, na(distSup) ? "-" : str.tostring(distSup, "#.##") + " away", colSup, "Nearest support below price and which layer it comes from (Weekly / Daily / Macro).")
+    trow(1, "Resistance", fmt(nRes) + " | " + resLayer, na(distRes) ? "-" : str.tostring(distRes, "#.##") + " away", colRes, "Nearest resistance above price and which layer it comes from (Weekly / Daily / Macro).")
+    trow(2, "Support", fmt(nSup) + " | " + supLayer, na(distSup) ? "-" : str.tostring(distSup, "#.##") + " away", colSup, "Nearest support below price and which layer it comes from (Weekly / Daily / Macro).")
     trow(3, "RTH", rthOpen ? "Open" : "Closed", "8:30-3:00 CT", rthOpen ? colSup : colMuted, "Regular trading hours status.")
     trow(4, "Playbook", playbook, "", colText, "Plain-English read of the map right now.")
-    trow(5, "Weekly", na(wNow) ? "waiting for Monday anchor" : fmt(wHigh_) + " → " + fmt(wNow), "Mon 12-2:30 high", colText, "Weekly Control: Monday 12:00-2:30pm CT high wick, falling " + str.tostring(slopeHour, "#.##") + " pts per trading hour. Shown as anchor price → current control value. Detected on 30-minute data, identical on every intraday interval.")
-    string dailyStatus = na(dHigh_) ? "no 4-5am data" : not dailyToday ? "waiting for today's window" : not dailyWindowOn ? "ready · active 8:50am" : fmt(dHigh_) + " → " + fmt(dNow)
-    trow(6, "Daily", dailyStatus, "4-5am high", colText, "Daily Control: same-day 4:00-5:00am CT high wick, same slope and spacing. Draws from 8:50am CT. Needs premarket bars (ES futures); SPX index charts have none.")
-    trow(7, "Macro Lattice", macroLive ? "▼ " + fmt(mDesc) + "  ▲ " + fmt(mAsc) : (isSpyProfile ? "SPX/ES only" : "off"), "±" + str.tostring(macroSpace, "#") + " grid", colMacro, "Fixed daily grid: descending control from " + str.tostring(descPrice, "#.##") + " (Jun 3 2026) and ascending from " + str.tostring(ascPrice, "#.##") + " (Jun 11 2026), moving " + str.tostring(macroSlope, "#.##") + " pts per RTH trading day, gates every " + str.tostring(macroSpace, "#") + " pts.")
+    trow(5, "Weekly", na(wNow) ? "waiting for Monday anchor" : fmt(aWH) + " -> " + fmt(wNow), "Mon 12-2:30 high", colText, "Weekly Control: Monday 12:00-2:30pm CT high wick, falling " + str.tostring(slopeHour, "#.##") + " pts per trading hour. Shown as anchor price -> current control value. Anchor and value are computed on 30-minute data, identical on every intraday interval.")
+    string dailyStatus = na(aDH) ? "no 4-5am data" : not dailyToday ? "waiting for today's window" : not dailyWindowOn ? "ready | active 8:50am" : fmt(aDH) + " -> " + fmt(dNow)
+    trow(6, "Daily", dailyStatus, "4-5am high", colText, "Daily Control: same-day 4:00-5:00am CT high wick, same slope and spacing. Draws from 8:50am CT. Computed on 5-minute data. Needs premarket bars (ES futures); SPX index charts have none.")
+    trow(7, "Macro Lattice", macroLive ? "desc " + fmt(mDesc) + " | asc " + fmt(mAsc) : (isSpyProfile ? "SPX/ES only" : "waiting for daily data"), "+/-" + str.tostring(macroSpace, "#") + " grid", colMacro, "Fixed daily grid: descending control from " + str.tostring(descPrice, "#.##") + " (Jun 3 2026) and ascending from " + str.tostring(ascPrice, "#.##") + " (Jun 11 2026), moving " + str.tostring(macroSlope, "#.##") + " pts per actual trading day (counted from the symbol's daily bars, so holidays do not shift it), gates every " + str.tostring(macroSpace, "#") + " pts.")
+    trow(8, "Note", "Macro grid is fixed; the nearest macro rail steps when price enters a new " + str.tostring(macroSpace, "#") + "-pt zone", "", colMuted, "The lattice itself never moves. What changes is which of its rails is closest to price: cross into the next " + str.tostring(macroSpace, "#") + "-pt zone and the nearest support/resistance snaps to the next rail.")
 
 // ---------------------------------------------------------------------------
 // Hidden bridge outputs for Prophet Engine Pro
