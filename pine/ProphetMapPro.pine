@@ -13,9 +13,9 @@ indicator("Prophet Map Pro", shorttitle="PM Pro", overlay=true, max_lines_count=
 //        Active 8:50am-3:00pm CT. Tactical context, not the main map.
 //   3) MACRO LATTICE (dotted purple)
 //        Fixed daily grid from two hard anchors, +/-6.5 pts per RTH trading
-//        day, gates every 170 pts. The nearest rail above and below price is
-//        emphasized; the in-play rail of the other lattice is also drawn,
-//        fainter and unlabeled. Background context under Weekly and Daily.
+//        day, gates every 170 pts. All four in-play rails are drawn and
+//        labeled: support and resistance from the descending grid AND from
+//        the ascending grid. Background context under Weekly and Daily.
 //
 // Stability rules honored throughout:
 //   - Anchor highs AND their projected current values are computed on fixed
@@ -316,16 +316,16 @@ drawDailyLine(int tA, float yA, float yNow, string txt, color col) =>
 
 // Macro rail: anchored at its lattice's fixed anchor date/price so both
 // endpoints are exact and deterministic. dir: -1 descending, +1 ascending.
-// The overall nearest rail above/below price is emphasized and labeled; the
-// other lattice's in-play rail is drawn fainter and unlabeled.
-drawMacroRail(float g, int dir, bool primary, string txt) =>
+// All four in-play rails (support and resistance from BOTH lattices) are
+// drawn with equal weight and labeled with their lattice, because any of
+// the four can be the level that matters on the execution timeframe.
+drawMacroRail(float g, int dir, string txt) =>
     if not na(g)
         int aT = dir == -1 ? descDate : ascDate
         float ctrl = dir == -1 ? mDesc : mAsc
         float aP = (dir == -1 ? descPrice : ascPrice) + (g - ctrl)
-        timeLine(aT, aP, time, g, color.new(colMacro, primary ? 30 : 55), primary ? 2 : 1, line.style_dotted)
-        if primary
-            addLabel(txt, g, color.new(colMacro, 10), size.tiny, 0)
+        timeLine(aT, aP, time, g, color.new(colMacro, 30), 2, line.style_dotted)
+        addLabel(txt, g, color.new(colMacro, 10), size.tiny, 0)
 
 drawWeeklyGuide(int tA, float yA, float yNow) =>
     if not na(yNow)
@@ -333,15 +333,13 @@ drawWeeklyGuide(int tA, float yA, float yNow) =>
 
 if barstate.islast
     clearObjects()
-    // Macro Lattice first -- background context. Both lattices' in-play
-    // rails are drawn; the overall nearest above/below gets the label.
+    // Macro Lattice first -- background context. All four in-play rails:
+    // support and resistance from both the descending and ascending grids.
     if macroLive
-        bool resFromAsc = not na(maHi) and maHi == mRes
-        bool supFromAsc = not na(maLo) and maLo == mSup
-        drawMacroRail(maHi, 1, resFromAsc, "Macro Resistance")
-        drawMacroRail(mdHi, -1, not resFromAsc, "Macro Resistance")
-        drawMacroRail(maLo, 1, supFromAsc, "Macro Support")
-        drawMacroRail(mdLo, -1, not supFromAsc, "Macro Support")
+        drawMacroRail(mdHi, -1, "Macro Resistance (Desc)")
+        drawMacroRail(maHi, 1, "Macro Resistance (Asc)")
+        drawMacroRail(mdLo, -1, "Macro Support (Desc)")
+        drawMacroRail(maLo, 1, "Macro Support (Asc)")
     // Daily Control -- secondary, thin dashed.
     if dailyLive
         drawDailyLine(aDT, aDH + (dRes - dNow), dRes, "Daily Resistance", colRes)
@@ -358,7 +356,7 @@ if barstate.islast
 // Map panel
 // ---------------------------------------------------------------------------
 panelPos = panelPosIn == "Top left" ? position.top_left : panelPosIn == "Bottom right" ? position.bottom_right : panelPosIn == "Bottom left" ? position.bottom_left : panelPosIn == "Middle right" ? position.middle_right : position.top_right
-var table panel = table.new(panelPos, 3, 9, bgcolor=colPanel, frame_color=color.new(colMuted, 45), frame_width=1)
+var table panel = table.new(panelPos, 3, 10, bgcolor=colPanel, frame_color=color.new(colMuted, 45), frame_width=1)
 
 trow(int r, string a, string b, string c, color bc, string tip) =>
     table.cell(panel, 0, r, a, text_color=colMuted, text_size=size.tiny, text_halign=text.align_left, tooltip=tip)
@@ -366,7 +364,7 @@ trow(int r, string a, string b, string c, color bc, string tip) =>
     table.cell(panel, 2, r, c, text_color=colMuted, text_size=size.tiny, text_halign=text.align_right)
 
 if barstate.islast and showPanel
-    table.clear(panel, 0, 0, 2, 8)
+    table.clear(panel, 0, 0, 2, 9)
     table.cell(panel, 0, 0, "PROPHET", text_color=colText, bgcolor=colHdr, text_size=size.small)
     table.cell(panel, 1, 0, "MAP", text_color=colText, bgcolor=colHdr, text_size=size.small)
     table.cell(panel, 2, 0, mapState, text_color=mapColor, bgcolor=colHdr, text_size=size.small, text_halign=text.align_right)
@@ -377,8 +375,9 @@ if barstate.islast and showPanel
     trow(5, "Weekly", na(wNow) ? "waiting for Monday anchor" : fmt(aWH) + " -> " + fmt(wNow), "Mon 12-2:30 high", colText, "Weekly Control: Monday 12:00-2:30pm CT high wick, falling " + str.tostring(slopeHour, "#.##") + " pts per trading hour. Shown as anchor price -> current control value. Anchor and value are computed on 30-minute data, identical on every intraday interval.")
     string dailyStatus = na(aDH) ? "no 4-5am data" : not dailyToday ? "waiting for today's window" : not dailyWindowOn ? "ready | active 8:50am" : fmt(aDH) + " -> " + fmt(dNow)
     trow(6, "Daily", dailyStatus, "4-5am high", colText, "Daily Control: same-day 4:00-5:00am CT high wick, same slope and spacing. Draws from 8:50am CT. Computed on 5-minute data. Needs premarket bars (ES futures); SPX index charts have none.")
-    trow(7, "Macro Lattice", macroLive ? "desc " + fmt(mDesc) + " | asc " + fmt(mAsc) : (isSpyProfile ? "SPX/ES only" : "waiting for daily data"), "+/-" + str.tostring(macroSpace, "#") + " grid", colMacro, "Fixed daily grid: descending control from " + str.tostring(descPrice, "#.##") + " (Jun 3 2026) and ascending from " + str.tostring(ascPrice, "#.##") + " (Jun 11 2026), moving " + str.tostring(macroSlope, "#.##") + " pts per actual trading day (counted from the symbol's daily bars, so holidays do not shift it), gates every " + str.tostring(macroSpace, "#") + " pts.")
-    trow(8, "Note", "Macro grid is fixed; the nearest macro rail steps when price enters a new " + str.tostring(macroSpace, "#") + "-pt zone", "", colMuted, "The lattice itself never moves. What changes is which of its rails is closest to price: cross into the next " + str.tostring(macroSpace, "#") + "-pt zone and the nearest support/resistance snaps to the next rail.")
+    trow(7, "Macro Desc", macroLive ? "S " + fmt(mdLo) + " | R " + fmt(mdHi) : (isSpyProfile ? "SPX/ES only" : "waiting for daily data"), macroLive ? "ctrl " + fmt(mDesc) : "", colMacro, "Descending macro lattice: control falling " + str.tostring(macroSlope, "#.##") + " pts per actual trading day from " + str.tostring(descPrice, "#.##") + " (Jun 3 2026), gates every " + str.tostring(macroSpace, "#") + " pts. S/R are its in-play rails around price; ctrl is the control value today. Trading days are counted from the symbol's daily bars, so holidays do not shift the grid.")
+    trow(8, "Macro Asc", macroLive ? "S " + fmt(maLo) + " | R " + fmt(maHi) : "", macroLive ? "ctrl " + fmt(mAsc) : "", colMacro, "Ascending macro lattice: control rising " + str.tostring(macroSlope, "#.##") + " pts per actual trading day from " + str.tostring(ascPrice, "#.##") + " (Jun 11 2026), gates every " + str.tostring(macroSpace, "#") + " pts. S/R are its in-play rails around price; ctrl is the control value today.")
+    trow(9, "Note", "Macro grid is fixed; the in-play rails step when price enters a new " + str.tostring(macroSpace, "#") + "-pt zone", "", colMuted, "The lattices themselves never move. What changes is which rail of each lattice is closest to price: cross into the next " + str.tostring(macroSpace, "#") + "-pt zone and that lattice's in-play support/resistance snaps to the next rail.")
 
 // ---------------------------------------------------------------------------
 // Hidden bridge outputs for Prophet Engine Pro
