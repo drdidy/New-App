@@ -6,6 +6,14 @@ indicator("Prophet Engine Pro", shorttitle="PE Pro", overlay=true, max_lines_cou
 // Highest-probability production bias from validation:
 // - Main RTH window is 08:50-10:55 CT. No entries before 08:50; GET READY
 //   states may show earlier while a setup is forming.
+// - Pivot-break (break-high/break-low) play: 8:50-10:00am CT ONLY, and only
+//   on a CLOSE beyond the pivot made before. After 10:00 the engine sticks
+//   to the low-pivot / high-pivot pocket entry trades.
+// - Swings and pivots are only identified from the 8:30am CT open onward.
+//   Premarket bars never anchor a setup.
+// - Stops are close-based by default (30m close): a loss only counts on a
+//   close below the low pivot (longs) or above the high pivot (shorts).
+//   A wick through the level is not a loss.
 // - Afternoon reload is optional and off by default.
 // - Target stack: T1 1.382 (main booked target), T2 1.5 (runner),
 //   T3 1.618 (stretch). The engine's stats close at T1.
@@ -40,6 +48,7 @@ fastLen = input.int(21, "Fast EMA", minval=1, maxval=100, group=gSig, display=di
 slowLen = input.int(50, "Slow EMA", minval=2, maxval=200, group=gSig, display=display.none)
 pivotLeft = input.int(1, "Pivot left", minval=1, maxval=10, group=gSig, display=display.none)
 pivotRight = input.int(1, "Pivot right", minval=1, maxval=10, group=gSig, display=display.none)
+pivotSession = input.session("0830-1500:23456", "Pivot detection window (CT)", group=gSig, tooltip="Swing lows and swing highs are only identified from the 8:30am CT open onward. Bars before the open can never anchor a setup.", display=display.none)
 lookbackBars = input.int(120, "Pivot lookback bars", minval=20, maxval=300, group=gSig, display=display.none)
 postCrossBars = input.int(3, "Bars to confirm post-50 pivot", minval=1, maxval=20, group=gSig, display=display.none)
 retestBars = input.int(72, "Pocket retest window", minval=5, maxval=240, group=gSig, display=display.none)
@@ -51,8 +60,8 @@ enableEarlyPivotBreak = input.bool(true, "Early 50-cross pivot-break entry", gro
 earlyBreakRequiresHtf = input.bool(false, "Early pivot-break hard-blocked by 20m trend", group=gSig, tooltip="Off (default): a pivot break against the 20m trend still fires, labeled CAUTION. On: it is blocked.", display=display.none)
 gSess = "Sessions"
 mainSession = input.session("0850-1055:23456", "Morning EMA-pocket window", group=gSess, display=display.none)
-earlyBreakScanSession = input.session("0820-1055:23456", "Early pivot-break scan window", group=gSess, tooltip="Setups may form and show GET READY here, but actual entries never fire before the entry window below.", display=display.none)
-earlyBreakEntrySession = input.session("0850-1055:23456", "Early pivot-break entry window", group=gSess, tooltip="Entries are not allowed before 8:50am CT.", display=display.none)
+earlyBreakScanSession = input.session("0830-1000:23456", "Early pivot-break scan window", group=gSess, tooltip="The break play may form and show GET READY here (from the 8:30am CT open). Actual break entries never fire before the entry window below, and the break play ends at 10:00am.", display=display.none)
+earlyBreakEntrySession = input.session("0850-1000:23456", "Early pivot-break entry window", group=gSess, tooltip="Pivot-break entries only fire 8:50-10:00am CT, and only when price breaks and CLOSES beyond the pivot made before. After 10am the engine only takes pocket trades.", display=display.none)
 mainTz = input.string("America/Chicago", "Main timezone", group=gSess, display=display.none)
 afternoonMode = input.string("Off", "Afternoon reload", options=["Off", "Warn only", "On"], group=gSess, display=display.none)
 afternoonSession = input.session("1205-1355:23456", "Afternoon reload window", group=gSess, display=display.none)
@@ -65,7 +74,7 @@ deepFib = input.float(0.786, "Pocket far edge", options=[0.618, 0.705, 0.786], g
 t1Mult = input.float(1.382, "T1 main target", options=[1.272, 1.382, 1.5, 1.618], group=gRisk, tooltip="T1 is the main booked target. The engine's stats close here.", display=display.none)
 t2Mult = input.float(1.5, "T2 runner", options=[1.382, 1.5, 1.618], group=gRisk, display=display.none)
 t3Mult = input.float(1.618, "T3 stretch", options=[1.5, 1.618, 1.786, 2.0], group=gRisk, display=display.none)
-stopMode = input.string("30m close", "Stop invalidation", options=["30m close", "1m close", "1m wick"], group=gRisk, display=display.none)
+stopMode = input.string("30m close", "Stop invalidation", options=["30m close", "1m close", "1m wick"], group=gRisk, tooltip="Default 30m close: a loss only counts when a bar CLOSES beyond the pivot - close below the low pivot for longs, close above the high pivot for shorts. A wick through the level is not a loss.", display=display.none)
 gMom = "Momentum guard"
 momGuardMode = input.string("Caution", "Momentum guard mode", options=["Off", "Caution", "Block"], group=gMom, tooltip="If price touches the 1m 50 EMA from one side and fails to resume within the bounce test window, that side's momentum is marked weak. Caution (default): trades that side still fire, labeled CAUTION. Block: they are blocked.", display=display.none)
 bounceBars = input.int(8, "Bounce test lookahead bars", minval=2, maxval=20, group=gMom, tooltip="After touching the 1m 50 EMA, price has this many bars to make a new higher high (bull) or lower low (bear) or momentum is marked weak.", display=display.none)
@@ -238,15 +247,16 @@ var array<float> lowVals = array.new_float()
 var array<int> lowBars = array.new_int()
 var array<float> highVals = array.new_float()
 var array<int> highBars = array.new_int()
+inPivotWin = not na(time(timeframe.period, pivotSession, mainTz))
 pl = ta.pivotlow(low, pivotLeft, pivotRight)
 ph = ta.pivothigh(high, pivotLeft, pivotRight)
-if not na(pl) and open[pivotRight] < emaSlow[pivotRight]
+if not na(pl) and inPivotWin[pivotRight] and open[pivotRight] < emaSlow[pivotRight]
     array.push(lowVals, pl)
     array.push(lowBars, bar_index - pivotRight)
     while array.size(lowBars) > lookbackBars * 2
         array.shift(lowVals)
         array.shift(lowBars)
-if not na(ph) and open[pivotRight] > emaSlow[pivotRight]
+if not na(ph) and inPivotWin[pivotRight] and open[pivotRight] > emaSlow[pivotRight]
     array.push(highVals, ph)
     array.push(highBars, bar_index - pivotRight)
     while array.size(highBars) > lookbackBars * 2
@@ -708,7 +718,7 @@ if earlyBreakArmed and earlyBreakDir == "long"
         earlyBreakStopBar := bar_index
     if not na(ph)
         int ebPhBar = bar_index - pivotRight
-        if ebPhBar >= earlyBreakCrossBar and open[pivotRight] > emaSlow[pivotRight] and (na(earlyBreakPivot) or ph > earlyBreakPivot)
+        if ebPhBar >= earlyBreakCrossBar and inPivotWin[pivotRight] and open[pivotRight] > emaSlow[pivotRight] and (na(earlyBreakPivot) or ph > earlyBreakPivot)
             earlyBreakPivot := ph
             earlyBreakPivotBar := ebPhBar
     bool earlyLongBreak = inEarlyBreakEntry and not na(earlyBreakPivot) and bar_index > earlyBreakPivotBar and close > earlyBreakPivot and close > emaSlow and earlyBreakPivot > earlyBreakStop
@@ -770,7 +780,7 @@ if earlyBreakArmed and earlyBreakDir == "short"
         earlyBreakStopBar := bar_index
     if not na(pl)
         int ebPlBar = bar_index - pivotRight
-        if ebPlBar >= earlyBreakCrossBar and open[pivotRight] < emaSlow[pivotRight] and (na(earlyBreakPivot) or pl < earlyBreakPivot)
+        if ebPlBar >= earlyBreakCrossBar and inPivotWin[pivotRight] and open[pivotRight] < emaSlow[pivotRight] and (na(earlyBreakPivot) or pl < earlyBreakPivot)
             earlyBreakPivot := pl
             earlyBreakPivotBar := ebPlBar
     bool earlyShortBreak = inEarlyBreakEntry and not na(earlyBreakPivot) and bar_index > earlyBreakPivotBar and close < earlyBreakPivot and close < emaSlow and earlyBreakPivot < earlyBreakStop
