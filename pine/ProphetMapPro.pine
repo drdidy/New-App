@@ -227,6 +227,21 @@ float mAsc = na(tdAsc) ? na : ascPrice + macroSlope * tdAsc
 float mSup = na(mdLo) ? maLo : na(maLo) ? mdLo : math.max(mdLo, maLo)
 float mRes = na(mdHi) ? maHi : na(maHi) ? mdHi : math.min(mdHi, maHi)
 
+// Rendering anchor for the macro rails. Time coordinates that fall far
+// before the first loaded chart bar are mis-positioned by TradingView (a
+// 1-min chart loads only days of history, while the macro anchors are
+// weeks back), so lines must start inside the loaded range. Capture the
+// first loaded bar's time and its trading-day counts; the rail's value
+// there is computed exactly from the daily-bar count, so the drawn segment
+// is correct at both ends on every timeframe down to 1 minute.
+var int tMacroFirst = na
+var int tdDescFirst = na
+var int tdAscFirst = na
+if na(tMacroFirst) and not na(tdDesc) and not na(tdAsc)
+    tMacroFirst := time
+    tdDescFirst := tdDesc
+    tdAscFirst := tdAsc
+
 // ---------------------------------------------------------------------------
 // Layer values and liveness
 // ---------------------------------------------------------------------------
@@ -316,17 +331,21 @@ drawDailyLine(int tA, float yA, float yNow, string txt, color col) =>
         timeLine(tA, yA, time, yNow, color.new(col, 25), 1, line.style_dashed)
         addLabel(txt, yNow, color.new(col, 25), size.tiny, perBar)
 
-// Macro rail: anchored at its lattice's fixed anchor date/price so both
-// endpoints are exact and deterministic. dir: -1 descending, +1 ascending.
-// All four in-play rails (support and resistance from BOTH lattices) are
-// drawn as zones with the same anatomy as the weekly shelves -- dark purple
-// center line, faint edges, soft fill -- because any of the four can be the
-// level that matters on the execution timeframe.
+// Macro rail: drawn as a zone with the same anatomy as the weekly shelves
+// (dark purple center line, faint edges, soft fill). dir: -1 descending,
+// +1 ascending. The left end anchors at the lattice's true anchor date when
+// that date is inside the loaded chart history (daily and higher intraday
+// charts); otherwise it anchors at the first loaded bar with the exact
+// value computed from the daily-bar count, so the rail renders correctly
+// down to the 1-minute chart. Both endpoints are always exact.
 drawMacroRail(float g, int dir, string txt) =>
-    if not na(g)
-        int aT = dir == -1 ? descDate : ascDate
+    if not na(g) and not na(tMacroFirst)
+        int aDate = dir == -1 ? descDate : ascDate
+        bool anchorLoaded = aDate >= tMacroFirst
+        int daysBack = dir == -1 ? tdDesc - tdDescFirst : tdAsc - tdAscFirst
         float ctrl = dir == -1 ? mDesc : mAsc
-        float aP = (dir == -1 ? descPrice : ascPrice) + (g - ctrl)
+        int aT = anchorLoaded ? aDate : tMacroFirst
+        float aP = anchorLoaded ? (dir == -1 ? descPrice : ascPrice) + (g - ctrl) : g - dir * macroSlope * daysBack
         float half = macroZone / 2.0
         timeLine(aT, aP, time, g, color.new(colMacro, 5), 2, line.style_solid)
         if half > 0
